@@ -2,19 +2,19 @@
 
 ## Feature Boundaries
 
-- Each feature owns presentation + domain + data under a single feature folder.
-- Dependency direction is strict: presentation → domain → data (never the reverse).
+- Each feature owns presentation + data (and optionally a domain layer) under a single feature.
+- Dependency direction is strict: presentation → (domain) → data.
 
 ## Layer Constraints (Project Simplifications)
 
-- No “use case” layer: BLoC talks to repository interfaces directly.
+- **Optional Domain Layer**: The Domain layer (Use Cases) is optional. You should only use and add it if there is a concrete necessity for complex business logic that justifies separation. Otherwise, Presentation components (BLoC) can interact directly with the Data layer (Repositories).
 - No mapping layer by default: DTOs defined in the data layer are used across layers unless there is a concrete need to split models.
 
 ## Separation (Strict)
 
-- Presentation depends only on domain contracts; it never imports a feature’s data layer.
-- Domain has zero Flutter/framework imports.
-- Data implements domain interfaces and contains all I/O details.
+- Presentation depends on the domain contracts (if present) or directly on the data layer repositories.
+- If a Domain layer exists, it has zero Flutter/framework imports.
+- Data contains all I/O details and implementations.
 - Presentation screens follow a `Screen` + `View` split: `Screen` wires route/dependencies, `View` contains UI for easier widget testing.
 
 ## Models & Serialization

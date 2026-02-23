@@ -8,7 +8,8 @@
 
 ## Test Quality
 
-- Use Given/When/Then structure and clear naming.
+- Use Given/When/Then structure and clear naming. Test complex business logic before implementation (TDD approach).
+- **Test Behavior, Not Properties**: Verify actions, state changes, and logic flows rather than checking static UI properties or numbers (e.g. testing that `onTap` fires, rather than testing padding values).
 - Tests must be deterministic (no real HTTP, no real clocks, no randomness).
 - Prefer fakes/stubs over mocks; use mocks only when interaction verification is required.
 - Mock I/O boundaries (HTTP, database, preferences, secure storage).
