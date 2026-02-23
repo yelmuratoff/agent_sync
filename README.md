@@ -103,7 +103,7 @@ This block is rebuilt from enabled tool targets in `.ai/src/tools/*.yaml`.
 
 <div align="center">
   <p>Made with ❤️ for devs</p>
-  <a href="https://github.com/yelmuratoff/agent_sync_dart/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=yelmuratoff/agent_sync_dart" />
+  <a href="https://github.com/yelmuratoff/agent_sync/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=yelmuratoff/agent_sync" />
   </a>
 </div>
