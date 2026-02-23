@@ -11,6 +11,7 @@
 - Prefer const widgets and stable keys where appropriate to reduce rebuild cost.
 - Use lazy lists for large collections; avoid building huge widget trees at once.
 - Avoid expensive effects (saveLayer-heavy patterns, excessive opacity/clip) unless justified.
+- Use `RepaintBoundary` to isolate widgets that repaint frequently (animations, clocks, progress indicators, streaming values) from the surrounding tree. Without a boundary, a single animating child can cause the entire ancestor tree to repaint every frame. Verify isolation using DevTools' "Highlight Repaints" toggle.
 
 ## Data
 

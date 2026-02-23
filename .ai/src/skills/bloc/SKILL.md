@@ -122,6 +122,8 @@ final class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     try {
       final orders = await repository.getOrders();
       emit(OrdersLoadedState(orders: orders));
+    // Known exceptions: catch specifically, emit error state, do NOT call onError.
+    // Unexpected exceptions: fall through to outer catch, call onError(e, st).
     } catch (e, st) {
       handleException(
         exception: e,
@@ -181,3 +183,13 @@ void main() {
   );
 }
 ```
+
+### 7) Verify anti-patterns are avoided
+
+Before finishing, check:
+
+- [ ] No `ShowDialog`, `Navigate*`, or other UI-command states emitted from the BLoC. Side effects belong in `BlocListener` in the widget layer.
+- [ ] No direct BLoC dependencies in the constructor. BLoC-to-BLoC synchronization must go through the widget layer.
+- [ ] Error handling uses two tiers: known exceptions → emit error state only; unexpected exceptions → emit error state AND call `onError(e, st)`.
+- [ ] BLoC is not managing simple UI-only state. If it is a toggle or a filter with no async work, downgrade to Cubit or `ValueNotifier`.
+- [ ] If the success listener needs to distinguish *why* success was reached, `lastEvent` is stored in the state.

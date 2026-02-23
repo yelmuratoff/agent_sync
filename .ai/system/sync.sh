@@ -240,7 +240,7 @@ canonicalize_with_existing_ancestor() {
     normalize_absolute_path "$existing_ancestor_canonical$suffix"
 }
 
-resolve_repo_path() {
+resolve_dest_path() {
     local raw_path="$1"
     local label="$2"
 
@@ -263,6 +263,65 @@ resolve_repo_path() {
     fi
 
     echo "$abs_path"
+}
+
+is_path_safe_source() {
+    local candidate_path="$1"
+    if [[ "$candidate_path" == "$REPO_ROOT_CANONICAL" || "$candidate_path" == "$REPO_ROOT_CANONICAL/"* ]]; then
+        return 0
+    fi
+    if [[ "$candidate_path" == "$DEFAULT_REPO_ROOT" || "$candidate_path" == "$DEFAULT_REPO_ROOT/"* ]]; then
+        return 0
+    fi
+    return 1
+}
+
+resolve_source_path() {
+    local raw_path="$1"
+    local label="$2"
+
+    if [[ -z "$raw_path" ]]; then
+        log_error "$label is empty"
+        return 1
+    fi
+
+    # First try resolving relative to REPO_ROOT (the user project)
+    local abs_path_target
+    abs_path_target=$(normalize_absolute_path "$raw_path")
+    local canonical_path_target
+    canonical_path_target=$(canonicalize_with_existing_ancestor "$abs_path_target") 2>/dev/null || true
+
+    if [[ -n "$canonical_path_target" ]] && [[ -e "$canonical_path_target" ]] && is_path_safe_source "$canonical_path_target"; then
+        echo "$abs_path_target"
+        return 0
+    fi
+
+    # Fallback to DEFAULT_REPO_ROOT (the shipped package templates)
+    local abs_path_fallback
+    if [[ "$raw_path" == /* ]]; then
+        abs_path_fallback="$raw_path"
+    else
+        abs_path_fallback="$DEFAULT_REPO_ROOT/$raw_path"
+    fi
+    
+    local canonical_path_fallback
+    canonical_path_fallback=$(canonicalize_with_existing_ancestor "$abs_path_fallback") 2>/dev/null || true
+    
+    if [[ -n "$canonical_path_fallback" ]] && is_path_safe_source "$canonical_path_fallback"; then
+        echo "$abs_path_fallback"
+        return 0
+    fi
+
+    # If neither exists/valid, log error based on the primary target
+    if [[ -n "$canonical_path_target" ]]; then
+        if ! is_path_safe_source "$canonical_path_target"; then
+            log_error "$label resolves outside safe source roots: $raw_path -> $canonical_path_target"
+            return 1
+        fi
+    fi
+
+    echo "$abs_path_target"
+    return 0
 }
 
 to_repo_relative_path() {
@@ -414,9 +473,9 @@ sync_tool() {
     dest_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
 
     local dest_agents_abs="" dest_rules_abs="" dest_skills_abs=""
-    [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_repo_path "$dest_agents" "targets.agents.dest for $tool_name")
-    [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_repo_path "$dest_rules" "targets.rules.dest for $tool_name")
-    [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_repo_path "$dest_skills" "targets.skills.dest for $tool_name")
+    [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_dest_path "$dest_agents" "targets.agents.dest for $tool_name")
+    [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_dest_path "$dest_rules" "targets.rules.dest for $tool_name")
+    [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_dest_path "$dest_skills" "targets.skills.dest for $tool_name")
 
     local enabled_value
     enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_name") || return 1
@@ -453,7 +512,7 @@ sync_tool() {
     override_agents=$(parse_yaml_value "$tool_config" "targets.agents.source")
     src_agents="${override_agents:-$SOURCE_AGENTS}"
     local src_agents_abs
-    src_agents_abs=$(resolve_repo_path "$src_agents" "targets.agents.source for $tool_name")
+    src_agents_abs=$(resolve_source_path "$src_agents" "targets.agents.source for $tool_name")
     
     # Sync AGENTS.md
     if [[ -n "$dest_agents_abs" ]]; then
@@ -466,7 +525,7 @@ sync_tool() {
     override_rules=$(parse_yaml_value "$tool_config" "targets.rules.source")
     src_rules="${override_rules:-$SOURCE_RULES}"
     local src_rules_abs
-    src_rules_abs=$(resolve_repo_path "$src_rules" "targets.rules.source for $tool_name")
+    src_rules_abs=$(resolve_source_path "$src_rules" "targets.rules.source for $tool_name")
     
     # Read optional rule transformations and filters
     local rule_ext rule_header append_imports rule_include rule_exclude
@@ -499,7 +558,7 @@ sync_tool() {
     override_skills=$(parse_yaml_value "$tool_config" "targets.skills.source")
     src_skills="${override_skills:-$SOURCE_SKILLS}"
     local src_skills_abs
-    src_skills_abs=$(resolve_repo_path "$src_skills" "targets.skills.source for $tool_name")
+    src_skills_abs=$(resolve_source_path "$src_skills" "targets.skills.source for $tool_name")
     
     # Read skill filters
     local skills_include skills_exclude
@@ -578,8 +637,8 @@ main() {
     fi
 
     local source_agents_abs source_tools_abs
-    source_agents_abs=$(resolve_repo_path "$SOURCE_AGENTS" "source.agents")
-    source_tools_abs=$(resolve_repo_path "$SOURCE_TOOLS" "source.tools")
+    source_agents_abs=$(resolve_source_path "$SOURCE_AGENTS" "source.agents")
+    source_tools_abs=$(resolve_source_path "$SOURCE_TOOLS" "source.tools")
 
     if [[ ! -f "$source_agents_abs" ]]; then
         log_error "Source agents file not found: $source_agents_abs"
@@ -618,17 +677,17 @@ main() {
              d_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
 
              if [[ -n "$d_agents" ]]; then
-                 d_agents_abs=$(resolve_repo_path "$d_agents" "targets.agents.dest in $tool_file_basename")
+                 d_agents_abs=$(resolve_dest_path "$d_agents" "targets.agents.dest in $tool_file_basename")
                  d_agents_rel=$(to_repo_relative_path "$d_agents_abs")
                  generated_paths+=("$d_agents_rel")
              fi
              if [[ -n "$d_rules" ]]; then
-                 d_rules_abs=$(resolve_repo_path "$d_rules" "targets.rules.dest in $tool_file_basename")
+                 d_rules_abs=$(resolve_dest_path "$d_rules" "targets.rules.dest in $tool_file_basename")
                  d_rules_rel=$(to_repo_relative_path "$d_rules_abs")
                  generated_paths+=("$d_rules_rel/")
              fi
              if [[ -n "$d_skills" ]]; then
-                 d_skills_abs=$(resolve_repo_path "$d_skills" "targets.skills.dest in $tool_file_basename")
+                 d_skills_abs=$(resolve_dest_path "$d_skills" "targets.skills.dest in $tool_file_basename")
                  d_skills_rel=$(to_repo_relative_path "$d_skills_abs")
                  generated_paths+=("$d_skills_rel/")
              fi

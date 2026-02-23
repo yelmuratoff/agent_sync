@@ -42,6 +42,42 @@ final goRouter = GoRouter(
 
 ### 1) Type-Safe Arguments
 
+**Preferred: `go_router_builder` with `@TypedGoRoute`**
+
+When `go_router_builder` is available, annotate route data classes:
+
+```dart
+@TypedGoRoute<OrdersRoute>(name: 'orders', path: '/orders')
+@immutable
+class OrdersRoute extends GoRouteData {
+  const OrdersRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return const OrdersScreen();
+  }
+}
+
+// With parameters:
+@TypedGoRoute<OrderDetailRoute>(name: 'order-detail', path: '/orders/:id')
+@immutable
+class OrderDetailRoute extends GoRouteData {
+  const OrderDetailRoute({required this.id});
+  final String id;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return OrderDetailScreen(id: id);
+  }
+}
+
+// Navigate:
+const OrdersRoute().go(context);
+OrderDetailRoute(id: orderId).go(context);
+```
+
+**Fallback (no go_router_builder)**: Use `goNamed` with string constants defined in a central route-names file. Never inline path strings in widget code.
+
 - Use path parameters for IDs (e.g. `details/:id`).
 - Use query parameters for filtering/sorting state (for example: `?status=paid&page=2`).
 - Use `extra` for complex objects **only if necessary**. Prefer passing an ID and refetching data to ensure the screen is independent and deep-linkable.

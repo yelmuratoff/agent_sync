@@ -17,4 +17,14 @@
 - **Summary First**: Start doc comments with a single-sentence summary that ends with a period.
 - **Placement**: Put doc comments before annotations.
 - **Behavioral Details**: Document non-obvious side effects, constraints, and thrown exceptions for public APIs.
+- **Throws Section**: For any public function that can throw, list each exception with the triggering condition using the `Throws:` dartdoc convention:
+  ```dart
+  /// Fetches the user from the remote API.
+  ///
+  /// Throws [NetworkException] if connectivity is unavailable.
+  /// Throws [ParseException] if the response payload is malformed.
+  /// Throws [UnauthorizedException] if the session has expired.
+  Future<UserDto> fetchUser(String id);
+  ```
+  Do not document programming errors (`ArgumentError`, `StateError`)—those indicate a caller bug, not a recoverable runtime condition.
 - **Avoid Duplication**: Do not document both getter and setter for the same property unless behavior differs.

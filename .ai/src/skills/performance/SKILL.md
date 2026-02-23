@@ -56,6 +56,20 @@ If items can reorder, use stable keys on item widgets.
 
 Avoid unnecessary `Opacity`, `Clip.*`, and patterns that trigger saveLayer unless needed.
 
+### 4b) Isolate frequent repainters with RepaintBoundary
+
+Wrap any widget driven by an `AnimationController`, `Ticker`, or high-frequency stream:
+
+```dart
+RepaintBoundary(
+  child: AnimatedCounter(value: elapsed),
+)
+```
+
+When to apply: DevTools "Highlight Repaints" shows the parent tree flashing on every animation frame.
+
+Caution: Do not wrap everything—`RepaintBoundary` allocates an extra layer and increases GPU memory. Apply only where profiling identifies propagating repaints as the bottleneck.
+
 ### 5) Move heavy work off the UI thread
 
 Use isolates/compute for:

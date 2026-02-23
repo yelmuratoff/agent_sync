@@ -22,7 +22,11 @@
 
 ## Coverage Expectations
 
-- Prioritize meaningful coverage over percent goals; always cover error cases for critical flows.
+- Target 100% coverage on all business logic (repositories, BLoCs, services, domain utilities).
+- Minimum floor: 80% line coverage on all business-logic files; PRs below this floor require explicit justification.
+- Critical flows (authentication, payment, token refresh): 100% coverage is mandatory—no exceptions.
+- Prioritize meaningful scenario coverage over mechanical line coverage. A test that exercises no real assertion is worthless regardless of the percentage it adds.
+- Always cover the error path for every async operation (network failure, parse failure, cache miss, timeout).
 
 ## Assertions & Integration
 

@@ -112,3 +112,41 @@ void main() {
   });
 }
 ```
+
+### 5) Implement auth token refresh (three-component pattern)
+
+When the API requires authentication with token refresh, use three collaborating components:
+
+**TokenStorage** (backed by `flutter_secure_storage`, never `SharedPreferences`):
+
+```dart
+abstract interface class TokenStorage<T> {
+  Future<T?> load();
+  Future<void> save(T token);
+  Future<void> clear();
+  Stream<T?> getStream(); // broadcasts changes to all listeners
+}
+```
+
+**AuthorizationClient** (validates expiry locally, calls refresh endpoint):
+
+```dart
+abstract interface class AuthorizationClient {
+  /// Returns valid access token, refreshing if expired.
+  /// Throws [RevokeTokenException] if refresh fails.
+  Future<String> getValidAccessToken();
+}
+```
+
+**OAuthInterceptor** key constraints:
+- Attaches `Authorization: Bearer <token>` before each request.
+- On 401: acquires a sequential lock so only one refresh fires even when multiple requests receive 401 simultaneously. All concurrent requests queue and retry with the new token.
+- On `RevokeTokenException`: calls `TokenStorage.clear()` and triggers logout.
+
+Key constraint: the sequential lock prevents N concurrent 401 responses from triggering N separate refresh calls. Only the first refresh executes; others await its result.
+
+Test cases required:
+- Happy path: valid token attached, 200 returned.
+- Expired token: refresh called once, original request retried with new token.
+- Concurrent 401s: refresh called exactly once despite multiple 401s.
+- Revoked token: `TokenStorage.clear()` called, logout triggered.

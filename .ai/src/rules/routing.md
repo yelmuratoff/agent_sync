@@ -13,7 +13,19 @@
 
 ## Type Safety
 
-- Prefer typed routes (using `go_router_builder` if available in the project, or strict `extra` object definitions).
+- Prefer typed routes using `go_router_builder`. Annotate route data classes with `@TypedGoRoute<RouteDataClass>` and extend `GoRouteData`. This eliminates path-string typos at compile time and makes refactoring safe:
+  ```dart
+  @TypedGoRoute<OrdersRoute>(name: 'orders', path: '/orders')
+  @immutable
+  class OrdersRoute extends GoRouteData {
+    const OrdersRoute();
+    @override
+    Widget build(BuildContext context, GoRouterState state) => const OrdersScreen();
+  }
+  // Navigate:
+  const OrdersRoute().go(context);
+  ```
+- Fall back to `goNamed` with string constants in a central route-names file only when `go_router_builder` is unavailable.
 - Prefer route names (`goNamed`/typed route APIs) over raw path strings where possible.
 - Use path params for resource identity and query params for filtering/sorting state.
 - Pass complex objects via `extra`, but prefer passing IDs and re-fetching data in the new screen's BLoC/Repository.
