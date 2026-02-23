@@ -42,10 +42,7 @@ SOURCE_AGENTS=""
 SOURCE_RULES=""
 SOURCE_SKILLS=""
 SOURCE_TOOLS=""
-DETECTED_SOURCE_AGENTS=""
-DETECTED_SOURCE_RULES=""
-DETECTED_SOURCE_SKILLS=""
-DETECTED_SOURCE_TOOLS=""
+
 
 # Usage information
 usage() {
@@ -96,39 +93,7 @@ resolve_project_config_path() {
     fi
 }
 
-# Auto-detect source layout inside target project
-detect_source_layout() {
-    # Legacy/default layout
-    if [[ -f "$REPO_ROOT/.ai/src/AGENTS.md" ]]; then
-        DETECTED_SOURCE_AGENTS=".ai/src/AGENTS.md"
-        DETECTED_SOURCE_RULES=".ai/src/rules"
-        DETECTED_SOURCE_SKILLS=".ai/src/skills"
-        DETECTED_SOURCE_TOOLS=".ai/src/tools"
-        return 0
-    fi
 
-    # Flat layout
-    local flat_agents=""
-    local candidates=(
-        ".ai/AGENTS.md"
-    )
-    for candidate in "${candidates[@]}"; do
-        if [[ -f "$REPO_ROOT/$candidate" ]]; then
-            flat_agents="$candidate"
-            break
-        fi
-    done
-
-    if [[ -n "$flat_agents" ]] && [[ -d "$REPO_ROOT/.ai/tools" ]]; then
-        DETECTED_SOURCE_AGENTS="$flat_agents"
-        DETECTED_SOURCE_RULES=".ai/rules"
-        DETECTED_SOURCE_SKILLS=".ai/skills"
-        DETECTED_SOURCE_TOOLS=".ai/tools"
-        return 0
-    fi
-
-    return 1
-}
 
 # Resolve source path from project config (supports both root keys and source.* keys)
 resolve_source_override() {
@@ -607,16 +572,36 @@ main() {
 
     # Resolve project config and detect source layout
     resolve_project_config_path
-    if detect_source_layout; then
-        SOURCE_AGENTS="$DETECTED_SOURCE_AGENTS"
-        SOURCE_RULES="$DETECTED_SOURCE_RULES"
-        SOURCE_SKILLS="$DETECTED_SOURCE_SKILLS"
-        SOURCE_TOOLS="$DETECTED_SOURCE_TOOLS"
-    else
-        SOURCE_AGENTS=$(parse_yaml_value "$global_config" "source.agents")
-        SOURCE_RULES=$(parse_yaml_value "$global_config" "source.rules")
-        SOURCE_SKILLS=$(parse_yaml_value "$global_config" "source.skills")
-        SOURCE_TOOLS=$(parse_yaml_value "$global_config" "source.tools")
+
+    # 1. Load global defaults
+    SOURCE_AGENTS=$(parse_yaml_value "$global_config" "source.agents")
+    SOURCE_RULES=$(parse_yaml_value "$global_config" "source.rules")
+    SOURCE_SKILLS=$(parse_yaml_value "$global_config" "source.skills")
+    SOURCE_TOOLS=$(parse_yaml_value "$global_config" "source.tools")
+
+    # 2. Auto-detect local custom directories (legacy or flat layout)
+    if [[ -f "$REPO_ROOT/.ai/src/AGENTS.md" ]]; then
+        SOURCE_AGENTS=".ai/src/AGENTS.md"
+    elif [[ -f "$REPO_ROOT/.ai/AGENTS.md" ]]; then
+        SOURCE_AGENTS=".ai/AGENTS.md"
+    fi
+
+    if [[ -d "$REPO_ROOT/.ai/src/rules" ]]; then
+        SOURCE_RULES=".ai/src/rules"
+    elif [[ -d "$REPO_ROOT/.ai/rules" ]]; then
+        SOURCE_RULES=".ai/rules"
+    fi
+
+    if [[ -d "$REPO_ROOT/.ai/src/skills" ]]; then
+        SOURCE_SKILLS=".ai/src/skills"
+    elif [[ -d "$REPO_ROOT/.ai/skills" ]]; then
+        SOURCE_SKILLS=".ai/skills"
+    fi
+
+    if [[ -d "$REPO_ROOT/.ai/src/tools" ]]; then
+        SOURCE_TOOLS=".ai/src/tools"
+    elif [[ -d "$REPO_ROOT/.ai/tools" ]]; then
+        SOURCE_TOOLS=".ai/tools"
     fi
 
     # Apply optional project-level overrides from agent_sync.yaml
