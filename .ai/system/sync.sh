@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chmod +x .ai/sync/sync.sh
+# chmod +x .ai/system/sync.sh
 # Cross-platform AgentSync Config Sync Script
 # Works in Git Bash on Windows and Unix/macOS
 
