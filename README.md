@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/agent_sync.png" width="400">
+  <img src="https://github.com/yelmuratoff/agent_sync/blob/main/assets/agent_sync.png?raw=true" width="400">
 
   <p><strong>Configuration sync workspace/library for centralizing AI agent instructions</strong></p>
 
