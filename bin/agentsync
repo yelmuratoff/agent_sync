@@ -1,0 +1,447 @@
+#!/usr/bin/env bash
+# AgentSync CLI — single entry point for all operations.
+# https://github.com/yelmuratoff/agent_sync
+
+set -euo pipefail
+
+readonly VERSION="0.1.0"
+
+# Resolve the engine's system directory.
+# Priority:
+#   1. AGENTSYNC_HOME env var (global install)
+#   2. Relative to this script (repo-local install)
+resolve_system_dir() {
+    # Global install: ~/.agentsync/.ai/system
+    if [[ -n "${AGENTSYNC_HOME:-}" ]] && [[ -d "$AGENTSYNC_HOME/.ai/system" ]]; then
+        echo "$AGENTSYNC_HOME/.ai/system"
+        return 0
+    fi
+
+    # Repo-local: script lives in <repo>/bin/agentsync → <repo>/.ai/system
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local repo_root
+    repo_root="$(cd "$script_dir/.." && pwd)"
+
+    if [[ -d "$repo_root/.ai/system" ]]; then
+        echo "$repo_root/.ai/system"
+        return 0
+    fi
+
+    return 1
+}
+
+# ─── Colors ───────────────────────────────────────────────────────────────────
+_use_colors() { [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; }
+
+_bold()    { _use_colors && printf '\033[1m%s\033[0m' "$1" || printf '%s' "$1"; }
+_green()   { _use_colors && printf '\033[32m%s\033[0m' "$1" || printf '%s' "$1"; }
+_cyan()    { _use_colors && printf '\033[36m%s\033[0m' "$1" || printf '%s' "$1"; }
+_yellow()  { _use_colors && printf '\033[33m%s\033[0m' "$1" || printf '%s' "$1"; }
+_red()     { _use_colors && printf '\033[31m%s\033[0m' "$1" || printf '%s' "$1"; }
+_dim()     { _use_colors && printf '\033[2m%s\033[0m' "$1" || printf '%s' "$1"; }
+
+# ─── Help ─────────────────────────────────────────────────────────────────────
+print_banner() {
+    echo ""
+    _bold "  AgentSync"; echo " v${VERSION}"
+    _dim  "  Sync AI agent instructions to every tool from one source."; echo ""
+    echo ""
+}
+
+print_usage() {
+    print_banner
+    echo "  $(_green "USAGE")"
+    echo "    agentsync <command> [options]"
+    echo ""
+    echo "  $(_green "COMMANDS")"
+    echo "    $(_cyan "init")           Create .ai/ structure in current project"
+    echo "    $(_cyan "sync")           Sync instructions to all enabled tools"
+    echo "    $(_cyan "check")          Verify outputs are in sync with source"
+    echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
+    echo "    $(_cyan "list")           Show available tools and their status"
+    echo "    $(_cyan "version")        Print version"
+    echo "    $(_cyan "help")           Show this message"
+    echo ""
+    echo "  $(_green "SYNC OPTIONS")"
+    echo "    --only <tools>    Sync only these tools (comma-separated)"
+    echo "    --skip <tools>    Skip these tools (comma-separated)"
+    echo "    --dry-run         Preview changes without writing"
+    echo ""
+    echo "  $(_green "EXAMPLES")"
+    echo "    agentsync init"
+    echo "    agentsync sync"
+    echo "    agentsync sync --only claude,cursor"
+    echo "    agentsync sync --dry-run"
+    echo "    agentsync check"
+    echo ""
+    echo "  $(_green "DOCS")"
+    _dim  "    https://github.com/yelmuratoff/agent_sync"; echo ""
+    echo ""
+}
+
+# ─── Init ─────────────────────────────────────────────────────────────────────
+cmd_init() {
+    local target_dir="${1:-.}"
+    target_dir="$(cd "$target_dir" 2>/dev/null && pwd)" || {
+        echo "$(_red "Error"): Directory not found: $1" >&2
+        exit 1
+    }
+
+    local ai_dir="$target_dir/.ai"
+
+    if [[ -d "$ai_dir/src" ]]; then
+        echo "$(_yellow "Warning"): .ai/src/ already exists in $target_dir"
+        echo "Skipping init to avoid overwriting your content."
+        echo ""
+        echo "Run $(_cyan "agentsync sync") to synchronize."
+        return 0
+    fi
+
+    echo ""
+    echo "$(_bold "Initializing AgentSync") in $(_cyan "$target_dir")"
+    echo ""
+
+    # Create directory structure
+    mkdir -p "$ai_dir/src/rules"
+    mkdir -p "$ai_dir/src/skills"
+    mkdir -p "$ai_dir/src/tools"
+    mkdir -p "$ai_dir/system"
+
+    # ── AGENTS.md (starter template) ──
+    cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
+# Project Agent
+
+You are a skilled software engineer working on this project.
+
+## Mindset
+
+- Write clean, maintainable code.
+- Follow existing project conventions.
+- Ask for clarification on ambiguous requirements.
+- Test your changes before submitting.
+
+## Approach
+
+1. **Understand** — Study the existing codebase before making changes.
+2. **Plan** — Break work into clear steps.
+3. **Implement** — Write code that follows project patterns.
+4. **Verify** — Run tests and linting.
+AGENTS_EOF
+
+    # ── Starter rule ──
+    cat > "$ai_dir/src/rules/core.md" << 'RULE_EOF'
+# Core Rules
+
+## Style
+
+- Follow the project's established conventions.
+- Prefer readability over cleverness.
+
+## Quality
+
+- Write tests for business logic.
+- Handle errors explicitly.
+- No hardcoded secrets.
+RULE_EOF
+
+    # ── Starter skill ──
+    mkdir -p "$ai_dir/src/skills/example"
+    cat > "$ai_dir/src/skills/example/SKILL.md" << 'SKILL_EOF'
+---
+name: example
+description: Example skill template — replace with your own.
+---
+
+# Example Skill
+
+## When to use
+
+When you need a reference for how skills are structured.
+
+## Steps
+
+1. Create a directory under `.ai/src/skills/<name>/`.
+2. Add a `SKILL.md` with frontmatter (name, description).
+3. Write step-by-step instructions for the AI agent.
+SKILL_EOF
+
+    # ── Tool configs ──
+    # Try to copy tool templates from the engine if available
+    local system_dir=""
+    system_dir=$(resolve_system_dir 2>/dev/null) || true
+    local engine_root=""
+    if [[ -n "$system_dir" ]]; then
+        engine_root="$(cd "$system_dir/../.." && pwd)"
+    fi
+
+    local copied_tools=false
+    if [[ -n "$engine_root" ]] && [[ -d "$engine_root/.ai/src/tools" ]]; then
+        for tool_file in "$engine_root/.ai/src/tools/"*.yaml; do
+            [[ -f "$tool_file" ]] || continue
+            local basename
+            basename=$(basename "$tool_file")
+            # Skip template
+            [[ "$basename" == _* ]] && continue
+            cp "$tool_file" "$ai_dir/src/tools/$basename"
+        done
+        if [[ -f "$engine_root/.ai/src/tools/_TEMPLATE.yaml" ]]; then
+            cp "$engine_root/.ai/src/tools/_TEMPLATE.yaml" "$ai_dir/src/tools/_TEMPLATE.yaml"
+        fi
+        copied_tools=true
+    fi
+
+    if [[ "$copied_tools" != "true" ]]; then
+        # Generate minimal tool configs
+        cat > "$ai_dir/src/tools/claude.yaml" << 'TOOL_EOF'
+name: "Claude Code"
+enabled: true
+
+targets:
+  agents:
+    dest: ".claude/CLAUDE.md"
+  rules:
+    dest: ".claude/rules"
+    append_imports: true
+  skills:
+    dest: ".claude/skills"
+TOOL_EOF
+
+        cat > "$ai_dir/src/tools/copilot.yaml" << 'TOOL_EOF'
+name: "GitHub Copilot"
+enabled: true
+
+targets:
+  agents:
+    dest: ".github/copilot-instructions.md"
+  rules:
+    dest: ".github/instructions"
+    extension: ".instructions.md"
+    header: "---\napplyTo: '**'\n---"
+  skills:
+    dest: ".github/skills"
+TOOL_EOF
+
+        cat > "$ai_dir/src/tools/cursor.yaml" << 'TOOL_EOF'
+name: "Cursor"
+enabled: true
+
+targets:
+  agents:
+    dest: ".cursor/AGENTS.md"
+  rules:
+    dest: ".cursor/rules"
+    extension: ".mdc"
+    header: "---\nglobs: '**/*'\nalwaysApply: true\n---"
+  skills:
+    dest: ".cursor/skills"
+TOOL_EOF
+
+        cat > "$ai_dir/src/tools/gemini.yaml" << 'TOOL_EOF'
+name: "Gemini CLI"
+enabled: true
+
+targets:
+  agents:
+    dest: ".gemini/GEMINI.md"
+  rules:
+    dest: ".gemini/prompts"
+  skills:
+    dest: ".gemini/skills"
+TOOL_EOF
+
+        cat > "$ai_dir/src/tools/codex.yaml" << 'TOOL_EOF'
+name: "OpenAI Codex"
+enabled: true
+
+targets:
+  agents:
+    dest: ".codex/AGENTS.md"
+  rules:
+    dest: ".codex/prompts"
+  skills:
+    dest: ".codex/skills"
+TOOL_EOF
+    fi
+
+    # ── Copy the sync engine if available ──
+    if [[ -n "$system_dir" ]]; then
+        cp -r "$system_dir/"* "$ai_dir/system/" 2>/dev/null || true
+        echo "   Copied sync engine from $(_dim "$system_dir")"
+    else
+        # Create a minimal config.yaml
+        cat > "$ai_dir/system/config.yaml" << 'CFG_EOF'
+source:
+  agents: ".ai/src/AGENTS.md"
+  rules: ".ai/src/rules"
+  skills: ".ai/src/skills"
+  tools: ".ai/src/tools"
+
+defaults:
+  enabled: true
+  cleanup: true
+CFG_EOF
+        echo "   $(_yellow "Note"): Sync engine not found. Install AgentSync globally or copy .ai/system/ manually."
+    fi
+
+    echo ""
+    echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
+    echo "   Created $(_cyan ".ai/src/rules/")          — always-on constraints"
+    echo "   Created $(_cyan ".ai/src/skills/")         — on-demand recipes"
+    echo "   Created $(_cyan ".ai/src/tools/")          — tool configurations"
+    echo ""
+
+    # Count tools
+    local tool_count=0
+    for f in "$ai_dir/src/tools/"*.yaml; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f")" == _* ]] && continue
+        ((tool_count++))
+    done
+
+    echo "$(_green "Done!") Initialized with $tool_count tool(s)."
+    echo ""
+    echo "Next steps:"
+    echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") with your agent's identity"
+    echo "  2. Edit rules in $(_cyan ".ai/src/rules/")"
+    echo "  3. Run $(_cyan "agentsync sync") to distribute to all tools"
+    echo ""
+}
+
+# ─── List ─────────────────────────────────────────────────────────────────────
+cmd_list() {
+    local project_dir="${AGENTSYNC_REPO_ROOT:-.}"
+    project_dir="$(cd "$project_dir" && pwd)"
+
+    # Find tools directory
+    local tools_dir=""
+    if [[ -d "$project_dir/.ai/src/tools" ]]; then
+        tools_dir="$project_dir/.ai/src/tools"
+    elif [[ -d "$project_dir/.ai/tools" ]]; then
+        tools_dir="$project_dir/.ai/tools"
+    fi
+
+    if [[ -z "$tools_dir" ]] || [[ ! -d "$tools_dir" ]]; then
+        echo "$(_red "Error"): No tools directory found."
+        echo "Run $(_cyan "agentsync init") first."
+        exit 1
+    fi
+
+    # Source yaml parser
+    local system_dir=""
+    system_dir=$(resolve_system_dir 2>/dev/null) || true
+
+    echo ""
+    _bold "  AgentSync Tools"; echo ""
+    echo ""
+
+    local count=0
+    for tool_file in "$tools_dir"/*.yaml; do
+        [[ -f "$tool_file" ]] || continue
+        local basename
+        basename=$(basename "$tool_file" .yaml)
+        [[ "$basename" == _* ]] && continue
+
+        # Simple inline yaml parsing (no dependency on yaml.sh)
+        local name="" enabled=""
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^name:[[:space:]]*[\"\']?([^\"\']+)[\"\']? ]]; then
+                name="${BASH_REMATCH[1]}"
+            fi
+            if [[ "$line" =~ ^enabled:[[:space:]]*(true|false) ]]; then
+                enabled="${BASH_REMATCH[1]}"
+            fi
+        done < "$tool_file"
+
+        [[ -z "$name" ]] && name="$basename"
+        [[ -z "$enabled" ]] && enabled="true"
+
+        if [[ "$enabled" == "true" ]]; then
+            echo "    $(_green "●") $name $(_dim "($basename.yaml)")"
+        else
+            echo "    $(_dim "○") $(_dim "$name") $(_dim "($basename.yaml) — disabled")"
+        fi
+        ((count++))
+    done
+
+    echo ""
+    echo "  $count tool(s) configured in $(_dim "$tools_dir")"
+    echo ""
+}
+
+# ─── Sync / Check / Setup-hooks ──────────────────────────────────────────────
+cmd_engine() {
+    local script_name="$1"
+    shift
+
+    local system_dir=""
+    system_dir=$(resolve_system_dir) || {
+        # Fallback: look in current project
+        local project_dir="${AGENTSYNC_REPO_ROOT:-.}"
+        if [[ -d "$project_dir/.ai/system" ]]; then
+            system_dir="$project_dir/.ai/system"
+        else
+            echo "$(_red "Error"): Sync engine not found." >&2
+            echo "" >&2
+            echo "Expected one of:" >&2
+            echo "  - \$AGENTSYNC_HOME/.ai/system/" >&2
+            echo "  - .ai/system/ in current project" >&2
+            echo "" >&2
+            echo "Run $(_cyan "agentsync init") or install AgentSync globally:" >&2
+            echo "  curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/install.sh | bash" >&2
+            exit 1
+        fi
+    }
+
+    local script_path="$system_dir/$script_name"
+    if [[ ! -f "$script_path" ]]; then
+        echo "$(_red "Error"): Script not found: $script_path" >&2
+        exit 1
+    fi
+
+    # Set AGENTSYNC_REPO_ROOT to current project if not set
+    export AGENTSYNC_REPO_ROOT="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
+
+    bash "$script_path" "$@"
+}
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+main() {
+    local command="${1:-help}"
+
+    case "$command" in
+        init)
+            shift
+            cmd_init "${1:-.}"
+            ;;
+        sync)
+            shift
+            cmd_engine "sync.sh" "$@"
+            ;;
+        check)
+            shift
+            cmd_engine "check.sh" "$@"
+            ;;
+        setup-hooks)
+            shift
+            cmd_engine "setup_hooks.sh" "$@"
+            ;;
+        list|ls)
+            cmd_list
+            ;;
+        version|--version|-v)
+            echo "agentsync v${VERSION}"
+            ;;
+        help|--help|-h)
+            print_usage
+            ;;
+        *)
+            echo "$(_red "Error"): Unknown command: $command" >&2
+            echo "" >&2
+            print_usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

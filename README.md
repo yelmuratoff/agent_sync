@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://github.com/yelmuratoff/agent_sync/blob/main/assets/agent_sync.png?raw=true" width="400">
 
-  <p><strong>Configuration sync workspace/library for centralizing AI agent instructions</strong></p>
+  <p><strong>Write AI agent instructions once. Sync to every tool.</strong></p>
 
   <p>
     <a href="https://github.com/yelmuratoff/agent_sync">
@@ -16,88 +16,183 @@
   </p>
 </div>
 
-## What is AgentSync (`agent_sync`) Engine?
+## What is AgentSync?
 
-AgentSync is a configuration sync workspace/library that centralizes AI agent instructions in one source and syncs them to tool-specific formats.
+AgentSync keeps your AI agent instructions in **one place** and syncs them to every tool you use — Claude, Copilot, Cursor, Gemini, Codex, and more.
 
-## Table of Contents
+**The problem**: Each AI tool wants instructions in a different format and location (`.claude/`, `.github/`, `.cursor/`, `.gemini/`...). Keeping them in sync manually is painful.
 
-- [Source of Truth](#source-of-truth)
-- [Tool Targets](#tool-targets)
-- [Workflow](#workflow)
-- [Git Hooks](#git-hooks-recommended)
-- [Gitignore Behavior](#gitignore-behavior)
-- [Documentation Map](#documentation-map)
+**The solution**: Write once in `.ai/src/`, run `agentsync sync`, done.
 
-## Source of Truth
+## Quick Start
 
-Edit only `.ai/src/`.
-Do not edit generated tool folders directly (`.agent/`, `.claude/`, `.gemini/`, `.github/`).
+### Install (one command)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/install.sh | bash
+```
+
+This installs the `agentsync` CLI globally. Requirements: `git` and `bash`.
+
+### Set up your project
+
+```bash
+cd your-project
+agentsync init
+```
+
+This creates the `.ai/` structure with starter templates:
 
 ```text
 .ai/
-├── src/                  # Authoring source (edit here)
-│   ├── AGENTS.md
-│   ├── rules/*.md
-│   ├── skills/*/SKILL.md
-│   └── tools/*.yaml        # Tool enable/disable + targets (edit here)
-├── system/               # Sync engine
-│   ├── sync.sh
-│   ├── setup_hooks.sh
-│   ├── check.sh
-│   └── config.yaml
-└── README.md             # Authoring guide
+├── src/
+│   ├── AGENTS.md           ← Agent identity & mindset
+│   ├── rules/              ← Always-on constraints
+│   │   └── core.md
+│   ├── skills/             ← On-demand recipes
+│   │   └── example/SKILL.md
+│   └── tools/              ← Which tools to sync to
+│       ├── claude.yaml
+│       ├── copilot.yaml
+│       ├── cursor.yaml
+│       ├── gemini.yaml
+│       └── codex.yaml
+└── system/                 ← Sync engine (don't edit)
 ```
 
-## Tool Targets
-
-Enabled tools are defined in `.ai/src/tools/*.yaml`.
-
-## Workflow
-
-1. Edit source files in `.ai/src/`.
-2. Run sync:
+### Sync
 
 ```bash
-.ai/system/sync.sh
+agentsync sync
 ```
 
-3. Optional preview:
+That's it. Your instructions are now distributed to all enabled tools.
+
+## CLI Reference
+
+```
+agentsync <command> [options]
+
+Commands:
+  init           Create .ai/ structure in current project
+  sync           Sync instructions to all enabled tools
+  check          Verify outputs are in sync with source
+  setup-hooks    Install git hooks for automatic sync
+  list           Show configured tools and their status
+  version        Print version
+  help           Show help
+
+Sync Options:
+  --only <tools>    Sync only these tools (comma-separated)
+  --skip <tools>    Skip these tools (comma-separated)
+  --dry-run         Preview changes without writing
+```
+
+### Examples
 
 ```bash
-.ai/system/sync.sh --dry-run
+# Initialize a new project
+agentsync init
+
+# Sync all enabled tools
+agentsync sync
+
+# Preview what would change
+agentsync sync --dry-run
+
+# Sync only Claude and Cursor
+agentsync sync --only claude,cursor
+
+# Sync everything except Gemini
+agentsync sync --skip gemini
+
+# Check if outputs are up to date
+agentsync check
+
+# Install git hooks (auto-sync on pull/checkout)
+agentsync setup-hooks
+
+# See which tools are configured
+agentsync list
 ```
 
-4. Optional partial sync:
+## How It Works
 
-```bash
-.ai/system/sync.sh --only claude,copilot
-.ai/system/sync.sh --skip gemini
+### Source of Truth
+
+You edit **only** `.ai/src/`. Everything else is generated.
+
+| You write | Tools get |
+|-----------|-----------|
+| `.ai/src/AGENTS.md` | `.claude/CLAUDE.md`, `.cursor/AGENTS.md`, `.github/copilot-instructions.md`, ... |
+| `.ai/src/rules/*.md` | `.claude/rules/`, `.cursor/rules/*.mdc`, `.github/instructions/`, ... |
+| `.ai/src/skills/*/SKILL.md` | `.claude/skills/`, `.cursor/skills/`, ... |
+
+### Tool Configurations
+
+Each tool has a YAML config in `.ai/src/tools/`:
+
+```yaml
+# .ai/src/tools/claude.yaml
+name: "Claude Code"
+enabled: true
+
+targets:
+  agents:
+    dest: ".claude/CLAUDE.md"
+  rules:
+    dest: ".claude/rules"
+    append_imports: true
+  skills:
+    dest: ".claude/skills"
 ```
+
+See `.ai/src/tools/_TEMPLATE.yaml` for all available options (extensions, headers, filters, etc.).
+
+### Supported Tools
+
+| Tool | Config file | What's generated |
+|------|-------------|------------------|
+| Claude Code | `claude.yaml` | `.claude/CLAUDE.md`, `.claude/rules/`, `.claude/skills/` |
+| GitHub Copilot | `copilot.yaml` | `.github/copilot-instructions.md`, `.github/instructions/`, `.github/skills/` |
+| Cursor | `cursor.yaml` | `.cursor/AGENTS.md`, `.cursor/rules/*.mdc`, `.cursor/skills/` |
+| Gemini CLI | `gemini.yaml` | `.gemini/GEMINI.md`, `.gemini/prompts/`, `.gemini/skills/` |
+| OpenAI Codex | `codex.yaml` | `.codex/AGENTS.md`, `.codex/prompts/`, `.codex/skills/` |
+
+Add your own tools by copying `_TEMPLATE.yaml`.
 
 ## Git Hooks (Recommended)
 
-Install once:
-
 ```bash
-.ai/system/setup_hooks.sh
+agentsync setup-hooks
 ```
 
-This installs `post-merge` and `post-checkout` hooks that run `.ai/system/sync.sh` automatically.
+Installs `post-merge` and `post-checkout` hooks. Your instructions auto-sync whenever you `git pull` or switch branches.
 
-## Gitignore Behavior
+## Gitignore
 
-`sync.sh` updates the block between:
+`agentsync sync` automatically manages a block in `.gitignore` for generated files:
 
-- `# --- AI SYNC GENERATED START ---`
-- `# --- AI SYNC GENERATED END ---`
+```
+# --- AI SYNC GENERATED START ---
+# Automatically generated by .ai/system/sync.sh
+.claude/CLAUDE.md
+.claude/rules/
+.claude/skills/
+...
+# --- AI SYNC GENERATED END ---
+```
 
-This block is rebuilt from enabled tool targets in `.ai/src/tools/*.yaml`.
+## Uninstall
 
-## Documentation Map
+```bash
+rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync
+```
 
-- Authoring rules and conventions: `.ai/README.md`
-- Sync engine details and YAML schema: `.ai/system/README.md`
+## Documentation
+
+- Authoring guide: `.ai/README.md`
+- Sync engine & YAML schema: `.ai/system/README.md`
 
 ---
 
