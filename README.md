@@ -187,7 +187,11 @@ Installs `post-merge` and `post-checkout` hooks. Your instructions auto-sync whe
 
 ```bash
 rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync
+# If installed to ~/.local/bin instead:
+# rm -rf ~/.agentsync && rm -f ~/.local/bin/agentsync
 ```
+
+Remove the `AGENTSYNC_HOME` line from your shell config (`~/.zshrc` or `~/.bashrc`) if present.
 
 ## Documentation
 

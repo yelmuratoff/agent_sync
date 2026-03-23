@@ -4,7 +4,7 @@
 #
 # What it does:
 #   1. Clones the AgentSync engine to ~/.agentsync/
-#   2. Creates a symlink: /usr/local/bin/agentsync → ~/.agentsync/bin/agentsync
+#   2. Creates a symlink: /usr/local/bin/agentsync → ~/.agentsync/agent/bin/agentsync
 #
 # To uninstall:
 #   rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync

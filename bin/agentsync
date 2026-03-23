@@ -317,7 +317,7 @@ CFG_EOF
     for f in "$ai_dir/src/tools/"*.yaml; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == _* ]] && continue
-        ((tool_count++))
+        tool_count=$((tool_count + 1))
     done
 
     echo "$(_green "Done!") Initialized with $tool_count tool(s)."
@@ -382,7 +382,7 @@ cmd_list() {
         else
             echo "    $(_dim "○") $(_dim "$name") $(_dim "($basename.yaml) — disabled")"
         fi
-        ((count++))
+        count=$((count + 1))
     done
 
     echo ""
