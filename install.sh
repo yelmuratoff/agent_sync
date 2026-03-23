@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AgentSync Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash
 #
 # What it does:
 #   1. Clones the AgentSync engine to ~/.agentsync/

@@ -29,7 +29,7 @@ AgentSync keeps your AI agent instructions in **one place** and syncs them to ev
 ### Install (one command)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash
 ```
 
 This installs the `agentsync` CLI globally. Requirements: `git` and `bash`.

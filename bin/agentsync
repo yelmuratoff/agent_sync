@@ -6,25 +6,46 @@ set -euo pipefail
 
 readonly VERSION="0.1.0"
 
+# Resolve the real path of this script, following symlinks.
+resolve_script_real_dir() {
+    local source="${BASH_SOURCE[0]}"
+    # Follow symlinks (portable: works on macOS without GNU readlink)
+    while [[ -L "$source" ]]; do
+        local link_dir
+        link_dir="$(cd "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        # If source is relative, resolve against link directory
+        [[ "$source" != /* ]] && source="$link_dir/$source"
+    done
+    cd "$(dirname "$source")" && pwd
+}
+
 # Resolve the engine's system directory.
 # Priority:
 #   1. AGENTSYNC_HOME env var (global install)
-#   2. Relative to this script (repo-local install)
+#   2. Relative to this script's real path (follows symlinks)
+#   3. .ai/system in current working directory
 resolve_system_dir() {
-    # Global install: ~/.agentsync/.ai/system
+    # Global install: $AGENTSYNC_HOME/.ai/system
     if [[ -n "${AGENTSYNC_HOME:-}" ]] && [[ -d "$AGENTSYNC_HOME/.ai/system" ]]; then
         echo "$AGENTSYNC_HOME/.ai/system"
         return 0
     fi
 
-    # Repo-local: script lives in <repo>/bin/agentsync → <repo>/.ai/system
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local repo_root
-    repo_root="$(cd "$script_dir/.." && pwd)"
+    # Resolve symlinks: script lives in <engine>/bin/agentsync → <engine>/.ai/system
+    local real_script_dir
+    real_script_dir="$(resolve_script_real_dir)"
+    local engine_root
+    engine_root="$(cd "$real_script_dir/.." && pwd)"
 
-    if [[ -d "$repo_root/.ai/system" ]]; then
-        echo "$repo_root/.ai/system"
+    if [[ -d "$engine_root/.ai/system" ]]; then
+        echo "$engine_root/.ai/system"
+        return 0
+    fi
+
+    # Fallback: current working directory
+    if [[ -d "$(pwd)/.ai/system" ]]; then
+        echo "$(pwd)/.ai/system"
         return 0
     fi
 
@@ -376,21 +397,16 @@ cmd_engine() {
 
     local system_dir=""
     system_dir=$(resolve_system_dir) || {
-        # Fallback: look in current project
-        local project_dir="${AGENTSYNC_REPO_ROOT:-.}"
-        if [[ -d "$project_dir/.ai/system" ]]; then
-            system_dir="$project_dir/.ai/system"
-        else
-            echo "$(_red "Error"): Sync engine not found." >&2
-            echo "" >&2
-            echo "Expected one of:" >&2
-            echo "  - \$AGENTSYNC_HOME/.ai/system/" >&2
-            echo "  - .ai/system/ in current project" >&2
-            echo "" >&2
-            echo "Run $(_cyan "agentsync init") or install AgentSync globally:" >&2
-            echo "  curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/install.sh | bash" >&2
-            exit 1
-        fi
+        echo "$(_red "Error"): Sync engine not found." >&2
+        echo "" >&2
+        echo "Looked in:" >&2
+        echo "  1. \$AGENTSYNC_HOME/.ai/system/" >&2
+        echo "  2. Relative to agentsync script (following symlinks)" >&2
+        echo "  3. $(pwd)/.ai/system/" >&2
+        echo "" >&2
+        echo "Run $(_cyan "agentsync init") or install AgentSync globally:" >&2
+        echo "  curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash" >&2
+        exit 1
     }
 
     local script_path="$system_dir/$script_name"
