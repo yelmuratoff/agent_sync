@@ -12,7 +12,7 @@
 set -euo pipefail
 
 readonly REPO_URL="https://github.com/yelmuratoff/agent_sync.git"
-readonly INSTALL_DIR="${AGENTSYNC_HOME:-$HOME/.agentsync}"
+readonly INSTALL_DIR="$HOME/.agentsync"
 readonly BIN_NAME="agentsync"
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
