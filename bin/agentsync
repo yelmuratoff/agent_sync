@@ -1,10 +1,30 @@
 #!/usr/bin/env bash
 # AgentSync CLI — single entry point for all operations.
-# https://github.com/yelmuratoff/agent_sync
+# https://github.com/yelmuratoff/agent
 
 set -euo pipefail
 
-readonly VERSION="0.1.0"
+# ─── Version ─────────────────────────────────────────────────────────────────
+# Read version from VERSION file (relative to engine root).
+_resolve_version() {
+    local source="${BASH_SOURCE[0]}"
+    while [[ -L "$source" ]]; do
+        local link_dir
+        link_dir="$(cd "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ "$source" != /* ]] && source="$link_dir/$source"
+    done
+    local script_dir
+    script_dir="$(cd "$(dirname "$source")" && pwd)"
+    local version_file="$script_dir/../VERSION"
+    if [[ -f "$version_file" ]]; then
+        read -r VERSION < "$version_file"
+    else
+        VERSION="0.0.0-dev"
+    fi
+}
+_resolve_version
+readonly VERSION
 
 # Resolve the real path of this script, following symlinks.
 resolve_script_real_dir() {
@@ -83,6 +103,7 @@ print_usage() {
     echo "    $(_cyan "check")          Verify outputs are in sync with source"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "list")           Show available tools and their status"
+    echo "    $(_cyan "update")         Update AgentSync to the latest version"
     echo "    $(_cyan "version")        Print version"
     echo "    $(_cyan "help")           Show this message"
     echo ""
@@ -99,7 +120,7 @@ print_usage() {
     echo "    agentsync check"
     echo ""
     echo "  $(_green "DOCS")"
-    _dim  "    https://github.com/yelmuratoff/agent_sync"; echo ""
+    _dim  "    https://github.com/yelmuratoff/agent"; echo ""
     echo ""
 }
 
@@ -403,7 +424,7 @@ cmd_engine() {
         echo "  3. $(pwd)/.ai/system/" >&2
         echo "" >&2
         echo "Run $(_cyan "agentsync init") or install AgentSync globally:" >&2
-        echo "  curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash" >&2
+        echo "  curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2
         exit 1
     }
 
@@ -419,9 +440,164 @@ cmd_engine() {
     bash "$script_path" "$@"
 }
 
+# ─── Update ──────────────────────────────────────────────────────────────────
+readonly AGENTSYNC_REPO="yelmuratoff/agent"
+readonly UPDATE_CHECK_INTERVAL=86400  # 24 hours in seconds
+
+# Resolve the install directory (~/.agentsync or wherever the engine lives)
+_resolve_install_dir() {
+    if [[ -n "${AGENTSYNC_HOME:-}" ]] && [[ -d "$AGENTSYNC_HOME/.git" ]]; then
+        echo "$AGENTSYNC_HOME"
+        return 0
+    fi
+
+    local real_script_dir
+    real_script_dir="$(resolve_script_real_dir)"
+    local engine_root
+    engine_root="$(cd "$real_script_dir/.." && pwd)"
+
+    if [[ -d "$engine_root/.git" ]]; then
+        echo "$engine_root"
+        return 0
+    fi
+
+    return 1
+}
+
+cmd_update() {
+    local install_dir
+    install_dir=$(_resolve_install_dir 2>/dev/null) || {
+        echo "$(_red "Error"): AgentSync installation not found." >&2
+        echo "Install globally first:" >&2
+        echo "  curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2
+        exit 1
+    }
+
+    echo ""
+    _bold "  AgentSync Update"; echo ""
+    echo ""
+
+    local old_version="$VERSION"
+
+    echo "  Checking for updates..."
+    cd "$install_dir"
+
+    # Fetch latest changes
+    if ! git fetch --quiet --tags origin main 2>/dev/null; then
+        echo "  $(_red "Error"): Failed to fetch updates. Check your network connection." >&2
+        exit 1
+    fi
+
+    local local_head remote_head
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse origin/main)
+
+    if [[ "$local_head" == "$remote_head" ]]; then
+        echo "  $(_green "Already up to date!") (v${VERSION})"
+        echo ""
+        _update_check_timestamp "$install_dir"
+        return 0
+    fi
+
+    # Show what's new
+    echo ""
+    echo "  $(_cyan "Changelog:")"
+    git log --oneline "$local_head..$remote_head" | while IFS= read -r line; do
+        echo "    $(_dim "•") $line"
+    done
+    echo ""
+
+    # Pull changes
+    echo "  Updating..."
+    if ! git pull --quiet origin main 2>/dev/null; then
+        echo "  $(_red "Error"): git pull failed. Try reinstalling:" >&2
+        echo "    curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2
+        exit 1
+    fi
+
+    # Read new version
+    local new_version="$old_version"
+    if [[ -f "$install_dir/VERSION" ]]; then
+        read -r new_version < "$install_dir/VERSION"
+    fi
+
+    _update_check_timestamp "$install_dir"
+
+    echo ""
+    if [[ "$old_version" != "$new_version" ]]; then
+        echo "  $(_green "Updated!") v${old_version} → v${new_version}"
+    else
+        echo "  $(_green "Updated!") (v${new_version})"
+    fi
+    echo ""
+}
+
+# ─── Update check (background, non-blocking) ────────────────────────────────
+_update_check_timestamp() {
+    local install_dir="$1"
+    local ts_file="$install_dir/.last_update_check"
+    date +%s > "$ts_file" 2>/dev/null || true
+}
+
+_check_for_updates() {
+    # Skip in non-interactive shells or if explicitly disabled
+    [[ -t 1 ]] || return 0
+    [[ -z "${AGENTSYNC_NO_UPDATE_CHECK:-}" ]] || return 0
+
+    local install_dir
+    install_dir=$(_resolve_install_dir 2>/dev/null) || return 0
+
+    # Only check if installed via git (has .git)
+    [[ -d "$install_dir/.git" ]] || return 0
+
+    local ts_file="$install_dir/.last_update_check"
+    local now
+    now=$(date +%s)
+
+    # Check if enough time has passed since last check
+    if [[ -f "$ts_file" ]]; then
+        local last_check
+        read -r last_check < "$ts_file" 2>/dev/null || last_check=0
+        local elapsed=$(( now - last_check ))
+        if (( elapsed < UPDATE_CHECK_INTERVAL )); then
+            return 0
+        fi
+    fi
+
+    # Fetch latest tag from GitHub API (with 3s timeout, silent fail)
+    local latest_tag
+    latest_tag=$(curl -sf --max-time 3 \
+        "https://api.github.com/repos/$AGENTSYNC_REPO/tags?per_page=1" \
+        2>/dev/null | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1) || true
+
+    # Update timestamp regardless of result (avoid hammering API on failures)
+    _update_check_timestamp "$install_dir"
+
+    if [[ -z "$latest_tag" ]]; then
+        return 0
+    fi
+
+    # Compare versions (simple string comparison — works for semver)
+    if [[ "$latest_tag" != "$VERSION" ]] && [[ "$(printf '%s\n%s' "$VERSION" "$latest_tag" | sort -V | tail -1)" == "$latest_tag" ]]; then
+        echo ""
+        echo "  ╭──────────────────────────────────────────────╮"
+        echo "  │  $(_yellow "Update available"): $(_dim "v${VERSION}") → $(_green "v${latest_tag}")              │"
+        echo "  │  Run: $(_cyan "agentsync update")                        │"
+        echo "  ╰──────────────────────────────────────────────╯"
+        echo ""
+    fi
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
     local command="${1:-help}"
+
+    # Run update check for interactive commands (not version/help/update itself)
+    case "$command" in
+        sync|init|check|list|ls|setup-hooks)
+            _check_for_updates
+            ;;
+    esac
 
     case "$command" in
         init)
@@ -439,6 +615,9 @@ main() {
         setup-hooks)
             shift
             cmd_engine "setup_hooks.sh" "$@"
+            ;;
+        update)
+            cmd_update
             ;;
         list|ls)
             cmd_list
