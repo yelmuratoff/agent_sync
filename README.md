@@ -1,15 +1,15 @@
 <div align="center">
-  <img src="https://github.com/yelmuratoff/agent_sync/blob/main/assets/agent_sync.png?raw=true" width="400">
+  <img src="https://github.com/yelmuratoff/agent_sync_dart/blob/main/assets/agent_sync.png?raw=true" width="400">
 
   <p>
-    <a href="https://github.com/yelmuratoff/agent_sync">
+    <a href="https://github.com/yelmuratoff/agent_sync_dart">
       <img src="https://img.shields.io/badge/shell-bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white" alt="Built with Bash">
     </a>
     <a href="https://opensource.org/licenses/MIT">
       <img src="https://img.shields.io/badge/license-mit-4EAA25?style=for-the-badge" alt="License">
     </a>
-    <a href="https://github.com/yelmuratoff/agent_sync">
-      <img src="https://img.shields.io/github/stars/yelmuratoff/agent_sync?style=for-the-badge&logo=github&color=4EAA25" alt="GitHub stars">
+    <a href="https://github.com/yelmuratoff/agent_sync_dart">
+      <img src="https://img.shields.io/github/stars/yelmuratoff/agent_sync_dart?style=for-the-badge&logo=github&color=4EAA25" alt="GitHub stars">
     </a>
   </p>
 </div>
@@ -41,7 +41,7 @@ Each AI tool expects instructions in its own format and directory (`.claude/`, `
 Requirements: `git`, `bash`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync_dart/main/agent/install.sh | bash
 ```
 
 What the installer does:
@@ -427,7 +427,7 @@ Remove the `AI SYNC GENERATED` block from `.gitignore`.
 ---
 
 <div align="center">
-  <a href="https://github.com/yelmuratoff/agent_sync/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=yelmuratoff/agent_sync" />
+  <a href="https://github.com/yelmuratoff/agent_sync_dart/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=yelmuratoff/agent_sync_dart" />
   </a>
 </div>
