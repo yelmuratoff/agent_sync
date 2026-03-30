@@ -91,6 +91,9 @@ print_usage() {
     echo "    agentsync sync --only claude,cursor"
     echo "    agentsync sync --dry-run"
     echo "    agentsync check"
+    echo "    agentsync generate"
+    echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
+    echo "    agentsync generate | pbcopy"
     echo ""
     echo "  $(_green "DOCS")"
     _dim  "    https://github.com/yelmuratoff/agent"; echo ""
@@ -142,7 +145,7 @@ main() {
         sync)          shift; cmd_engine "sync.sh" "$@" ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
-        generate|gen)  cmd_generate ;;
+        generate|gen)  shift; cmd_generate "$*" ;;
         update)        cmd_update ;;
         list|ls)       cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;

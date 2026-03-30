@@ -1,42 +1,49 @@
-You are helping me configure AI agent instructions for my project using AgentSync.
+I need you to generate AI agent configuration files for my project using the AgentSync format.
 
-AgentSync stores all AI instructions in `.ai/src/` and distributes them to tool-specific directories (Claude, Cursor, Copilot, Gemini, Codex) via `agentsync sync`.
+AgentSync keeps all AI instructions in `.ai/src/` and distributes them to tool-specific directories (Claude, Cursor, Copilot, Gemini, Codex) via `agentsync sync`. Your job is to study my project and produce tailored, specific configuration.
 
-## Your Task
+## How to start
 
-Analyze this project's codebase and generate tailored content for the following files. Study the code, architecture, dependencies, conventions, and patterns before writing anything.
+If I haven't provided project context above, start by analyzing the codebase:
+- Read the project structure, entry points, config files (`package.json`, `pubspec.yaml`, `go.mod`, `Cargo.toml`, etc.)
+- Identify the tech stack, frameworks, and key dependencies
+- Study existing code patterns: architecture, naming, error handling, testing
+- Check for existing linter configs, CI pipelines, and documentation
 
-## What to Generate
+If I provided a URL, description, or specific topic — use that as context for generation.
+
+## What to generate
 
 ### 1. `.ai/src/AGENTS.md` — Agent Identity
 
-This is the main file describing who the AI agent is for this project. Write it specifically for this codebase:
-- What role should the agent play? (e.g., "Senior React Engineer", "Backend Go Developer")
-- What's the project's tech stack?
-- What approach should the agent follow when working in this codebase?
-- What principles matter most for this project?
-- What should the agent never do in this project?
+The main file describing who the AI agent is. Be specific to this project:
+- Role (e.g., "Senior React/TypeScript Engineer", "Backend Go Developer")
+- Tech stack summary
+- Approach: how the agent should work in this codebase (study → plan → implement → verify)
+- Key principles specific to this project
+- What the agent must never do
 
-Keep it under 60 lines. Every sentence should change how the agent behaves. No generic advice.
+Under 60 lines. Every sentence should change behavior. No generic filler.
 
 ### 2. `.ai/src/rules/` — Always-On Constraints
 
-Create one `.md` file per concern. Rules are short, imperative, and specific to this project. Examples of good rule files:
-- `architecture.md` — layer boundaries, dependency direction, module structure
-- `testing.md` — what to test, how to test, what framework/style to use
-- `code-style.md` — naming, formatting, patterns specific to this project
-- `security.md` — project-specific security requirements
+One `.md` file per topic. Rules are short, imperative, specific to this project.
+
+Create only what's relevant. Possible files:
+- `architecture.md` — layers, boundaries, dependency direction, module structure
+- `testing.md` — what to test, frameworks, patterns, coverage expectations
+- `code-style.md` — naming, formatting, idioms specific to this stack
 - `error-handling.md` — how errors are handled in this codebase
-- `dependencies.md` — package management conventions
+- `security.md` — project-specific security requirements
+- `dependencies.md` — how packages are managed
+- `git.md` — commit style, branching, PR conventions
 
-Only create rules that are relevant to this project. Don't generate rules for things that don't apply.
-
-Each rule file format:
+Format:
 ```markdown
 # Topic Rules
 
 ## Section
-- Specific, imperative constraint.
+- Specific imperative constraint.
 - Another constraint.
 
 ## Anti-Patterns
@@ -45,36 +52,32 @@ Each rule file format:
 
 ### 3. `.ai/src/skills/` — On-Demand Recipes
 
-Create skill directories for common workflows in this project. Each skill is a directory with a `SKILL.md` file.
+Each skill = a directory with `SKILL.md`. Think about what developers do repeatedly:
+- Adding a feature/module following the project's architecture
+- Writing tests using the project's test setup
+- Creating API endpoints, database migrations, deployments
+- Any project-specific workflow
 
-Think about what developers do repeatedly in this project:
-- Adding a new feature/module (following the project's architecture)
-- Writing tests (using the project's test setup)
-- Creating API endpoints (if applicable)
-- Database migrations (if applicable)
-- Deployment steps (if applicable)
-
-Each SKILL.md format:
+Format:
 ```markdown
 ---
 name: skill-name
-description: One sentence describing when to use this skill.
+description: One sentence — when to use this skill.
 ---
 
 # Skill Name
 
 ## When to use
-[When this skill applies]
+[Trigger condition]
 
 ## Steps
-1. [Concrete step with actual commands/file paths from this project]
+1. [Concrete step with real commands/paths from this project]
 2. [Next step]
-...
 ```
 
-## Output Format
+## Output format
 
-Output each file with its path as a header:
+Output each file with its full path as a header:
 
 ### `.ai/src/AGENTS.md`
 ```markdown
@@ -91,9 +94,10 @@ Output each file with its path as a header:
 [content]
 ```
 
-## Important
+## Critical rules
 
-- Be specific to THIS project. Reference actual file paths, commands, frameworks, and patterns you see.
-- Don't generate generic advice. If you can't find evidence of a pattern in the code, don't write a rule about it.
-- Keep rules short and scannable. Prefer 5 specific rules over 20 vague ones.
-- Skills should include real commands and paths from this project, not placeholders.
+- Be specific to THIS project. Use real file paths, real commands, real patterns.
+- If you don't see evidence of something in the code, don't write a rule about it.
+- 5 specific rules > 20 vague rules. Quality over quantity.
+- Skills must have real commands and paths, not placeholders.
+- Don't generate rules that just restate language defaults or framework documentation.
