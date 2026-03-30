@@ -1,0 +1,7 @@
+# Tabnine Configuration
+name: "Tabnine"
+enabled: true
+
+targets:
+  rules:
+    dest: ".tabnine/guidelines"

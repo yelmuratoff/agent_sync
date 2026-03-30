@@ -1,13 +1,12 @@
 # Gemini CLI Configuration
+# Gemini uses hierarchical GEMINI.md files for instructions
+# Commands use .toml format (not supported by agentsync yet)
 name: "Gemini CLI"
 enabled: true
 
 targets:
   agents:
     dest: ".gemini/GEMINI.md"
-
-  rules:
-    dest: ".gemini/prompts"
 
   skills:
     dest: ".gemini/skills"

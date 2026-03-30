@@ -1,0 +1,7 @@
+# Augment Code Configuration
+name: "Augment Code"
+enabled: true
+
+targets:
+  rules:
+    dest: ".augment/rules"

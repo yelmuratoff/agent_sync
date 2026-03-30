@@ -1,0 +1,11 @@
+# Devin Configuration
+# Devin reads AGENTS.md from project root
+name: "Devin"
+enabled: true
+
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  skills:
+    dest: ".devin/skills"

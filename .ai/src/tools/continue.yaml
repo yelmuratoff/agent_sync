@@ -1,0 +1,9 @@
+# Continue.dev Configuration
+# Continue reads .continuerules file from project root (single file)
+name: "Continue"
+enabled: true
+
+targets:
+  rules:
+    dest: ".continuerules"
+    merge_to_file: true

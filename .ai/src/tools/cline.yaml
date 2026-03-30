@@ -1,0 +1,8 @@
+# Cline (VS Code) Configuration
+# Rules in .clinerules/ directory, .md files auto-concatenated
+name: "Cline"
+enabled: true
+
+targets:
+  rules:
+    dest: ".clinerules"

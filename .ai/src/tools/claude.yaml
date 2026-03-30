@@ -13,3 +13,17 @@ targets:
 
   skills:
     dest: ".claude/skills"
+
+  commands:
+    dest: ".claude/commands"
+
+  subagents:
+    dest: ".claude/agents"
+
+  settings:
+    source: ".ai/src/settings/claude.json"
+    dest: ".claude/settings.json"
+
+  mcp:
+    source: ".ai/src/mcp/claude.json"
+    dest: ".claude/.mcp.json"

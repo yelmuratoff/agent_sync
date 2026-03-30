@@ -1,13 +1,11 @@
 # OpenAI Codex Configuration
+# Codex reads AGENTS.md from project root, not from .codex/
 name: "OpenAI Codex"
 enabled: true
 
 targets:
   agents:
-    dest: ".codex/AGENTS.md"
-
-  rules:
-    dest: ".codex/prompts"
+    dest: "AGENTS.md"
 
   skills:
-    dest: ".codex/skills"
+    dest: ".agents/skills"

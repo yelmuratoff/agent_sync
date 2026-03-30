@@ -1,0 +1,11 @@
+# Amp (Sourcegraph) Configuration
+# Amp reads AGENTS.md from project root
+name: "Amp"
+enabled: true
+
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  skills:
+    dest: ".agents/skills"

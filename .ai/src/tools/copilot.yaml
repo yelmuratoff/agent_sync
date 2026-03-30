@@ -14,3 +14,11 @@ targets:
 
   skills:
     dest: ".github/skills"
+
+  commands:
+    dest: ".github/prompts"
+    extension: ".prompt.md"
+
+  subagents:
+    dest: ".github/agents"
+    extension: ".agent.md"

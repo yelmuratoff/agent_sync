@@ -1,8 +1,8 @@
 ---
 name: agentsync
 description: >
-  Create or edit AgentSync configuration — rules, skills, AGENTS.md, or tool configs.
-  USE WHEN adding rules, creating skills, editing agent identity, configuring tools, or setting up .ai/ directory.
+  Create or edit AgentSync configuration — rules, skills, commands, agents, settings, MCP, or tool configs.
+  USE WHEN adding rules, creating skills, writing commands, defining agents, editing permissions, configuring tools, or setting up .ai/ directory.
 ---
 
 # Working with AgentSync
@@ -20,6 +20,15 @@ Create and maintain AI agent instructions in the AgentSync format.
 ├── skills/                     # On-demand recipes (one directory per skill)
 │   └── deploy/
 │       └── SKILL.md
+├── commands/                   # Custom slash commands (.md files)
+│   ├── review.md
+│   └── fix-issue.md
+├── agents/                     # Subagent personas (.md files)
+│   └── code-reviewer.md
+├── settings/                   # Tool-specific permissions (JSON)
+│   └── claude.json
+├── mcp/                        # MCP server configs (JSON)
+│   └── claude.json
 └── tools/                      # Tool configs (claude.yaml, cursor.yaml, etc.)
 ```
 
@@ -61,10 +70,12 @@ Always include `USE WHEN` with concrete trigger conditions.
 
 ```yaml
 ---
-name: skill-name                # Required. Lowercase, kebab-case.
-description: >                  # Required. Trigger description with USE WHEN clause.
+name: skill-name # Required. Lowercase, kebab-case.
+description: > # Required. Trigger description with USE WHEN clause.
   What this skill does.
   USE WHEN [concrete trigger conditions].
+
+
 # Optional fields (tool-specific, passed through by agentsync):
 # context: fork                 # Run in isolated subagent (Claude Code)
 # allowed-tools: [Read, Grep]   # Limit available tools (Claude Code)
@@ -86,10 +97,12 @@ description: >
 [One line: what this skill does and when.]
 
 ## Steps
+
 1. [Concrete numbered steps]
 2. [With real commands and paths]
 
 ## Gotchas
+
 - [Every mistake the agent has made using this skill]
 - [Edge cases and common pitfalls]
 ```
@@ -101,6 +114,80 @@ This is the highest-signal content. Every time the agent makes a mistake, add it
 ### Rule of Three
 
 Don't create a skill for everything. If you've done something three times manually, then create a skill.
+
+## Writing Commands
+
+Custom slash commands. Each `.md` file in `.ai/src/commands/` becomes a command (e.g., `review.md` → `/project:review`).
+
+```markdown
+---
+description: What this command does (shown in command list)
+argument-hint: "<optional-arg>"
+---
+
+[Prompt content with instructions for the AI.]
+```
+
+Key features:
+
+- `$ARGUMENTS` — replaced with text after the command name.
+- `` !`shell command` `` — runs a shell command and embeds output into the prompt.
+- Keep commands focused — one workflow per command.
+- Good commands: `review`, `fix-issue`, `deploy`, `migrate`.
+
+## Writing Agents (Subagent Personas)
+
+Specialized AI personas in `.ai/src/agents/`. Each `.md` file defines an agent with its own system prompt and tool restrictions.
+
+```markdown
+---
+name: code-reviewer
+description: >
+  Expert code reviewer. USE PROACTIVELY when reviewing PRs or validating implementations.
+model: sonnet # Cheaper model for focused tasks
+tools: [Read, Grep, Glob] # Restrict to read-only tools
+---
+
+You are a senior code reviewer...
+```
+
+Guidelines:
+
+- Restrict `tools` to what the agent actually needs. Read-only agents shouldn't have Write.
+- Use `model: sonnet` or `model: haiku` for focused tasks to save cost.
+- Only create agents for distinct specializations — don't duplicate what skills already do.
+
+## Settings & Permissions
+
+Tool-specific settings in `.ai/src/settings/`. Each file is named after the tool and copied directly.
+
+Example `claude.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Read", "Write", "Edit"],
+    "deny": ["Bash(rm -rf *)", "Read(.env)"]
+  }
+}
+```
+
+## MCP Configs
+
+MCP server configurations in `.ai/src/mcp/`. Each file is named after the tool.
+
+Example `claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-playwright"]
+    }
+  }
+}
+```
 
 ## Adding a New Tool
 
@@ -114,3 +201,5 @@ Don't create a skill for everything. If you've done something three times manual
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Don't create overlapping skills — if two skills could trigger on the same task, merge them or make descriptions mutually exclusive.
+- Commands and agents only work in tools that support them (Claude, Gemini for commands; Claude, Copilot for agents).
+- Settings and MCP files are per-tool — each tool has its own format.

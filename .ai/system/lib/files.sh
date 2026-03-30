@@ -185,6 +185,53 @@ append_imports() {
     } >> "$agents_file"
 }
 
+# Merge all rule files into a single output file
+# Usage: merge_rules_to_file "src_dir" "dest_file" "dry_run" "include" "exclude"
+merge_rules_to_file() {
+    local src_dir="$1"
+    local dest_file="$2"
+    local dry_run="${3:-false}"
+    local include="${4:-}"
+    local exclude="${5:-}"
+
+    if [[ ! -d "$src_dir" ]]; then
+        log_warning "Rules source not found: $src_dir"
+        return 1
+    fi
+
+    local files_to_merge=()
+    for src_file in "$src_dir"/*.md; do
+        [[ -f "$src_file" ]] || continue
+        local basename
+        basename=$(basename "$src_file")
+        if matches_filter "$basename" "$include" "$exclude"; then
+            files_to_merge+=("$src_file")
+        fi
+    done
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged) (dry-run)"
+        return 0
+    fi
+
+    ensure_dir "$(dirname "$dest_file")"
+    rm -f "$dest_file" 2>/dev/null || true
+
+    local first=true
+    for src_file in "${files_to_merge[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            echo "" >> "$dest_file"
+            echo "---" >> "$dest_file"
+            echo "" >> "$dest_file"
+        fi
+        cat "$src_file" >> "$dest_file"
+    done
+
+    log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged)"
+}
+
 # Check if file matches include/exclude patterns
 # Usage: matches_filter "filename" "include_glob" "exclude_glob"
 matches_filter() {

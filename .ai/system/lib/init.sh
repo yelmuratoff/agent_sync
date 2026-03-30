@@ -24,6 +24,10 @@ cmd_init() {
 
     mkdir -p "$ai_dir/src/rules"
     mkdir -p "$ai_dir/src/skills"
+    mkdir -p "$ai_dir/src/commands"
+    mkdir -p "$ai_dir/src/agents"
+    mkdir -p "$ai_dir/src/settings"
+    mkdir -p "$ai_dir/src/mcp"
     mkdir -p "$ai_dir/src/tools"
     mkdir -p "$ai_dir/system"
 
@@ -50,6 +54,38 @@ cmd_init() {
             mkdir -p "$ai_dir/src/skills/$skill_name"
             cp "$skill_dir"* "$ai_dir/src/skills/$skill_name/" 2>/dev/null || true
         done
+
+        # Commands
+        if [[ -d "$templates_dir/commands" ]]; then
+            for cmd_file in "$templates_dir/commands/"*.md; do
+                [[ -f "$cmd_file" ]] || continue
+                cp "$cmd_file" "$ai_dir/src/commands/"
+            done
+        fi
+
+        # Agents (subagent personas)
+        if [[ -d "$templates_dir/agents" ]]; then
+            for agent_file in "$templates_dir/agents/"*.md; do
+                [[ -f "$agent_file" ]] || continue
+                cp "$agent_file" "$ai_dir/src/agents/"
+            done
+        fi
+
+        # Settings
+        if [[ -d "$templates_dir/settings" ]]; then
+            for settings_file in "$templates_dir/settings/"*; do
+                [[ -f "$settings_file" ]] || continue
+                cp "$settings_file" "$ai_dir/src/settings/"
+            done
+        fi
+
+        # MCP configs
+        if [[ -d "$templates_dir/mcp" ]]; then
+            for mcp_file in "$templates_dir/mcp/"*; do
+                [[ -f "$mcp_file" ]] || continue
+                cp "$mcp_file" "$ai_dir/src/mcp/"
+            done
+        fi
     else
         # Fallback: inline minimal templates if engine is not available
         cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
@@ -138,6 +174,18 @@ CFG_EOF
     for d in "$ai_dir/src/skills/"*/; do [[ -d "$d" ]] && skill_count=$((skill_count + 1)); done
     echo "   Created $(_cyan ".ai/src/skills/")         — $skill_count skill(s)"
 
+    local cmd_count=0
+    for f in "$ai_dir/src/commands/"*.md; do [[ -f "$f" ]] && cmd_count=$((cmd_count + 1)); done
+    if [[ $cmd_count -gt 0 ]]; then
+        echo "   Created $(_cyan ".ai/src/commands/")       — $cmd_count command(s)"
+    fi
+
+    local agent_count=0
+    for f in "$ai_dir/src/agents/"*.md; do [[ -f "$f" ]] && agent_count=$((agent_count + 1)); done
+    if [[ $agent_count -gt 0 ]]; then
+        echo "   Created $(_cyan ".ai/src/agents/")         — $agent_count agent(s)"
+    fi
+
     local tool_count=0
     for f in "$ai_dir/src/tools/"*.yaml; do
         [[ -f "$f" ]] || continue
@@ -164,70 +212,129 @@ _init_fallback_tools() {
     cat > "$ai_dir/src/tools/claude.yaml" << 'EOF'
 name: "Claude Code"
 enabled: true
-
 targets:
-  agents:
-    dest: ".claude/CLAUDE.md"
-  rules:
-    dest: ".claude/rules"
-    append_imports: true
-  skills:
-    dest: ".claude/skills"
+  agents: { dest: ".claude/CLAUDE.md" }
+  rules: { dest: ".claude/rules", append_imports: true }
+  skills: { dest: ".claude/skills" }
+  commands: { dest: ".claude/commands" }
+  subagents: { dest: ".claude/agents" }
 EOF
 
     cat > "$ai_dir/src/tools/copilot.yaml" << 'EOF'
 name: "GitHub Copilot"
 enabled: true
-
 targets:
-  agents:
-    dest: ".github/copilot-instructions.md"
-  rules:
-    dest: ".github/instructions"
-    extension: ".instructions.md"
-    header: "---\napplyTo: '**'\n---"
-  skills:
-    dest: ".github/skills"
+  agents: { dest: ".github/copilot-instructions.md" }
+  rules: { dest: ".github/instructions", extension: ".instructions.md", header: "---\napplyTo: '**'\n---" }
+  skills: { dest: ".github/skills" }
+  commands: { dest: ".github/prompts", extension: ".prompt.md" }
+  subagents: { dest: ".github/agents", extension: ".agent.md" }
 EOF
 
     cat > "$ai_dir/src/tools/cursor.yaml" << 'EOF'
 name: "Cursor"
 enabled: true
-
 targets:
-  agents:
-    dest: ".cursor/AGENTS.md"
-  rules:
-    dest: ".cursor/rules"
-    extension: ".mdc"
-    header: "---\nglobs: '**/*'\nalwaysApply: true\n---"
-  skills:
-    dest: ".cursor/skills"
+  agents: { dest: ".cursor/AGENTS.md" }
+  rules: { dest: ".cursor/rules", extension: ".mdc", header: "---\nglobs: '**/*'\nalwaysApply: true\n---" }
+  skills: { dest: ".cursor/skills" }
 EOF
 
     cat > "$ai_dir/src/tools/gemini.yaml" << 'EOF'
 name: "Gemini CLI"
 enabled: true
-
 targets:
-  agents:
-    dest: ".gemini/GEMINI.md"
-  rules:
-    dest: ".gemini/prompts"
-  skills:
-    dest: ".gemini/skills"
+  agents: { dest: ".gemini/GEMINI.md" }
+  skills: { dest: ".gemini/skills" }
 EOF
 
     cat > "$ai_dir/src/tools/codex.yaml" << 'EOF'
 name: "OpenAI Codex"
 enabled: true
-
 targets:
-  agents:
-    dest: ".codex/AGENTS.md"
-  rules:
-    dest: ".codex/prompts"
-  skills:
-    dest: ".codex/skills"
+  agents: { dest: "AGENTS.md" }
+  skills: { dest: ".agents/skills" }
+EOF
+
+    cat > "$ai_dir/src/tools/windsurf.yaml" << 'EOF'
+name: "Windsurf"
+enabled: true
+targets:
+  agents: { dest: ".windsurf/AGENTS.md" }
+  rules: { dest: ".windsurf/rules", header: "---\ntrigger: always_on\n---" }
+  skills: { dest: ".windsurf/skills" }
+EOF
+
+    cat > "$ai_dir/src/tools/junie.yaml" << 'EOF'
+name: "JetBrains Junie"
+enabled: true
+targets:
+  agents: { dest: ".junie/guidelines.md" }
+  rules: { dest: ".junie/guidelines" }
+EOF
+
+    cat > "$ai_dir/src/tools/amp.yaml" << 'EOF'
+name: "Amp"
+enabled: true
+targets:
+  agents: { dest: "AGENTS.md" }
+  skills: { dest: ".agents/skills" }
+EOF
+
+    cat > "$ai_dir/src/tools/aider.yaml" << 'EOF'
+name: "Aider"
+enabled: true
+targets:
+  rules: { dest: "CONVENTIONS.md", merge_to_file: true }
+EOF
+
+    cat > "$ai_dir/src/tools/cline.yaml" << 'EOF'
+name: "Cline"
+enabled: true
+targets:
+  rules: { dest: ".clinerules" }
+EOF
+
+    cat > "$ai_dir/src/tools/amazonq.yaml" << 'EOF'
+name: "Amazon Q Developer"
+enabled: true
+targets:
+  rules: { dest: ".amazonq/rules" }
+EOF
+
+    cat > "$ai_dir/src/tools/augment.yaml" << 'EOF'
+name: "Augment Code"
+enabled: true
+targets:
+  rules: { dest: ".augment/rules" }
+EOF
+
+    cat > "$ai_dir/src/tools/devin.yaml" << 'EOF'
+name: "Devin"
+enabled: true
+targets:
+  agents: { dest: "AGENTS.md" }
+  skills: { dest: ".devin/skills" }
+EOF
+
+    cat > "$ai_dir/src/tools/tabnine.yaml" << 'EOF'
+name: "Tabnine"
+enabled: true
+targets:
+  rules: { dest: ".tabnine/guidelines" }
+EOF
+
+    cat > "$ai_dir/src/tools/zed.yaml" << 'EOF'
+name: "Zed"
+enabled: true
+targets:
+  rules: { dest: ".rules", merge_to_file: true }
+EOF
+
+    cat > "$ai_dir/src/tools/continue.yaml" << 'EOF'
+name: "Continue"
+enabled: true
+targets:
+  rules: { dest: ".continuerules", merge_to_file: true }
 EOF
 }

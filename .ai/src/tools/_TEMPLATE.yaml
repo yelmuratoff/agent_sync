@@ -32,11 +32,14 @@ targets:
     # include: "flutter-*.md"
     # exclude: "secret-*.md"
 
-    # Optional: Override source file (default is .ai/src/rules)
+    # Optional: Override source directory (default is .ai/src/rules)
     # source: ".ai/src/my-rules"
 
     # Optional: Append imports to the main AGENTS file (Claude-specific)
     # append_imports: false
+
+    # Optional: Merge all rules into a single file instead of a directory
+    # merge_to_file: false
 
   # The "Skills" directory
   skills:
@@ -49,6 +52,26 @@ targets:
 
     # Optional: Override source directory
     # source: ".ai/src/my-skills"
+
+  # Custom slash commands (optional)
+  # commands:
+  #   dest: ".tool/commands"
+  #   # extension: ".cmd.md"      # Optional: change file extension
+
+  # Subagent personas (optional)
+  # subagents:
+  #   dest: ".tool/agents"
+  #   # extension: ".agent.md"    # Optional: change file extension
+
+  # Settings/permissions (optional, file copy)
+  # settings:
+  #   source: ".ai/src/settings/tool.json"
+  #   dest: ".tool/settings.json"
+
+  # MCP server configs (optional, file copy)
+  # mcp:
+  #   source: ".ai/src/mcp/tool.json"
+  #   dest: ".tool/.mcp.json"
 
 # Optional: Command to run after sync (e.g. linter or formatter)
 # post_sync: "npx prettier --write .tool/rules/*.mdc"

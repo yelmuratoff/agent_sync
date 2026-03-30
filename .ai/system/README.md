@@ -88,6 +88,16 @@ targets:
     dest: ".tool/skills"
 ```
 
+All target types:
+
+- `targets.agents` — identity file (AGENTS.md → tool-specific name)
+- `targets.rules` — always-on constraints (per-file or merged)
+- `targets.skills` — on-demand workflows (directory per skill)
+- `targets.commands` — custom slash commands (.md files)
+- `targets.subagents` — subagent personas (.md files)
+- `targets.settings` — permissions/config (file copy, requires `source`)
+- `targets.mcp` — MCP server configs (file copy, requires `source`)
+
 Supported optional fields:
 
 - `targets.agents.source`: override AGENTS source file
@@ -96,10 +106,15 @@ Supported optional fields:
 - `targets.rules.header`: prepend text to each rule file
 - `targets.rules.include`: include glob for source rule file names
 - `targets.rules.exclude`: exclude glob for source rule file names
-- `targets.rules.append_imports`: append `@rules/...` lines into agents file (used by Claude)
+- `targets.rules.append_imports`: append `@rules/...` lines into agents file
+- `targets.rules.merge_to_file`: merge all rules into a single output file (e.g., Aider)
 - `targets.skills.source`: override skills source directory
 - `targets.skills.include`: include glob for skill folder names
 - `targets.skills.exclude`: exclude glob for skill folder names
+- `targets.commands.extension`: rename command file extension
+- `targets.subagents.extension`: rename agent file extension (e.g., `.agent.md`)
+- `targets.settings.source`: source file path (required)
+- `targets.mcp.source`: source file path (required)
 - `post_sync`: shell command run after successful sync of that tool
   - by default disabled for safety; enable explicitly with `AGENTSYNC_ALLOW_POST_SYNC=true`
 
@@ -116,10 +131,15 @@ For each `tools/*.yaml` file:
 4. Sync `agents` file.
 5. Sync `rules` with optional extension/header/filtering and differential cleanup.
 6. Sync `skills` directories with filtering and differential cleanup.
-7. Run optional `post_sync`.
-8. After all tools, update generated block in `.gitignore`.
+7. Sync `commands` (if configured).
+8. Sync `subagents` (if configured, with optional extension rename).
+9. Copy `settings` file (if configured, requires `source`).
+10. Copy `mcp` file (if configured, requires `source`).
+11. Run optional `post_sync`.
+12. After all tools, update generated block in `.gitignore`.
 
 `post_sync` safety:
+
 - default behavior skips post-sync commands
 - set `AGENTSYNC_ALLOW_POST_SYNC=true` to allow execution in trusted repositories
 - set `AGENTSYNC_SKIP_POST_SYNC=true` to force-disable post-sync (used by `check.sh`)
@@ -155,7 +175,11 @@ It inserts generated paths for all enabled tools and keeps the rest of `.gitigno
 ├── templates/            # Starter templates for init
 │   ├── AGENTS.md
 │   ├── rules/
-│   └── skills/
+│   ├── skills/
+│   ├── commands/
+│   ├── agents/
+│   ├── settings/
+│   └── mcp/
 └── prompts/
     └── generate.md       # Prompt for agentsync generate
 ```

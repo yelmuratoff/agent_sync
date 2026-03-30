@@ -1,0 +1,7 @@
+# Amazon Q Developer Configuration
+name: "Amazon Q Developer"
+enabled: true
+
+targets:
+  rules:
+    dest: ".amazonq/rules"

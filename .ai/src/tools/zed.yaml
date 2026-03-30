@@ -1,0 +1,9 @@
+# Zed Editor Configuration
+# Zed reads .rules file from project root (single file)
+name: "Zed"
+enabled: true
+
+targets:
+  rules:
+    dest: ".rules"
+    merge_to_file: true
