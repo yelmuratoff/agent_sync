@@ -62,18 +62,28 @@ Format:
 ```markdown
 ---
 name: skill-name
-description: One sentence — when to use this skill.
+description: >
+  What this skill does.
+  USE WHEN [concrete trigger conditions — be specific so the agent can match].
 ---
 
 # Skill Name
 
-## When to use
-[Trigger condition]
+[One line: what and when.]
 
 ## Steps
 1. [Concrete step with real commands/paths from this project]
 2. [Next step]
+
+## Gotchas
+- [Common mistakes and edge cases for this workflow]
+- [Things the agent might get wrong]
 ```
+
+**Critical for skills:**
+- The `description` is a TRIGGER, not a summary. The agent scans descriptions to decide which skill to use. Vague descriptions = invisible skills. Always include `USE WHEN` with specific conditions.
+- The `Gotchas` section prevents repeated mistakes. Include at least 2-3 gotchas per skill based on what could go wrong in this project.
+- Don't create a skill for everything — only for workflows that happen repeatedly.
 
 ## Output format
 

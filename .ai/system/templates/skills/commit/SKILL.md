@@ -1,30 +1,30 @@
 ---
 name: commit
-description: When writing a git commit message for staged changes.
+description: >
+  Create a well-structured git commit message for staged changes.
+  USE WHEN committing code, writing commit messages, or preparing changes for push.
 ---
 
 # Commit
 
-## When to use
-
-When the user asks to commit changes, or when you need to create a commit after completing work.
+Write a commit message that follows the project's conventions and clearly explains what changed and why.
 
 ## Steps
 
 1. Run `git diff --cached` (or `git diff` if nothing is staged) to see all changes.
-2. Run `git log --oneline -5` to understand the recent commit style in this project.
+2. Run `git log --oneline -5` to match the project's existing commit style.
 3. Analyze the changes:
    - What was added, changed, or removed?
    - Is this a feature, bug fix, refactor, docs update, or chore?
    - What is the *motivation* behind the change?
 4. Write the commit message:
-   - **First line**: imperative mood, under 72 chars, describes the *what* (e.g., `fix: prevent duplicate API calls on rapid tap`).
-   - **Body** (if needed): blank line, then explain *why* this change was made and any non-obvious decisions.
-   - Match the project's existing commit style (conventional commits, prefixes, etc.).
-5. Stage only relevant files — don't use `git add .` blindly. Exclude generated files, secrets, and unrelated changes.
+   - **First line**: imperative mood, under 72 chars (e.g., `fix: prevent duplicate API calls on rapid tap`).
+   - **Body** (if needed): blank line, then explain *why*, not *what*.
+   - Match the project's commit style (conventional commits, prefixes, etc.).
+5. Stage only relevant files. Don't `git add .` blindly — exclude generated files, secrets, unrelated changes.
 6. Create the commit.
 
-## Commit Prefixes (if the project uses conventional commits)
+## Commit Prefixes (conventional commits)
 
 - `feat:` — new functionality
 - `fix:` — bug fix
@@ -32,3 +32,10 @@ When the user asks to commit changes, or when you need to create a commit after 
 - `docs:` — documentation only
 - `test:` — adding or fixing tests
 - `chore:` — maintenance (dependencies, CI, config)
+
+## Gotchas
+
+- Don't amend the previous commit unless explicitly asked — create a new commit instead.
+- Don't include unrelated changes in the same commit. One logical change per commit.
+- Don't commit `.env`, credentials, or generated lock files unless the project expects it.
+- If a pre-commit hook fails, fix the issue and create a NEW commit — don't use `--no-verify`.

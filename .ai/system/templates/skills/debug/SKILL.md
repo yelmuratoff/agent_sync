@@ -1,36 +1,33 @@
 ---
 name: debug
-description: When investigating a bug, error, or unexpected behavior.
+description: >
+  Investigate and fix bugs, errors, or unexpected behavior.
+  USE WHEN debugging, diagnosing test failures, analyzing stack traces, or fixing runtime errors.
 ---
 
 # Debug
 
-## When to use
-
-When the user reports a bug, error message, unexpected behavior, or failing test.
+Systematically find and fix the root cause of a bug.
 
 ## Steps
 
-1. **Reproduce** — Understand exactly what happens vs. what should happen. Get the error message, stack trace, or steps to reproduce.
+1. **Reproduce** — Get the exact error message, stack trace, or steps to reproduce. Understand what happens vs. what should happen.
 2. **Locate** — Narrow down where the problem is:
-   - Read the error message and stack trace carefully — they usually point to the exact location.
-   - Search the codebase for relevant keywords (error messages, function names, variable names).
-   - Trace the data flow from input to the point of failure.
+   - Read the error message and stack trace — they usually point to the exact location.
+   - Search for relevant keywords (error strings, function names).
+   - Trace the data flow from input to the failure point.
 3. **Understand** — Before fixing, understand *why* it fails:
-   - What assumption is being violated?
-   - When was it introduced? (`git log`, `git blame` can help.)
-   - Is this a logic error, a data problem, a race condition, or a missing edge case?
+   - What assumption is violated?
+   - When was it introduced? (`git log`, `git blame`)
+   - Logic error? Data problem? Race condition? Missing edge case?
 4. **Fix** — Make the smallest change that correctly addresses the root cause.
-   - Don't patch symptoms. Fix the actual problem.
-   - If the fix is in a different layer than expected, that's fine — follow the root cause.
-5. **Verify** — Confirm the fix resolves the issue:
-   - Write or update a test that would have caught this bug.
-   - Run the existing test suite to check for regressions.
-6. **Explain** — Briefly describe what caused the bug and why the fix is correct.
+5. **Verify** — Write or update a test that catches this bug. Run the full test suite for regressions.
+6. **Explain** — Briefly describe what caused it and why the fix is correct.
 
-## Anti-Patterns
+## Gotchas
 
-- Don't add try-catch around the error to silence it.
-- Don't fix the symptom without understanding the cause.
-- Don't make speculative changes ("maybe this will fix it").
-- Don't change multiple things at once — isolate the fix.
+- Don't wrap the error in try-catch to silence it — that's hiding, not fixing.
+- Don't fix symptoms without understanding the cause.
+- Don't make speculative changes ("maybe this will fix it") — understand first.
+- Don't change multiple things at once — isolate the fix so you know what worked.
+- Don't assume the bug is where the error is thrown — trace upstream to the root cause.
