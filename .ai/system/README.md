@@ -64,10 +64,7 @@ Install git hooks:
 .ai/system/setup_hooks.sh
 ```
 
-Installed hooks try, in order:
-- `.ai/system/sync.sh`
-- `agent/.ai/system/sync.sh`
-- `dart run agent_sync:agent_sync sync --project-dir .`
+Installed hooks invoke `agentsync sync` (or `.ai/system/sync.sh` as fallback).
 
 Validation helper:
 
@@ -140,13 +137,27 @@ It inserts generated paths for all enabled tools and keeps the rest of `.gitigno
 
 ```
 .ai/system/
-├── config.yaml        # Global source path mapping
-├── sync.sh            # Main sync entrypoint
-├── setup_hooks.sh     # Installs post-merge and post-checkout hooks
-├── check.sh           # Verification helper
-├── lib/files.sh       # Copy/sync/filter operations
-├── lib/yaml.sh        # Lightweight YAML parser
-└── lib/gitignore.sh   # Generated block updater
+├── config.yaml           # Global source path mapping
+├── sync.sh               # Main sync entrypoint
+├── setup_hooks.sh        # Installs post-merge and post-checkout hooks
+├── check.sh              # Verification helper
+├── lib/
+│   ├── files.sh          # Copy/sync/filter operations
+│   ├── yaml.sh           # Lightweight YAML parser
+│   ├── gitignore.sh      # Generated block updater
+│   ├── logging.sh        # Logging utilities for sync engine
+│   ├── cli_colors.sh     # CLI color helpers
+│   ├── resolve.sh        # Path resolution (engine root, system dir)
+│   ├── init.sh           # agentsync init command
+│   ├── list.sh           # agentsync list command
+│   ├── generate.sh       # agentsync generate command
+│   └── update.sh         # agentsync update + update check
+├── templates/            # Starter templates for init
+│   ├── AGENTS.md
+│   ├── rules/
+│   └── skills/
+└── prompts/
+    └── generate.md       # Prompt for agentsync generate
 ```
 
 ## Add a New Tool
