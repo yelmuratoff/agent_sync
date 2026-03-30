@@ -101,6 +101,7 @@ print_usage() {
     echo "    $(_cyan "init")           Create .ai/ structure in current project"
     echo "    $(_cyan "sync")           Sync instructions to all enabled tools"
     echo "    $(_cyan "check")          Verify outputs are in sync with source"
+    echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "list")           Show available tools and their status"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
@@ -152,68 +153,66 @@ cmd_init() {
     mkdir -p "$ai_dir/src/tools"
     mkdir -p "$ai_dir/system"
 
-    # ── AGENTS.md (starter template) ──
-    cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
+    # ── Copy starter templates from engine ──
+    local system_dir=""
+    system_dir=$(resolve_system_dir 2>/dev/null) || true
+    local templates_dir=""
+    if [[ -n "$system_dir" ]] && [[ -d "$system_dir/templates" ]]; then
+        templates_dir="$system_dir/templates"
+    fi
+
+    if [[ -n "$templates_dir" ]]; then
+        # AGENTS.md
+        [[ -f "$templates_dir/AGENTS.md" ]] && cp "$templates_dir/AGENTS.md" "$ai_dir/src/AGENTS.md"
+
+        # Rules
+        for rule_file in "$templates_dir/rules/"*.md; do
+            [[ -f "$rule_file" ]] || continue
+            cp "$rule_file" "$ai_dir/src/rules/"
+        done
+
+        # Skills
+        for skill_dir in "$templates_dir/skills/"*/; do
+            [[ -d "$skill_dir" ]] || continue
+            local skill_name
+            skill_name=$(basename "$skill_dir")
+            mkdir -p "$ai_dir/src/skills/$skill_name"
+            cp "$skill_dir"* "$ai_dir/src/skills/$skill_name/" 2>/dev/null || true
+        done
+    else
+        # Fallback: inline minimal templates if engine is not available
+        cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
 # Project Agent
 
-You are a skilled software engineer working on this project.
-
-## Mindset
-
-- Write clean, maintainable code.
-- Follow existing project conventions.
-- Ask for clarification on ambiguous requirements.
-- Test your changes before submitting.
+You are a senior software engineer working on this project. You write clean, correct, and maintainable code.
 
 ## Approach
 
-1. **Understand** — Study the existing codebase before making changes.
-2. **Plan** — Break work into clear steps.
-3. **Implement** — Write code that follows project patterns.
-4. **Verify** — Run tests and linting.
+1. **Understand** — Read existing code. Ask questions on ambiguities.
+2. **Plan** — Break work into concrete steps.
+3. **Implement** — Follow established project patterns. Handle errors explicitly.
+4. **Verify** — Run tests, linter, and formatter.
+
+## Principles
+
+- Readability over cleverness. Explicit over implicit.
+- Change what's needed, nothing more.
+- Test what matters. No hardcoded secrets.
 AGENTS_EOF
 
-    # ── Starter rule ──
-    cat > "$ai_dir/src/rules/core.md" << 'RULE_EOF'
+        cat > "$ai_dir/src/rules/core.md" << 'RULE_EOF'
 # Core Rules
 
-## Style
-
-- Follow the project's established conventions.
+- Follow the project's established conventions and patterns.
 - Prefer readability over cleverness.
-
-## Quality
-
-- Write tests for business logic.
-- Handle errors explicitly.
-- No hardcoded secrets.
+- Handle errors explicitly. Don't swallow exceptions.
+- Write tests for business logic and error paths.
+- Never hardcode secrets, API keys, or credentials.
 RULE_EOF
-
-    # ── Starter skill ──
-    mkdir -p "$ai_dir/src/skills/example"
-    cat > "$ai_dir/src/skills/example/SKILL.md" << 'SKILL_EOF'
----
-name: example
-description: Example skill template — replace with your own.
----
-
-# Example Skill
-
-## When to use
-
-When you need a reference for how skills are structured.
-
-## Steps
-
-1. Create a directory under `.ai/src/skills/<name>/`.
-2. Add a `SKILL.md` with frontmatter (name, description).
-3. Write step-by-step instructions for the AI agent.
-SKILL_EOF
+    fi
 
     # ── Tool configs ──
-    # Try to copy tool templates from the engine if available
-    local system_dir=""
-    system_dir=$(resolve_system_dir 2>/dev/null) || true
+    # system_dir is already resolved above for templates
     local engine_root=""
     if [[ -n "$system_dir" ]]; then
         engine_root="$(cd "$system_dir/../.." && pwd)"
@@ -330,10 +329,22 @@ CFG_EOF
 
     echo ""
     echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
-    echo "   Created $(_cyan ".ai/src/rules/")          — always-on constraints"
-    echo "   Created $(_cyan ".ai/src/skills/")         — on-demand recipes"
-    echo "   Created $(_cyan ".ai/src/tools/")          — tool configurations"
-    echo ""
+
+    # List created rules
+    local rule_count=0
+    for f in "$ai_dir/src/rules/"*.md; do
+        [[ -f "$f" ]] || continue
+        rule_count=$((rule_count + 1))
+    done
+    echo "   Created $(_cyan ".ai/src/rules/")          — $rule_count rule(s)"
+
+    # List created skills
+    local skill_count=0
+    for d in "$ai_dir/src/skills/"*/; do
+        [[ -d "$d" ]] || continue
+        skill_count=$((skill_count + 1))
+    done
+    echo "   Created $(_cyan ".ai/src/skills/")         — $skill_count skill(s)"
 
     # Count tools
     local tool_count=0
@@ -342,13 +353,16 @@ CFG_EOF
         [[ "$(basename "$f")" == _* ]] && continue
         tool_count=$((tool_count + 1))
     done
+    echo "   Created $(_cyan ".ai/src/tools/")          — $tool_count tool(s)"
 
-    echo "$(_green "Done!") Initialized with $tool_count tool(s)."
+    echo ""
+    echo "$(_green "Done!")"
     echo ""
     echo "Next steps:"
-    echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") with your agent's identity"
-    echo "  2. Edit rules in $(_cyan ".ai/src/rules/")"
-    echo "  3. Run $(_cyan "agentsync sync") to distribute to all tools"
+    echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") — customize your agent's identity"
+    echo "  2. Edit rules in $(_cyan ".ai/src/rules/") — add project-specific constraints"
+    echo "  3. Run $(_cyan "agentsync generate") — get a prompt to auto-generate rules for your project"
+    echo "  4. Run $(_cyan "agentsync sync") — distribute to all tools"
     echo ""
 }
 
@@ -438,6 +452,111 @@ cmd_engine() {
     export AGENTSYNC_REPO_ROOT="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
 
     bash "$script_path" "$@"
+}
+
+# ─── Generate ────────────────────────────────────────────────────────────────
+cmd_generate() {
+    cat << 'PROMPT_EOF'
+You are helping me configure AI agent instructions for my project using AgentSync.
+
+AgentSync stores all AI instructions in `.ai/src/` and distributes them to tool-specific directories (Claude, Cursor, Copilot, Gemini, Codex) via `agentsync sync`.
+
+## Your Task
+
+Analyze this project's codebase and generate tailored content for the following files. Study the code, architecture, dependencies, conventions, and patterns before writing anything.
+
+## What to Generate
+
+### 1. `.ai/src/AGENTS.md` — Agent Identity
+
+This is the main file describing who the AI agent is for this project. Write it specifically for this codebase:
+- What role should the agent play? (e.g., "Senior React Engineer", "Backend Go Developer")
+- What's the project's tech stack?
+- What approach should the agent follow when working in this codebase?
+- What principles matter most for this project?
+- What should the agent never do in this project?
+
+Keep it under 60 lines. Every sentence should change how the agent behaves. No generic advice.
+
+### 2. `.ai/src/rules/` — Always-On Constraints
+
+Create one `.md` file per concern. Rules are short, imperative, and specific to this project. Examples of good rule files:
+- `architecture.md` — layer boundaries, dependency direction, module structure
+- `testing.md` — what to test, how to test, what framework/style to use
+- `code-style.md` — naming, formatting, patterns specific to this project
+- `security.md` — project-specific security requirements
+- `error-handling.md` — how errors are handled in this codebase
+- `dependencies.md` — package management conventions
+
+Only create rules that are relevant to this project. Don't generate rules for things that don't apply.
+
+Each rule file format:
+```markdown
+# Topic Rules
+
+## Section
+- Specific, imperative constraint.
+- Another constraint.
+
+## Anti-Patterns
+- What not to do.
+```
+
+### 3. `.ai/src/skills/` — On-Demand Recipes
+
+Create skill directories for common workflows in this project. Each skill is a directory with a `SKILL.md` file.
+
+Think about what developers do repeatedly in this project:
+- Adding a new feature/module (following the project's architecture)
+- Writing tests (using the project's test setup)
+- Creating API endpoints (if applicable)
+- Database migrations (if applicable)
+- Deployment steps (if applicable)
+
+Each SKILL.md format:
+```markdown
+---
+name: skill-name
+description: One sentence describing when to use this skill.
+---
+
+# Skill Name
+
+## When to use
+[When this skill applies]
+
+## Steps
+1. [Concrete step with actual commands/file paths from this project]
+2. [Next step]
+...
+```
+
+## Output Format
+
+Output each file with its path as a header:
+
+### `.ai/src/AGENTS.md`
+```markdown
+[content]
+```
+
+### `.ai/src/rules/[name].md`
+```markdown
+[content]
+```
+
+### `.ai/src/skills/[name]/SKILL.md`
+```markdown
+[content]
+```
+
+## Important
+
+- Be specific to THIS project. Reference actual file paths, commands, frameworks, and patterns you see.
+- Don't generate generic advice. If you can't find evidence of a pattern in the code, don't write a rule about it.
+- Keep rules short and scannable. Prefer 5 specific rules over 20 vague ones.
+- Skills should include real commands and paths from this project, not placeholders.
+PROMPT_EOF
 }
 
 # ─── Update ──────────────────────────────────────────────────────────────────
@@ -615,6 +734,9 @@ main() {
         setup-hooks)
             shift
             cmd_engine "setup_hooks.sh" "$@"
+            ;;
+        generate|gen)
+            cmd_generate
             ;;
         update)
             cmd_update
