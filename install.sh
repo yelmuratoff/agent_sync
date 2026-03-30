@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # AgentSync Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/agent/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent/main/install.sh | bash
 #
 # What it does:
 #   1. Clones the AgentSync engine to ~/.agentsync/
-#   2. Creates a symlink: /usr/local/bin/agentsync → ~/.agentsync/agent/bin/agentsync
+#   2. Creates a symlink: /usr/local/bin/agentsync → ~/.agentsync/bin/agentsync
 #
 # To uninstall:
 #   rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync
 
 set -euo pipefail
 
-readonly REPO_URL="https://github.com/yelmuratoff/agent_sync.git"
+readonly REPO_URL="https://github.com/yelmuratoff/agent.git"
 readonly INSTALL_DIR="$HOME/.agentsync"
 readonly BIN_NAME="agentsync"
 
@@ -78,8 +78,8 @@ main() {
         git clone --quiet --depth 1 "$REPO_URL" "$INSTALL_DIR"
     fi
 
-    # 2. The engine lives inside agent/ subdirectory of the repo
-    local engine_dir="$INSTALL_DIR/agent"
+    # 2. Verify the engine is present
+    local engine_dir="$INSTALL_DIR"
     if [[ ! -d "$engine_dir/.ai/system" ]]; then
         echo "$(_red "Error"): Engine not found at $engine_dir/.ai/system" >&2
         echo "The repository structure may have changed." >&2
