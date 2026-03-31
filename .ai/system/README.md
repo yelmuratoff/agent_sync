@@ -97,6 +97,7 @@ All target types:
 - `targets.subagents` — subagent personas (.md files)
 - `targets.settings` — permissions/config (file copy, requires `source`)
 - `targets.mcp` — MCP server configs (file copy, requires `source`)
+- `targets.hooks` — event hooks (file copy, requires `source`)
 
 Supported optional fields:
 
@@ -108,6 +109,9 @@ Supported optional fields:
 - `targets.rules.exclude`: exclude glob for source rule file names
 - `targets.rules.append_imports`: append `@rules/...` lines into agents file
 - `targets.rules.merge_to_file`: merge all rules into a single output file (e.g., Aider)
+- `targets.rules.inline_into_agents`: append lightweight rule references (name + title) into agents file instead of syncing rules as separate files (Codex, Amp, Devin, Gemini)
+- `targets.rules.prepend_agents`: prepend AGENTS.md content before merged rules in single-file output (Aider, Zed, Continue)
+- `targets.skills.inline_into_agents`: append lightweight skill index (name + description) into agents file instead of syncing skills as directories (Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue)
 - `targets.skills.source`: override skills source directory
 - `targets.skills.include`: include glob for skill folder names
 - `targets.skills.exclude`: exclude glob for skill folder names
@@ -115,6 +119,7 @@ Supported optional fields:
 - `targets.subagents.extension`: rename agent file extension (e.g., `.agent.md`)
 - `targets.settings.source`: source file path (required)
 - `targets.mcp.source`: source file path (required)
+- `targets.hooks.source`: source file path (required)
 - `post_sync`: shell command run after successful sync of that tool
   - by default disabled for safety; enable explicitly with `AGENTSYNC_ALLOW_POST_SYNC=true`
 
@@ -128,15 +133,19 @@ For each `tools/*.yaml` file:
    - `enabled` is required and must be a boolean scalar (`true/false`, `yes/no`, `on/off`, `1/0`).
 2. If disabled, clean existing generated paths for that tool.
 3. Apply CLI filters (`--only`, `--skip`).
-4. Sync `agents` file.
+4. Sync `agents` file (or as `00-context.md` for directory-based tools without separate agents support).
 5. Sync `rules` with optional extension/header/filtering and differential cleanup.
+   - If `inline_into_agents`: append lightweight rule references (name + title) to agents file instead.
+   - If `merge_to_file` + `prepend_agents`: prepend AGENTS.md content before merged rules.
 6. Sync `skills` directories with filtering and differential cleanup.
+   - If `inline_into_agents`: append lightweight skill index (name + description) to agents file instead.
 7. Sync `commands` (if configured).
 8. Sync `subagents` (if configured, with optional extension rename).
 9. Copy `settings` file (if configured, requires `source`).
 10. Copy `mcp` file (if configured, requires `source`).
-11. Run optional `post_sync`.
-12. After all tools, update generated block in `.gitignore`.
+11. Copy `hooks` file (if configured, requires `source`).
+12. Run optional `post_sync`.
+13. After all tools, update generated block in `.gitignore`.
 
 `post_sync` safety:
 

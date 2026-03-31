@@ -592,8 +592,54 @@ sync_tool() {
     skills_exclude=$(parse_yaml_value "$tool_config" "targets.skills.exclude") || true
     
     # Sync skills directory
+    local inline_skills
+    inline_skills=$(parse_yaml_value "$tool_config" "targets.skills.inline_into_agents") || true
+
     if [[ -n "$dest_skills_abs" ]]; then
         sync_dir "$src_skills_abs" "$dest_skills_abs" "$DRY_RUN" "$skills_include" "$skills_exclude"
+    elif [[ "$inline_skills" == "true" ]] && [[ -d "$src_skills_abs" ]]; then
+        # Append skill index into agents file or merged rules file
+        local skills_target_file="$dest_agents_abs"
+        # For merged files without separate agents dest, append to the merged rules file
+        if [[ -z "$skills_target_file" ]] && [[ "$merge_to_file" == "true" ]] && [[ -f "$dest_rules_abs" ]]; then
+            skills_target_file="$dest_rules_abs"
+        fi
+        if [[ -n "$skills_target_file" ]] && [[ "$DRY_RUN" != "true" ]]; then
+            local skill_entries=""
+            for skill_dir in "$src_skills_abs"/*/; do
+                [[ -d "$skill_dir" ]] || continue
+                local skill_name skill_desc=""
+                skill_name=$(basename "$skill_dir")
+                if matches_filter "$skill_name" "$skills_include" "$skills_exclude"; then
+                    local skill_file="$skill_dir/SKILL.md"
+                    if [[ -f "$skill_file" ]]; then
+                        skill_desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description:[[:space:]]*//; s/^>[[:space:]]*//; p; }; }' "$skill_file" | head -1)
+                        [[ "$skill_desc" == ">" ]] && skill_desc=""
+                        if [[ -z "$skill_desc" ]]; then
+                            skill_desc=$(sed -n '/^---$/,/^---$/{/^description:/,/^[a-z]/{ /^  /{ s/^[[:space:]]*//; p; q; }; }; }' "$skill_file")
+                        fi
+                    fi
+                    if [[ -n "$skill_desc" ]]; then
+                        skill_entries+="- \`$skill_name\` — $skill_desc"$'\n'
+                    else
+                        skill_entries+="- \`$skill_name\`"$'\n'
+                    fi
+                fi
+            done
+            if [[ -n "$skill_entries" ]]; then
+                {
+                    echo ""
+                    echo "## Skills"
+                    echo ""
+                    echo "The following skills provide step-by-step workflows. Find them in \`.ai/src/skills/\`:"
+                    echo ""
+                    printf '%s' "$skill_entries"
+                } >> "$skills_target_file"
+                log_step "Appended skill index to $(basename "$skills_target_file")"
+            fi
+        elif [[ "$DRY_RUN" == "true" ]]; then
+            log_step "Would append skill index (dry-run)"
+        fi
     fi
     
     # 4. COMMANDS

@@ -228,6 +228,8 @@ targets:
   rules: { dest: ".cursor/rules", extension: ".mdc", header: "---\nglobs: '**/*'\nalwaysApply: true\n---" }
   skills: { dest: ".cursor/skills" }
   subagents: { dest: ".cursor/agents" }
+  mcp: { source: ".ai/src/mcp/cursor.json", dest: ".cursor/mcp.json" }
+  hooks: { source: ".ai/src/hooks/cursor.json", dest: ".cursor/hooks.json" }
 EOF
 
     cat > "$ai_dir/src/tools/gemini.yaml" << 'EOF'
@@ -249,6 +251,7 @@ targets:
   rules: { inline_into_agents: true }
   skills: { dest: ".agents/skills" }
   subagents: { dest: ".codex/agents", format: toml }
+  hooks: { source: ".ai/src/hooks/codex.json", dest: ".codex/hooks.json" }
 EOF
 
     cat > "$ai_dir/src/tools/windsurf.yaml" << 'EOF'
@@ -266,6 +269,7 @@ enabled: true
 targets:
   agents: { dest: ".junie/guidelines.md" }
   rules: { dest: ".junie/guidelines" }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/amp.yaml" << 'EOF'
@@ -282,6 +286,7 @@ name: "Aider"
 enabled: true
 targets:
   rules: { dest: "CONVENTIONS.md", merge_to_file: true, prepend_agents: true }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/cline.yaml" << 'EOF'
@@ -290,6 +295,7 @@ enabled: true
 targets:
   agents: { dest: ".clinerules/00-context.md" }
   rules: { dest: ".clinerules" }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/amazonq.yaml" << 'EOF'
@@ -298,6 +304,7 @@ enabled: true
 targets:
   agents: { dest: ".amazonq/rules/00-context.md" }
   rules: { dest: ".amazonq/rules" }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/augment.yaml" << 'EOF'
@@ -306,6 +313,7 @@ enabled: true
 targets:
   agents: { dest: ".augment/rules/00-context.md" }
   rules: { dest: ".augment/rules" }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/devin.yaml" << 'EOF'
@@ -323,6 +331,7 @@ enabled: true
 targets:
   agents: { dest: ".tabnine/guidelines/00-context.md" }
   rules: { dest: ".tabnine/guidelines" }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/zed.yaml" << 'EOF'
@@ -330,6 +339,7 @@ name: "Zed"
 enabled: true
 targets:
   rules: { dest: ".rules", merge_to_file: true, prepend_agents: true }
+  skills: { inline_into_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/continue.yaml" << 'EOF'
@@ -337,5 +347,6 @@ name: "Continue"
 enabled: true
 targets:
   rules: { dest: ".continuerules", merge_to_file: true, prepend_agents: true }
+  skills: { inline_into_agents: true }
 EOF
 }

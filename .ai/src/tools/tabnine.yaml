@@ -1,11 +1,10 @@
-# Tabnine Configuration
-# 00-context.md contains AGENTS.md so Tabnine knows agent identity
 name: "Tabnine"
 enabled: true
 
 targets:
   agents:
     dest: ".tabnine/guidelines/00-context.md"
-
   rules:
     dest: ".tabnine/guidelines"
+  skills:
+    inline_into_agents: true

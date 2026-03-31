@@ -93,12 +93,16 @@ AgentSync supports two source layouts:
 │   ├── mcp/                    # MCP server configs (JSON)
 │   │   ├── claude.json
 │   │   └── cursor.json
+│   ├── hooks/                  # Event hooks (JSON)
+│   │   ├── cursor.json
+│   │   └── codex.json
 │   └── tools/                  # Tool YAML configurations
 │       ├── claude.yaml
 │       ├── cursor.yaml
 │       └── _TEMPLATE.yaml
-└── system/                     # Sync engine. Do not edit.
 ```
+
+> **Note:** `init` no longer copies the sync engine into the project. The engine runs from the global `~/.agentsync/` installation.
 
 **Flat (auto-detected):** `.ai/AGENTS.md`, `.ai/rules/`, `.ai/skills/`, `.ai/tools/`
 
@@ -108,12 +112,12 @@ AgentSync supports two source layouts:
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`).                                | All                                                          |
 | **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).      | All                                                          |
-| **skills/**   | On-demand recipes. Each skill = directory with `SKILL.md`. Frontmatter triggers: `USE WHEN [conditions]`. `Gotchas` section prevents repeated mistakes. | Claude, Copilot, Cursor, Gemini, Codex, Windsurf, Amp, Devin |
+| **skills/**   | On-demand recipes. Each skill = directory with `SKILL.md`. Frontmatter triggers: `USE WHEN [conditions]`. `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All                                                          |
 | **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini.              | Claude, Gemini, Copilot (as `.prompt.md`)                    |
 | **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                     | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML)  |
 | **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                        | Claude                                                       |
 | **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                  | Claude, Cursor                                               |
-| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                        | Cursor                                                       |
+| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                        | Cursor, Codex                                                |
 | **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                          | —                                                            |
 
 ## CLI Commands
@@ -210,6 +214,7 @@ targets:
     # source: ".ai/src/my-skills"
     # include: "flutter*"
     # exclude: "python*"
+    # inline_into_agents: true
 
   commands:
     dest: ".tool/commands"
@@ -244,7 +249,9 @@ targets:
 | `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)    |
 | `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                        |
 | `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                     |
-| `inline_into_agents`          | Append all rules into AGENTS file (Codex, Amp, Devin, Gemini)                 |
+| `inline_into_agents` (rules)  | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Amp, Devin, Gemini) |
+| `inline_into_agents` (skills) | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue) |
+| `prepend_agents`              | Prepend AGENTS.md content before merged rules (Aider, Zed, Continue)          |
 | `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                          |
 | `source` (settings/mcp/hooks) | Required — per-tool source file path                                          |
 
@@ -258,16 +265,16 @@ targets:
 | **Gemini CLI**      | `gemini.yaml`   | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                 |
 | **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                               |
 | **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills                                                 |
-| **JetBrains Junie** | `junie.yaml`    | guidelines.md, guidelines/                                                                     |
+| **JetBrains Junie** | `junie.yaml`    | guidelines.md, guidelines/, +inlined skills index                                              |
 | **Amp**             | `amp.yaml`      | AGENTS.md (+inlined rules), skills                                                             |
-| **Aider**           | `aider.yaml`    | CONVENTIONS.md (merged rules)                                                                  |
-| **Cline**           | `cline.yaml`    | .clinerules/                                                                                   |
-| **Amazon Q**        | `amazonq.yaml`  | .amazonq/rules/                                                                                |
-| **Augment Code**    | `augment.yaml`  | .augment/rules/                                                                                |
+| **Aider**           | `aider.yaml`    | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                       |
+| **Cline**           | `cline.yaml`    | 00-context.md, .clinerules/, +inlined skills index                                             |
+| **Amazon Q**        | `amazonq.yaml`  | 00-context.md, .amazonq/rules/, +inlined skills index                                         |
+| **Augment Code**    | `augment.yaml`  | 00-context.md, .augment/rules/, +inlined skills index                                         |
 | **Devin**           | `devin.yaml`    | AGENTS.md (+inlined rules), skills                                                             |
-| **Tabnine**         | `tabnine.yaml`  | .tabnine/guidelines/                                                                           |
-| **Zed**             | `zed.yaml`      | .rules (merged)                                                                                |
-| **Continue**        | `continue.yaml` | .continuerules (merged)                                                                        |
+| **Tabnine**         | `tabnine.yaml`  | 00-context.md, .tabnine/guidelines/, +inlined skills index                                    |
+| **Zed**             | `zed.yaml`      | .rules (prepend AGENTS.md + merged rules), +inlined skills index                               |
+| **Continue**        | `continue.yaml` | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                       |
 
 ## Format Conversions
 
@@ -280,6 +287,10 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf             |
 | Rules `.md`    | Single merged file                               | Aider, Zed, Continue |
 | Rules `.md`    | Inlined into AGENTS.md                           | Codex, Amp, Devin, Gemini |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Amp, Devin, Gemini |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment, Tabnine |
+| AGENTS.md      | Prepended before merged rules                    | Aider, Zed, Continue |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI           |
 | Commands `.md` | `.prompt.md`                                     | Copilot              |
 | Agents `.md`   | `.agent.md`                                      | Copilot              |
@@ -312,12 +323,14 @@ Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatic
 1. Reads `config.yaml` for default source paths.
 2. Auto-detects structured (`.ai/src/`) or flat (`.ai/`) layout.
 3. For each tool YAML:
-   - Copies AGENTS.md → tool-specific name
+   - Copies AGENTS.md → tool-specific name (or as `00-context.md` for directory-based tools)
    - Syncs rules with extension/header/merge transforms
-   - Syncs skills directories
+   - If `inline_into_agents` (rules): appends lightweight rule references (name + title) to agents file
+   - If `prepend_agents` (rules): prepends AGENTS.md content before merged rules
+   - Syncs skills directories (or inlines skill index into agents file if `inline_into_agents`)
    - Syncs commands (with optional MD→TOML conversion)
    - Syncs agents (with optional extension rename or MD→TOML)
-   - Copies settings and MCP files
+   - Copies settings, MCP, and hooks files
    - Runs optional `post_sync` command
 4. Updates `.gitignore`
 5. Disabled tools get their generated files cleaned up automatically.
@@ -346,7 +359,15 @@ source:
 
 **New tools:** windsurf, junie, amp, aider, cline, amazonq, augment, devin, tabnine, zed, continue
 
-**New target types:** `commands`, `subagents`, `settings`, `mcp` — all opt-in.
+**New target types:** `commands`, `subagents`, `settings`, `mcp`, `hooks` — all opt-in.
+
+**New inline features:**
+- `inline_into_agents` for rules: appends lightweight rule references to agents file (Codex, Amp, Devin, Gemini)
+- `inline_into_agents` for skills: appends skill index to agents file (Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue)
+- `prepend_agents` for merged rules: prepends AGENTS.md before merged content (Aider, Zed, Continue)
+- `00-context.md` pattern: AGENTS.md copied as first file in rules dir (Cline, Amazon Q, Augment, Tabnine)
+
+**Init changes:** `init` no longer copies the engine into the project `.ai/system/`. The engine runs from `~/.agentsync/`.
 
 ```bash
 # Get latest templates:
