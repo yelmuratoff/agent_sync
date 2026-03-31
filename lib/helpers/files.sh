@@ -91,7 +91,7 @@ sync_dir() {
                 ((count_copy++))
             else
                 # Recursive copy (overwrite)
-                rm -rf "$dest/$basename" 2>/dev/null || true
+                rm -rf "${dest:?}/$basename" 2>/dev/null || true
                 cp -r "$item" "$dest/$basename"
                 ((count_copy++))
             fi

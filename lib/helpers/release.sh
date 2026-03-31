@@ -32,7 +32,7 @@ cmd_release() {
         exit 1
     fi
 
-    cd "$repo_dir"
+    cd "$repo_dir" || exit 1
 
     # Check for clean working tree
     if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then

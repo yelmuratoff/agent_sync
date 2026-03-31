@@ -20,7 +20,7 @@ cmd_update() {
     local old_version="$VERSION"
 
     echo "  Checking for updates..."
-    cd "$install_dir"
+    cd "$install_dir" || exit 1
 
     if ! git fetch --quiet --tags origin main 2>/dev/null; then
         echo "  $(_red "Error"): Failed to fetch updates. Check your network connection." >&2
