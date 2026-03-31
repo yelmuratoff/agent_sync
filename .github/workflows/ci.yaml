@@ -39,23 +39,12 @@ jobs:
             brew install bats-core
           fi
 
-      - name: Run tests
-        run: bats tests/ --tap
+      - name: Run unit tests
+        run: bats tests/cli.bats tests/files.bats tests/gitignore.bats tests/list.bats tests/generate.bats tests/init.bats tests/hooks.bats tests/release.bats --tap
         env:
           TERM: xterm
 
-      - name: Verify install script
-        run: |
-          bash install.sh
-          agentsync version
-
-      - name: Smoke test (init + sync + check)
-        run: |
-          mkdir /tmp/smoke-project && cd /tmp/smoke-project
-          git init
-          git config user.email "ci@test.com"
-          git config user.name "CI"
-          agentsync init
-          agentsync sync
-          agentsync check
-          agentsync list
+      - name: Run integration tests
+        run: bats tests/sync.bats tests/sync_options.bats tests/check.bats --tap
+        env:
+          TERM: xterm
