@@ -571,13 +571,18 @@ sync_tool() {
     fi
 
     # 5. SUBAGENTS
-    local dest_sa_ext
+    local dest_sa_ext dest_sa_format
     dest_sa_ext=$(parse_yaml_value "$tool_config" "targets.subagents.extension") || true
+    dest_sa_format=$(parse_yaml_value "$tool_config" "targets.subagents.format") || true
     if [[ -n "$dest_subagents_abs" ]] && [[ -n "${SOURCE_SUBAGENTS:-}" ]]; then
         local src_subagents_abs
         src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $tool_name")
         if [[ -d "$src_subagents_abs" ]]; then
-            sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" ""
+            if [[ "$dest_sa_format" == "toml" ]]; then
+                sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
+            else
+                sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" ""
+            fi
         fi
     fi
 

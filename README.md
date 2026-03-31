@@ -354,6 +354,7 @@ targets:
   # subagents:
   #   dest: ".tool/agents"             # Where to copy subagent personas
   #   # extension: ".agent.md"         # Optional extension change (e.g., Copilot)
+  #   # format: "toml"                 # Convert MD→TOML (for Codex)
 
   # settings:
   #   source: ".ai/src/settings/tool.json"  # Source file (per-tool)
@@ -403,7 +404,7 @@ alwaysApply: true
 | GitHub Copilot  | `copilot.yaml`  | `.github/`                     | instructions, skills, prompts (`.prompt.md`), agents (`.agent.md`) |
 | Cursor          | `cursor.yaml`   | `.cursor/`                     | Rules as `.mdc`, mcp.json                                          |
 | Gemini CLI      | `gemini.yaml`   | `.gemini/`                     | GEMINI.md, skills, commands (auto MD→TOML), agents                 |
-| OpenAI Codex    | `codex.yaml`    | `AGENTS.md`, `.agents/skills/` | AGENTS.md at project root                                          |
+| OpenAI Codex    | `codex.yaml`    | `AGENTS.md`, `.agents/skills/`, `.codex/agents/` | AGENTS.md at root, agents auto MD→TOML                |
 | Windsurf        | `windsurf.yaml` | `.windsurf/`                   | AGENTS.md, rules (`trigger` frontmatter), skills                   |
 | JetBrains Junie | `junie.yaml`    | `.junie/`                      | guidelines.md, guidelines/                                         |
 | Amp             | `amp.yaml`      | `AGENTS.md`, `.agents/skills/` | AGENTS.md at project root                                          |
