@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+- **`sync_dir` arithmetic:** replaced `((count++))` with `count=$((count + 1))` to avoid false exit codes when counter is zero under `set -e`.
+- **`cd` safety:** `cd` calls in `update` and `release` commands now abort on failure (`|| exit 1`) instead of silently continuing in the wrong directory.
+- **`rm -rf` guard:** destination path in `sync_dir` uses `${dest:?}` to prevent accidental root deletion if the variable is unset.
+
+### CI
+- ShellCheck: added `SC2039` and `SC2166` to the ignore list to suppress false positives on intentional bash-isms.
+
 ## 0.2.0
 
 ### Added
