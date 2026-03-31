@@ -12,3 +12,7 @@ targets:
 
   skills:
     dest: ".windsurf/skills"
+
+  mcp:
+    source: ".ai/src/mcp/windsurf.json"
+    dest: ".windsurf/mcp_config.json"

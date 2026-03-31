@@ -5,6 +5,6 @@ targets:
   agents:
     dest: ".junie/guidelines.md"
   rules:
-    dest: ".junie/guidelines"
+    dest: ".junie/rules"
   skills:
     inline_into_agents: true

@@ -22,3 +22,7 @@ targets:
   subagents:
     dest: ".github/agents"
     extension: ".agent.md"
+
+  hooks:
+    source: ".ai/src/hooks/copilot.json"
+    dest: ".github/hooks/hooks.json"
