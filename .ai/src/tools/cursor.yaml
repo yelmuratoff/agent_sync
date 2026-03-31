@@ -16,6 +16,9 @@ targets:
   skills:
     dest: ".cursor/skills"
 
+  subagents:
+    dest: ".cursor/agents"
+
   mcp:
     source: ".ai/src/mcp/cursor.json"
     dest: ".cursor/mcp.json"

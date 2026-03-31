@@ -16,24 +16,27 @@
 
 ## What is AgentSync
 
-AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for Claude, Copilot, Cursor, Gemini, Codex, and others.
+AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for **17 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Amp, Cline, Devin, Augment Code, Amazon Q, Tabnine, Zed, Continue, Aider, and more.
 
-Each AI tool expects instructions in its own format and directory (`.claude/`, `.github/`, `.cursor/`, `.gemini/`...). AgentSync lets you write them once and distribute to all tools with a single command.
+Each AI tool expects instructions in its own format and directory (`.claude/`, `.github/`, `.cursor/`, `.windsurf/`...). AgentSync lets you write them once and distribute to all tools with a single command.
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
+- [What Each Part Does](#what-each-part-does)
 - [CLI Commands](#cli-commands)
 - [Tool Configuration](#tool-configuration)
 - [Tool YAML Schema](#tool-yaml-schema)
 - [Supported Tools](#supported-tools)
+- [Format Conversions](#format-conversions)
 - [Adding a New Tool](#adding-a-new-tool)
 - [Git Hooks](#git-hooks)
 - [Gitignore](#gitignore)
 - [How Sync Works](#how-sync-works)
 - [Path Overrides](#path-overrides)
+- [Migrating from v1](#migrating-from-v1)
 - [Uninstall](#uninstall)
 
 ## Installation
@@ -47,35 +50,21 @@ curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent/main/install.sh |
 What the installer does:
 
 1. Clones the repository to `~/.agentsync/`
-2. Creates a symlink `agentsync` in `/usr/local/bin/` (falls back to `~/.local/bin/` if `/usr/local/bin` is not writable)
+2. Creates a symlink `agentsync` in `/usr/local/bin/` (falls back to `~/.local/bin/`)
 3. Adds `AGENTSYNC_HOME` to your shell config (`~/.zshrc` or `~/.bashrc`)
 
-Restart your terminal or run `source ~/.zshrc` after installation.
-
-Running the installer again updates the existing installation via `git pull`.
+Restart your terminal or run `source ~/.zshrc` after installation. Running the installer again updates via `git pull`.
 
 ## Quick Start
 
 ```bash
-# 1. Navigate to your project
 cd your-project
-
-# 2. Create the .ai/ structure with starter templates
-agentsync init
-
-# 3. (Optional) Generate project-specific rules using any AI
-agentsync generate | pbcopy
-# Paste into Claude, ChatGPT, Gemini, etc. — it will analyze your project
-# and generate tailored AGENTS.md, rules, and skills
-
-# 4. Edit .ai/src/AGENTS.md — customize your agent's identity
-# 5. Edit .ai/src/rules/ — add project-specific constraints
-
-# 6. Distribute instructions to all tools
-agentsync sync
+agentsync init                      # Create .ai/ structure with starter templates
+agentsync generate | pbcopy         # (Optional) Generate project-specific config via AI
+agentsync sync                      # Distribute to all tools
 ```
 
-After `sync`, directories like `.claude/`, `.cursor/`, `.github/`, `.gemini/`, `.codex/` will appear in your project, each containing instructions in that tool's expected format.
+After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
 
 ## Project Structure
 
@@ -89,91 +78,42 @@ AgentSync supports two source layouts:
 │   ├── AGENTS.md               # Agent identity: role, approach, principles
 │   ├── rules/                  # Rules — always-on constraints
 │   │   ├── core.md
-│   │   ├── testing.md
-│   │   └── ...
+│   │   └── git.md
 │   ├── skills/                 # Skills — on-demand step-by-step recipes
-│   │   ├── commit/
-│   │   │   └── SKILL.md
+│   │   ├── commit/SKILL.md
+│   │   ├── review/SKILL.md
 │   │   └── ...
-│   ├── commands/               # Custom slash commands (.md)
+│   ├── commands/               # Custom slash commands
 │   │   ├── review.md
 │   │   └── fix-issue.md
-│   ├── agents/                 # Subagent personas (.md)
+│   ├── agents/                 # Subagent personas
 │   │   └── code-reviewer.md
 │   ├── settings/               # Tool-specific settings (JSON)
 │   │   └── claude.json
 │   ├── mcp/                    # MCP server configs (JSON)
 │   │   ├── claude.json
 │   │   └── cursor.json
-│   └── tools/                  # Tool configurations
+│   └── tools/                  # Tool YAML configurations
 │       ├── claude.yaml
-│       ├── copilot.yaml
 │       ├── cursor.yaml
-│       ├── gemini.yaml
-│       ├── codex.yaml
-│       └── _TEMPLATE.yaml      # Template for adding new tools
+│       └── _TEMPLATE.yaml
 └── system/                     # Sync engine. Do not edit.
-    ├── sync.sh
-    ├── check.sh
-    ├── setup_hooks.sh
-    ├── config.yaml
-    ├── lib/
-    ├── templates/
-    └── prompts/
 ```
 
-**Flat (auto-detected):**
+**Flat (auto-detected):** `.ai/AGENTS.md`, `.ai/rules/`, `.ai/skills/`, `.ai/tools/`
 
-```
-.ai/
-├── AGENTS.md
-├── rules/
-├── skills/
-└── tools/
-```
+## What Each Part Does
 
-### What Each Part Does
-
-**AGENTS.md** — the main file. Describes who the agent is, how it thinks, and how it approaches work. Copied as-is to each tool (renamed according to the tool config: `CLAUDE.md`, `GEMINI.md`, etc.).
-
-**rules/** — rule files. One file per topic (architecture, testing, security, etc.). Applied at all times. Some tools require specific formats: Cursor expects `.mdc` extension with a YAML header, Copilot expects `.instructions.md`. AgentSync converts automatically based on each tool's config.
-
-**skills/** — step-by-step recipes. Each skill is a directory containing a `SKILL.md` file. Used by the agent on demand when a task matches the skill's description. Each `SKILL.md` has frontmatter:
-
-```markdown
----
-name: commit
-description: >
-  Create a well-structured git commit message for staged changes.
-  USE WHEN committing code, writing commit messages, or preparing changes for push.
----
-
-# Commit
-
-Write a commit message that follows the project's conventions.
-
-## Steps
-
-1. Run `git diff --cached` to see changes.
-2. ...
-
-## Gotchas
-
-- Don't amend the previous commit unless explicitly asked.
-- ...
-```
-
-> **Tip:** The `description` is a trigger, not a summary. The agent scans descriptions to decide which skill to activate. Always include `USE WHEN` with specific conditions. The `Gotchas` section prevents repeated mistakes.
-
-**commands/** — custom slash commands. Each `.md` file becomes a slash command in supported tools (e.g., `review.md` → `/project:review` in Claude Code). Commands support `$ARGUMENTS` for parameters and `` !`shell command` `` syntax for embedding shell output.
-
-**agents/** — subagent personas. Each `.md` file defines a specialized agent with its own instructions, model, and tool access. Agents are spawned in isolated contexts for focused tasks like code review or security audit. Frontmatter fields (`model`, `tools`) are tool-specific and passed through.
-
-**settings/** — tool-specific permission and configuration files. Each file is named after the tool (`claude.json`, etc.) and copied directly to the tool's settings location. Settings control what the AI can and can't do (allowed/denied commands, file access).
-
-**mcp/** — MCP (Model Context Protocol) server configurations. Each file is named after the tool and copied to the tool's MCP config location. Define external tool servers that the AI can use.
-
-**tools/** — YAML configurations. Define where and how files are copied for each tool. See [Tool YAML Schema](#tool-yaml-schema) for details.
+| Source | Purpose | Tools that use it |
+|--------|---------|-------------------|
+| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`). | All |
+| **rules/** | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf). | All |
+| **skills/** | On-demand recipes. Each skill = directory with `SKILL.md`. Frontmatter triggers: `USE WHEN [conditions]`. `Gotchas` section prevents repeated mistakes. | Claude, Copilot, Cursor, Gemini, Codex, Windsurf, Amp, Devin |
+| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. | Claude, Gemini, Copilot (as `.prompt.md`) |
+| **agents/** | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex. | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
+| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. | Claude |
+| **mcp/** | MCP server configs. Per-tool JSON files. Define external tool servers. | Claude, Cursor |
+| **tools/** | YAML configs — define where and how files are synced per tool. | — |
 
 ## CLI Commands
 
@@ -181,117 +121,40 @@ Write a commit message that follows the project's conventions.
 agentsync <command> [options]
 ```
 
-### `init`
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `init [dir]` | | Create `.ai/` structure with starter templates |
+| `sync` | | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`) |
+| `check` | | Verify outputs match source (CI-friendly, exit code 0/1) |
+| `generate [context]` | `gen` | Print AI prompt for project-specific config generation |
+| `setup-hooks` | | Install git hooks for auto-sync on pull/checkout |
+| `list` | `ls` | Show configured tools and status |
+| `update` | | Self-update via git pull (auto-check every 24h) |
+| `version` | `-v` | Print version |
+| `help` | `-h` | Show help |
 
-```bash
-agentsync init [directory]
-```
-
-Creates the `.ai/` structure in the specified directory (defaults to current directory). Generates starter templates:
-
-- **AGENTS.md** — agent identity
-- **Rules:** `core.md`, `git.md`
-- **Skills:** `commit`, `review`, `refactor`, `debug`, `agentsync`
-- **Commands:** `review`, `fix-issue`
-- **Agents:** `code-reviewer`
-- **Settings:** Claude permissions (`settings/claude.json`)
-- **MCP:** empty configs for Claude and Cursor
-- **Tool configs** for all supported tools
-
-If `.ai/src/` already exists, nothing is overwritten. Also copies the sync engine into `.ai/system/`, so `sync` works without a global installation.
-
-### `sync`
-
-```bash
-agentsync sync [options]
-```
-
-Reads `.ai/src/` and distributes its contents to tool directories according to configs in `.ai/src/tools/*.yaml`.
-
-Options:
-
-| Option           | Description                                                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `--only <tools>` | Sync only the specified tools (comma-separated). Names are yaml filenames without extension: `claude`, `cursor`, `copilot`. |
-| `--skip <tools>` | Skip the specified tools.                                                                                                   |
-| `--dry-run`      | Show what would be copied without making any changes.                                                                       |
-
-Examples:
+### Sync options
 
 ```bash
 agentsync sync                        # All enabled tools
-agentsync sync --only claude,cursor   # Only Claude and Cursor
-agentsync sync --skip gemini          # All except Gemini
-agentsync sync --dry-run              # Preview changes
+agentsync sync --only claude,cursor   # Only specified tools
+agentsync sync --skip gemini          # All except specified
+agentsync sync --dry-run              # Preview without writing
 ```
 
-### `check`
+### Generate
 
 ```bash
-agentsync check
+agentsync generate                    # AI analyzes codebase
+agentsync generate | pbcopy           # Copy to clipboard (macOS)
+agentsync generate "React + Next.js"  # With context
 ```
 
-Verifies that generated files match the current contents of `.ai/src/`. Useful for CI — exit code 0 means everything is in sync, exit code 1 means there is drift.
-
-How it works: copies the project to a temp directory, runs `sync`, compares the result against the original with `diff`. Does not modify your project.
-
-### `generate`
-
-```bash
-agentsync generate [context]    # or: agentsync gen
-```
-
-Prints a prompt to stdout that you can paste into any AI assistant (Claude, ChatGPT, Gemini, etc.). The AI will analyze your project and generate tailored `AGENTS.md`, rules, and skills in the correct AgentSync format.
-
-Examples:
-
-```bash
-agentsync generate                  # Basic prompt — AI will analyze the codebase
-agentsync generate | pbcopy         # Copy to clipboard (macOS)
-agentsync generate Flutter + Dart, BLoC, Clean Architecture
-agentsync generate "React SPA with Next.js, Prisma ORM, Jest"
-```
-
-When context is provided, it's prepended to the prompt so the AI knows your stack before analyzing code.
-
-### `setup-hooks`
-
-```bash
-agentsync setup-hooks
-```
-
-Installs `post-merge` and `post-checkout` git hooks. After this, `agentsync sync` runs automatically on `git pull` and `git checkout`. Existing hooks are not overwritten — the AgentSync block is appended to the end of the hook file.
-
-Safe to run multiple times — if the block already exists, it is not duplicated.
-
-### `list`
-
-```bash
-agentsync list      # or: agentsync ls
-```
-
-Shows all configured tools and their status (enabled/disabled). Reads `.ai/src/tools/*.yaml` in the current directory.
-
-### `update`
-
-```bash
-agentsync update
-```
-
-Updates AgentSync to the latest version via `git pull`. Shows a changelog of what changed between your version and the latest.
-
-AgentSync automatically checks for updates once every 24 hours when you run any command. To disable: `export AGENTSYNC_NO_UPDATE_CHECK=1`.
-
-### `version`, `help`
-
-```bash
-agentsync version   # or --version, -v
-agentsync help      # or --help, -h
-```
+Outputs a prompt for any AI (Claude, ChatGPT, Gemini) to generate tailored AGENTS.md, rules, skills, commands, agents, and settings.
 
 ## Tool Configuration
 
-Each tool is described in a separate YAML file in `.ai/src/tools/`. The filename determines the tool identifier (used with `--only`/`--skip`). Files starting with `_` are ignored (e.g. `_TEMPLATE.yaml`).
+Each tool = one YAML file in `.ai/src/tools/`. Filename = tool identifier for `--only`/`--skip`. Files starting with `_` are ignored.
 
 Example — `.ai/src/tools/claude.yaml`:
 
@@ -307,148 +170,122 @@ targets:
     append_imports: true
   skills:
     dest: ".claude/skills"
+  commands:
+    dest: ".claude/commands"
+  subagents:
+    dest: ".claude/agents"
+  settings:
+    source: ".ai/src/settings/claude.json"
+    dest: ".claude/settings.json"
+  mcp:
+    source: ".ai/src/mcp/claude.json"
+    dest: ".claude/.mcp.json"
 ```
-
-This means:
-
-- `AGENTS.md` → copy to `.claude/CLAUDE.md`
-- `rules/*.md` → copy to `.claude/rules/`
-- Append `@rules/...` imports to the end of `.claude/CLAUDE.md`
-- `skills/*/` → copy to `.claude/skills/`
 
 ## Tool YAML Schema
 
-Full schema with all options:
-
 ```yaml
-# Required fields
-name: "Tool Name" # Display name (shown in logs and list)
-enabled: true # true/false — enable/disable sync for this tool
-
-targets:
-  agents:
-    dest: ".tool/AGENTS.md" # Where to copy AGENTS.md
-    # source: ".ai/src/custom.md"    # Override source (default: .ai/src/AGENTS.md)
-
-  rules:
-    dest: ".tool/rules" # Where to copy rules
-    # source: ".ai/src/my-rules"     # Override source directory
-    # extension: ".mdc"              # Change file extension (default: .md)
-    # header: "---\nkey: value\n---" # Prepend header to each rule file
-    # include: "flutter-*.md"        # Only copy matching files (bash glob)
-    # exclude: "secret-*.md"         # Skip matching files
-    # append_imports: true           # Append @rules/* imports to AGENTS file
-    # merge_to_file: true            # Merge all rules into dest as a single file
-
-  skills:
-    dest: ".tool/skills" # Where to copy skills
-    # source: ".ai/src/my-skills"    # Override source directory
-    # include: "flutter*"            # Filter by skill directory name
-    # exclude: "python*"             # Exclude by name
-
-  # commands:
-  #   dest: ".tool/commands"           # Where to copy custom commands
-  #   # extension: ".cmd.md"           # Optional extension change
-  #   # format: "toml"                 # Convert MD→TOML (for Gemini CLI)
-
-  # subagents:
-  #   dest: ".tool/agents"             # Where to copy subagent personas
-  #   # extension: ".agent.md"         # Optional extension change (e.g., Copilot)
-  #   # format: "toml"                 # Convert MD→TOML (for Codex)
-
-  # settings:
-  #   source: ".ai/src/settings/tool.json"  # Source file (per-tool)
-  #   dest: ".tool/settings.json"            # Where to copy
-
-  # mcp:
-  #   source: ".ai/src/mcp/tool.json"       # Source file (per-tool)
-  #   dest: ".tool/.mcp.json"               # Where to copy
-
-# post_sync: "npx prettier --write .tool/**/*.mdc"  # Command to run after sync
-```
-
-### Field Details
-
-**`source`** — overrides the default source path for any target (`agents`, `rules`, `skills`). Useful when a tool needs a different AGENTS file or a subset of rules from a custom directory.
-
-**`extension`** — replaces the file extension on rule files. For example, `extension: ".mdc"` renames `core.md` to `core.mdc`. Required for Cursor, which expects `.mdc` files.
-
-**`header`** — a string prepended to the beginning of each rule file. Supports `\n` for line breaks. Cursor requires YAML frontmatter:
-
-```yaml
-header: "---\nglobs: '**/*'\nalwaysApply: true\n---"
-```
-
-This prepends to each rule file:
-
-```
----
-globs: '**/*'
-alwaysApply: true
----
-```
-
-**`append_imports`** — when `true`, lines like `@rules/core.md`, `@rules/testing.md` are appended to the end of the AGENTS file. Currently used by Claude Code to import rules. Any tool that supports this syntax can use it.
-
-**`merge_to_file`** — when `true`, all rule files are concatenated into a single output file instead of being copied as individual files. The `dest` path is treated as a file path, not a directory. Used by Aider, which expects a single `CONVENTIONS.md`.
-
-**`include` / `exclude`** — bash glob patterns for filtering. Applied to filenames (for rules) or directory names (for skills).
-
-**`post_sync`** — a command to run after syncing this tool. Disabled by default. To enable, set the environment variable `AGENTSYNC_ALLOW_POST_SYNC=true`.
-
-## Supported Tools
-
-| Tool            | Config          | Output                         | Notes                                                              |
-| --------------- | --------------- | ------------------------------ | ------------------------------------------------------------------ |
-| Claude Code     | `claude.yaml`   | `.claude/`                     | Full: CLAUDE.md, rules, skills, commands, agents, settings, mcp    |
-| GitHub Copilot  | `copilot.yaml`  | `.github/`                     | instructions, skills, prompts (`.prompt.md`), agents (`.agent.md`) |
-| Cursor          | `cursor.yaml`   | `.cursor/`                     | Rules as `.mdc`, mcp.json                                          |
-| Gemini CLI      | `gemini.yaml`   | `.gemini/`                     | GEMINI.md, skills, commands (auto MD→TOML), agents                 |
-| OpenAI Codex    | `codex.yaml`    | `AGENTS.md`, `.agents/skills/`, `.codex/agents/` | AGENTS.md at root, agents auto MD→TOML                |
-| Windsurf        | `windsurf.yaml` | `.windsurf/`                   | AGENTS.md, rules (`trigger` frontmatter), skills                   |
-| JetBrains Junie | `junie.yaml`    | `.junie/`                      | guidelines.md, guidelines/                                         |
-| Amp             | `amp.yaml`      | `AGENTS.md`, `.agents/skills/` | AGENTS.md at project root                                          |
-| Aider           | `aider.yaml`    | `CONVENTIONS.md`               | All rules merged into single file                                  |
-| Cline           | `cline.yaml`    | `.clinerules/`                 | Rules directory                                                    |
-| Amazon Q        | `amazonq.yaml`  | `.amazonq/rules/`              | Rules directory                                                    |
-| Augment Code    | `augment.yaml`  | `.augment/rules/`              | Rules directory                                                    |
-| Devin           | `devin.yaml`    | `AGENTS.md`, `.devin/skills/`  | AGENTS.md at project root                                          |
-| Tabnine         | `tabnine.yaml`  | `.tabnine/guidelines/`         | Rules as guidelines                                                |
-| Zed             | `zed.yaml`      | `.rules`                       | Rules merged into single file                                      |
-| Continue        | `continue.yaml` | `.continuerules`               | Rules merged into single file                                      |
-
-Any tool can be added — see [Adding a New Tool](#adding-a-new-tool).
-
-## Adding a New Tool
-
-1. Copy the template:
-
-```bash
-cp .ai/src/tools/_TEMPLATE.yaml .ai/src/tools/newtool.yaml
-```
-
-2. Edit `newtool.yaml`:
-
-```yaml
-name: "New Tool"
+name: "Tool Name"
 enabled: true
 
 targets:
   agents:
-    dest: ".newtool/instructions.md"
+    dest: ".tool/AGENTS.md"
+    # source: ".ai/src/custom.md"
+
   rules:
-    dest: ".newtool/rules"
+    dest: ".tool/rules"
+    # source: ".ai/src/my-rules"
+    # extension: ".mdc"
+    # header: "---\nkey: value\n---"
+    # include: "flutter-*.md"
+    # exclude: "secret-*.md"
+    # append_imports: true
+    # merge_to_file: true
+
   skills:
-    dest: ".newtool/skills"
+    dest: ".tool/skills"
+    # source: ".ai/src/my-skills"
+    # include: "flutter*"
+    # exclude: "python*"
+
+  commands:
+    dest: ".tool/commands"
+    # extension: ".prompt.md"
+    # format: "toml"
+
+  subagents:
+    dest: ".tool/agents"
+    # extension: ".agent.md"
+    # format: "toml"
+
+  settings:
+    source: ".ai/src/settings/tool.json"
+    dest: ".tool/settings.json"
+
+  mcp:
+    source: ".ai/src/mcp/tool.json"
+    dest: ".tool/.mcp.json"
+
+# post_sync: "npx prettier --write .tool/**/*.mdc"
 ```
 
-3. Run sync:
+### Key Fields
+
+| Field | Purpose |
+|-------|---------|
+| `extension` | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`) |
+| `header` | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot) |
+| `append_imports` | Append `@rules/*` import lines to AGENTS file (Claude) |
+| `merge_to_file` | Merge all rules into a single file (Aider, Zed, Continue) |
+| `format: "toml"` | Auto-convert MD→TOML (Gemini commands, Codex agents) |
+| `source` (settings/mcp) | Required — per-tool source file path |
+
+## Supported Tools
+
+| Tool | Config | Syncs |
+|------|--------|-------|
+| **Claude Code** | `claude.yaml` | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json |
+| **GitHub Copilot** | `copilot.yaml` | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
+| **Cursor** | `cursor.yaml` | AGENTS.md, .mdc rules, skills, agents, mcp.json |
+| **Gemini CLI** | `gemini.yaml` | GEMINI.md, skills, commands (MD→TOML), agents |
+| **OpenAI Codex** | `codex.yaml` | AGENTS.md (root), skills, agents (MD→TOML) |
+| **Windsurf** | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills |
+| **JetBrains Junie** | `junie.yaml` | guidelines.md, guidelines/ |
+| **Amp** | `amp.yaml` | AGENTS.md (root), skills |
+| **Aider** | `aider.yaml` | CONVENTIONS.md (merged rules) |
+| **Cline** | `cline.yaml` | .clinerules/ |
+| **Amazon Q** | `amazonq.yaml` | .amazonq/rules/ |
+| **Augment Code** | `augment.yaml` | .augment/rules/ |
+| **Devin** | `devin.yaml` | AGENTS.md (root), skills |
+| **Tabnine** | `tabnine.yaml` | .tabnine/guidelines/ |
+| **Zed** | `zed.yaml` | .rules (merged) |
+| **Continue** | `continue.yaml` | .continuerules (merged) |
+
+## Format Conversions
+
+AgentSync auto-converts between formats during sync:
+
+| Source format | Target format | Used by |
+|---------------|---------------|---------|
+| Rules `.md` | `.mdc` + YAML frontmatter | Cursor |
+| Rules `.md` | `.instructions.md` + `applyTo` header | Copilot |
+| Rules `.md` | `.md` + `trigger: always_on` header | Windsurf |
+| Rules `.md` | Single merged file | Aider, Zed, Continue |
+| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI |
+| Commands `.md` | `.prompt.md` | Copilot |
+| Agents `.md` | `.agent.md` | Copilot |
+| Agents `.md` | `.toml` (developer_instructions field) | Codex |
+
+You write everything in Markdown. AgentSync handles the rest.
+
+## Adding a New Tool
 
 ```bash
+cp .ai/src/tools/_TEMPLATE.yaml .ai/src/tools/newtool.yaml
+# Edit newtool.yaml, then:
 agentsync sync --only newtool
 ```
-
-The tool identifier for `--only`/`--skip` is the filename without `.yaml`.
 
 ## Git Hooks
 
@@ -456,57 +293,30 @@ The tool identifier for `--only`/`--skip` is the filename without `.yaml`.
 agentsync setup-hooks
 ```
 
-Installs two hooks:
-
-- **post-merge** — runs after `git pull` / `git merge`
-- **post-checkout** — runs after `git checkout` / `git switch`
-
-Both invoke `agentsync sync`. This ensures generated files always match the source when switching branches or pulling changes.
-
-If hooks are already installed, running `setup-hooks` again does not duplicate them.
+Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatically on `git pull` and `git checkout`. Safe to run multiple times.
 
 ## Gitignore
 
-`agentsync sync` automatically manages a block in `.gitignore`:
-
-```gitignore
-# --- AI SYNC GENERATED START ---
-# Automatically generated by .ai/system/sync.sh
-# Do not edit this block manually.
-.claude/CLAUDE.md
-.claude/rules/
-.claude/skills/
-.cursor/AGENTS.md
-.cursor/rules/
-...
-# --- AI SYNC GENERATED END ---
-```
-
-The block is rebuilt on every `sync` based on enabled tools. Everything outside the `START`/`END` markers is left untouched.
-
-Generated files are gitignored because they are derived from `.ai/src/`. Only `.ai/src/` and `.ai/system/` need to be committed. Any developer can regenerate the outputs by running `agentsync sync`.
+`agentsync sync` auto-manages a block in `.gitignore` between `AI SYNC GENERATED START/END` markers. Generated files are gitignored — only `.ai/src/` and `.ai/system/` need to be committed.
 
 ## How Sync Works
 
-1. Reads `config.yaml` for default paths to AGENTS.md, rules, skills, and tools.
-2. Auto-detects the source layout: both `.ai/src/AGENTS.md` (structured) and `.ai/AGENTS.md` (flat) are supported.
-3. If `agent_sync.yaml` exists in the project root, paths can be overridden (see [Path Overrides](#path-overrides)).
-4. For each `*.yaml` in the tools directory (excluding `_*` files):
-   - Checks `enabled: true/false`
-   - Checks CLI filters (`--only`, `--skip`)
-   - Copies AGENTS.md to `targets.agents.dest`
-   - Copies rules to `targets.rules.dest`, applying `extension`, `header`, `include`/`exclude`
-   - If `append_imports: true`, appends `@rules/*` lines to the end of the AGENTS file
-   - Copies skills to `targets.skills.dest`, applying `include`/`exclude`
-   - If `post_sync` is set and `AGENTSYNC_ALLOW_POST_SYNC=true`, runs the command
-5. Updates `.gitignore`
-6. Prints summary: `Synced N/N tools`
-
-Cleanup: when a tool is disabled (`enabled: false`), its generated directories are automatically removed. When filters (`include`/`exclude`) change, stale files in target directories are deleted.
+1. Reads `config.yaml` for default source paths.
+2. Auto-detects structured (`.ai/src/`) or flat (`.ai/`) layout.
+3. For each tool YAML:
+   - Copies AGENTS.md → tool-specific name
+   - Syncs rules with extension/header/merge transforms
+   - Syncs skills directories
+   - Syncs commands (with optional MD→TOML conversion)
+   - Syncs agents (with optional extension rename or MD→TOML)
+   - Copies settings and MCP files
+   - Runs optional `post_sync` command
+4. Updates `.gitignore`
+5. Disabled tools get their generated files cleaned up automatically.
 
 ## Path Overrides
 
-Create `agent_sync.yaml` in the project root:
+Create `agent_sync.yaml` in the project root to override source paths:
 
 ```yaml
 source:
@@ -516,69 +326,35 @@ source:
   tools: ".ai/src/tools"
 ```
 
-Or in flat format:
-
-```yaml
-agents: ".ai/AGENTS.md"
-rules: ".ai/rules"
-skills: ".ai/skills"
-tools: ".ai/tools"
-```
-
-Use this if your project layout differs from the default.
-
 ## Migrating from v1
 
-If you used AgentSync v1 (before commands, agents, settings, and MCP support), here's what changed:
-
 **New source directories** (optional — add only what you need):
-
-```
-.ai/src/
-├── commands/       # NEW: custom slash commands
-├── agents/         # NEW: subagent personas
-├── settings/       # NEW: tool-specific permissions (JSON)
-└── mcp/            # NEW: MCP server configs (JSON)
-```
+`commands/`, `agents/`, `settings/`, `mcp/`
 
 **Tool config changes:**
+- Gemini rules: `.gemini/prompts` → removed (Gemini uses GEMINI.md hierarchy)
+- Codex: `.codex/AGENTS.md` → `AGENTS.md` (project root)
 
-| v1                                      | v2                            | Action                      |
-| --------------------------------------- | ----------------------------- | --------------------------- |
-| `gemini.yaml` rules → `.gemini/prompts` | rules → `.gemini/rules`       | Update `targets.rules.dest` |
-| `codex.yaml` rules → `.codex/prompts`   | rules → `.codex/instructions` | Update `targets.rules.dest` |
+**New tools:** windsurf, junie, amp, aider, cline, amazonq, augment, devin, tabnine, zed, continue
 
-**New tools** — add configs if you use them: `windsurf.yaml`, `junie.yaml`, `amp.yaml`, `aider.yaml`.
-
-**New target types** in tool YAML: `commands`, `subagents`, `settings`, `mcp`. Existing configs continue to work — new targets are opt-in.
-
-To get the latest starter templates, run `agentsync init` in a temp directory and copy what you need:
+**New target types:** `commands`, `subagents`, `settings`, `mcp` — all opt-in.
 
 ```bash
+# Get latest templates:
 mkdir /tmp/agentsync-v2 && agentsync init /tmp/agentsync-v2
-# Copy new tool configs, commands, agents from /tmp/agentsync-v2/.ai/src/
 ```
 
 ## Uninstall
 
-### Remove global installation
-
 ```bash
-rm -rf ~/.agentsync
-rm -f /usr/local/bin/agentsync      # or ~/.local/bin/agentsync
+# Global
+rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync
+# Remove AGENTSYNC_HOME from ~/.zshrc
+
+# Per project
+rm -rf .ai/
+# Remove AI SYNC GENERATED block from .gitignore
 ```
-
-Remove the `export AGENTSYNC_HOME=...` line from `~/.zshrc` or `~/.bashrc`.
-
-### Remove from a project
-
-Delete `.ai/` and all generated directories:
-
-```bash
-rm -rf .ai/ .claude/ .cursor/ .codex/ .gemini/ .github/copilot-instructions.md .github/instructions/ .github/skills/
-```
-
-Remove the `AI SYNC GENERATED` block from `.gitignore`.
 
 ---
 
