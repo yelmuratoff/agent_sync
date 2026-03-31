@@ -2,7 +2,7 @@
 
 This directory contains the sync engine that maps AI source files to tool-specific config layouts.
 
-For authoring guidelines, see `.ai/README.md`.
+For authoring guidelines, see `lib/README.md`.
 
 ## Inputs and Outputs
 
@@ -42,34 +42,34 @@ Run from repo root.
 Full sync:
 
 ```bash
-.ai/system/sync.sh
+agentsync sync
 ```
 
 Preview only:
 
 ```bash
-.ai/system/sync.sh --dry-run
+agentsync sync --dry-run
 ```
 
 Filter tools:
 
 ```bash
-.ai/system/sync.sh --only claude,copilot
-.ai/system/sync.sh --skip gemini
+agentsync sync --only claude,copilot
+agentsync sync --skip gemini
 ```
 
 Install git hooks:
 
 ```bash
-.ai/system/setup_hooks.sh
+agentsync setup-hooks
 ```
 
-Installed hooks invoke `agentsync sync` (or `.ai/system/sync.sh` as fallback).
+Installed hooks invoke `agentsync sync` (or `lib/system/sync.sh` as fallback).
 
 Validation helper:
 
 ```bash
-.ai/system/check.sh
+agentsync check
 ```
 
 ## `tools/*.yaml` Schema
@@ -165,7 +165,7 @@ It inserts generated paths for all enabled tools and keeps the rest of `.gitigno
 ## Files in This Directory
 
 ```
-.ai/system/
+lib/system/
 ├── config.yaml           # Global source path mapping
 ├── sync.sh               # Main sync entrypoint
 ├── setup_hooks.sh        # Installs post-merge and post-checkout hooks
@@ -198,5 +198,5 @@ It inserts generated paths for all enabled tools and keeps the rest of `.gitigno
 1. Copy `.ai/src/tools/_TEMPLATE.yaml` to `.ai/src/tools/<tool>.yaml`.
 2. Fill `name`, set `enabled: true`, and configure all target destinations.
 3. Add optional transforms (`extension`, `header`, `include/exclude`) only if needed.
-4. Run `.ai/system/sync.sh --only <tool>`.
-5. Verify output and rerun full `.ai/system/sync.sh`.
+4. Run `agentsync sync --only <tool>`.
+5. Verify output and rerun full `agentsync sync`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs git hooks to run .ai/system/sync.sh after checkout and merge.
+# Installs git hooks to run lib/system/sync.sh after checkout and merge.
 # Existing hook logic is preserved; AgentSync block is appended once.
 
 set -euo pipefail
@@ -36,17 +36,17 @@ append_agentsync_block() {
         echo ""
         echo "$BLOCK_START"
         cat <<'EOF'
-if [ -f ".ai/system/sync.sh" ]; then
-    echo "Running AI Config Sync (.ai/system)..."
-    bash .ai/system/sync.sh
-elif [ -f "agent/.ai/system/sync.sh" ]; then
-    echo "Running AI Config Sync (agent/.ai/system)..."
-    bash agent/.ai/system/sync.sh
+if [ -f "lib/system/sync.sh" ]; then
+    echo "Running AI Config Sync (lib/system)..."
+    bash lib/system/sync.sh
+elif [ -f "agent/lib/system/sync.sh" ]; then
+    echo "Running AI Config Sync (agent/lib/system)..."
+    bash agent/lib/system/sync.sh
 elif command -v dart >/dev/null 2>&1; then
     echo "Running AI Config Sync (dart wrapper)..."
     dart run agent_sync:agent_sync sync --project-dir .
 else
-    echo "AgentSync: no sync entrypoint found (.ai/system, agent/.ai/system, or dart)." >&2
+    echo "AgentSync: no sync entrypoint found (lib/system, agent/lib/system, or dart)." >&2
 fi
 EOF
         echo "$BLOCK_END"

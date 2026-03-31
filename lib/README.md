@@ -1,6 +1,6 @@
 # AgentSync Manual
 
-`.ai/` is the authoring workspace for AgentSync (`agent_sync`) and all shared AI behavior in this repository.
+`lib/` contains the AgentSync engine — sync scripts, templates, and documentation.
 
 ## What to Edit
 
@@ -23,20 +23,17 @@ Do not edit generated targets directly:
 ## Directory Layout
 
 ```
-.ai/
-├── src/                    # Source of truth
-│   ├── AGENTS.md
-│   ├── rules/
-│   ├── skills/
-│   └── tools/
+lib/
 ├── system/                 # Sync engine scripts
 │   ├── sync.sh
 │   ├── setup_hooks.sh
 │   ├── check.sh
 │   ├── config.yaml
-│   └── lib/
+│   ├── templates/          # Default tool configs and skills
+│   ├── prompts/            # Generate prompt templates
+│   └── lib/                # Bash helper libraries
 ├── docs/                   # Internal notes
-└── tasks/                  # Task drafts / work items
+└── README.md
 ```
 
 ## Authoring Model
@@ -98,21 +95,21 @@ description: When this skill should be used.
 From repo root:
 
 ```bash
-.ai/system/sync.sh
+agentsync sync
 ```
 
 Useful flags:
 
 ```bash
-.ai/system/sync.sh --dry-run
-.ai/system/sync.sh --only claude,copilot
-.ai/system/sync.sh --skip gemini
+agentsync sync --dry-run
+agentsync sync --only claude,copilot
+agentsync sync --skip gemini
 ```
 
 Install hooks once:
 
 ```bash
-.ai/system/setup_hooks.sh
+agentsync setup-hooks
 ```
 
 This auto-runs sync after `git pull` (post-merge) and after `git checkout`.
@@ -121,4 +118,4 @@ This auto-runs sync after `git pull` (post-merge) and after `git checkout`.
 
 - `sync.sh` also updates the generated block in `.gitignore`.
 - `check.sh` is available for sync verification workflows.
-- Technical details and tool YAML schema are documented in `.ai/system/README.md`.
+- Technical details and tool YAML schema are documented in `lib/system/README.md`.

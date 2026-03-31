@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chmod +x .ai/system/sync.sh
+# chmod +x lib/system/sync.sh
 # Cross-platform AgentSync Config Sync Script
 # Works in Git Bash on Windows and Unix/macOS
 
@@ -809,7 +809,7 @@ main() {
     [[ -n "$override_tools" ]] && SOURCE_TOOLS="$override_tools"
 
     if [[ -z "$SOURCE_TOOLS" ]]; then
-        SOURCE_TOOLS=".ai/system/tools"
+        SOURCE_TOOLS="lib/system/tools"
         log_warning "source.tools is not set, falling back to $SOURCE_TOOLS"
     fi
 

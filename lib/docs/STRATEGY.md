@@ -1,4 +1,4 @@
-# .ai/STRATEGY.md
+# STRATEGY.md
 
 ## Loading Priority
 

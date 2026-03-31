@@ -333,7 +333,7 @@ Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatic
 
 ## Gitignore
 
-`agentsync sync` auto-manages a block in `.gitignore` between `AI SYNC GENERATED START/END` markers. Generated files are gitignored — only `.ai/src/` and `.ai/system/` need to be committed.
+`agentsync sync` auto-manages a block in `.gitignore` between `AI SYNC GENERATED START/END` markers. Generated files are gitignored — only `.ai/src/` needs to be committed.
 
 ## How Sync Works
 
@@ -385,7 +385,7 @@ source:
 - `prepend_agents` for merged rules: prepends AGENTS.md before merged content (Aider, Zed, Continue)
 - `00-context.md` pattern: AGENTS.md copied as first file in rules dir (Cline, Amazon Q, Augment, Tabnine)
 
-**Init changes:** `init` no longer copies the engine into the project `.ai/system/`. The engine runs from `~/.agentsync/`.
+**Init changes:** `init` no longer copies the engine into the project. The engine runs from `~/.agentsync/`.
 
 ```bash
 # Get latest templates:

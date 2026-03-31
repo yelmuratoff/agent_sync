@@ -7,20 +7,20 @@
 # Priority:
 #   1. AGENTSYNC_HOME env var (global install)
 #   2. Engine root (set during lib loading)
-#   3. .ai/system in current working directory
+#   3. lib/system in current working directory
 resolve_system_dir() {
-    if [[ -n "${AGENTSYNC_HOME:-}" ]] && [[ -d "$AGENTSYNC_HOME/.ai/system" ]]; then
-        echo "$AGENTSYNC_HOME/.ai/system"
+    if [[ -n "${AGENTSYNC_HOME:-}" ]] && [[ -d "$AGENTSYNC_HOME/lib/system" ]]; then
+        echo "$AGENTSYNC_HOME/lib/system"
         return 0
     fi
 
-    if [[ -n "${_AGENTSYNC_ENGINE_ROOT:-}" ]] && [[ -d "$_AGENTSYNC_ENGINE_ROOT/.ai/system" ]]; then
-        echo "$_AGENTSYNC_ENGINE_ROOT/.ai/system"
+    if [[ -n "${_AGENTSYNC_ENGINE_ROOT:-}" ]] && [[ -d "$_AGENTSYNC_ENGINE_ROOT/lib/system" ]]; then
+        echo "$_AGENTSYNC_ENGINE_ROOT/lib/system"
         return 0
     fi
 
-    if [[ -d "$(pwd)/.ai/system" ]]; then
-        echo "$(pwd)/.ai/system"
+    if [[ -d "$(pwd)/lib/system" ]]; then
+        echo "$(pwd)/lib/system"
         return 0
     fi
 
