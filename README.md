@@ -43,7 +43,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 
 ## Installation
 
-Requirements: `git`, `bash`.
+Requirements: `git`, `bash`. Works on **macOS** and **Linux** out of the box. On **Windows**, use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) or [Git Bash](https://gitforwindows.org/) (included with Git for Windows).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yelmuratoff/agent/main/install.sh | bash
