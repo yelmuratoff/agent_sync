@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+      - name: Lint shell scripts
+        run: |
+          shellcheck -x bin/agentsync.sh
+          shellcheck -x lib/system/sync.sh
+          shellcheck -x lib/system/check.sh
+          shellcheck -x lib/system/setup_hooks.sh
+          shellcheck -x lib/system/lib/*.sh
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify install
+        run: |
+          bash install.sh
+          agentsync version
+
+      - name: Init + sync (fresh project)
+        run: |
+          mkdir /tmp/test-project && cd /tmp/test-project
+          git init
+          agentsync init
+          agentsync sync --dry-run
+          agentsync sync
+          agentsync check
+
+      - name: List tools
+        run: |
+          cd /tmp/test-project
+          agentsync list
+
+      - name: Verify generated structure
+        run: |
+          cd /tmp/test-project
+          test -f .claude/CLAUDE.md
+          test -d .claude/rules
+          test -f .cursor/AGENTS.md
+          test -d .cursor/rules
+          test -f .github/copilot-instructions.md

@@ -57,6 +57,7 @@ _load_lib() {
     source "$lib_dir/list.sh"
     source "$lib_dir/generate.sh"
     source "$lib_dir/update.sh"
+    source "$lib_dir/release.sh"
 }
 _load_lib
 
@@ -77,6 +78,7 @@ print_usage() {
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "list")           Show available tools and their status"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
+    echo "    $(_cyan "release")        Bump version, tag, and push (maintainer)"
     echo "    $(_cyan "version")        Print version"
     echo "    $(_cyan "help")           Show this message"
     echo ""
@@ -147,6 +149,7 @@ main() {
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
         generate|gen)  shift; cmd_generate "$*" ;;
         update)        cmd_update ;;
+        release)       shift; cmd_release "${1:-patch}" ;;
         list|ls)       cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;
         help|--help|-h)       print_usage ;;
