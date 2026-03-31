@@ -6,6 +6,7 @@ load test_helper
 setup() {
     setup_test_project
     run_agentsync init
+    run_agentsync sync
 }
 
 teardown() {
@@ -13,14 +14,12 @@ teardown() {
 }
 
 @test "check passes after sync" {
-    run_agentsync sync
     run run_agentsync check
     [ "$status" -eq 0 ]
     [[ "$output" == *"synced"* ]]
 }
 
-@test "check fails when out of sync" {
-    run_agentsync sync
+@test "check fails when generated file is modified" {
     echo "modified" >> .claude/CLAUDE.md
     run run_agentsync check
     [ "$status" -eq 1 ]
@@ -28,14 +27,12 @@ teardown() {
 }
 
 @test "check fails when generated file is missing" {
-    run_agentsync sync
     rm -f .claude/CLAUDE.md
     run run_agentsync check
     [ "$status" -eq 1 ]
 }
 
-@test "check detects rule changes" {
-    run_agentsync sync
+@test "check detects source rule changes" {
     echo "# New rule" >> .ai/src/rules/core.md
     run run_agentsync check
     [ "$status" -eq 1 ]
