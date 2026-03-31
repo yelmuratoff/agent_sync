@@ -4,10 +4,10 @@
 #
 # What it does:
 #   1. Clones the AgentSync engine to ~/.agentsync/
-#   2. Creates a symlink: /usr/local/bin/agentsync → ~/.agentsync/bin/agentsync
+#   2. Creates a symlink: /usr/local/bin/agentsync.sh → ~/.agentsync/bin/agentsync.sh
 #
 # To uninstall:
-#   rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync
+#   rm -rf ~/.agentsync && rm -f /usr/local/bin/agentsync.sh
 
 set -euo pipefail
 
@@ -87,7 +87,7 @@ main() {
     fi
 
     # 3. Make CLI executable
-    local cli_script="$engine_dir/bin/agentsync"
+    local cli_script="$engine_dir/bin/agentsync.sh"
     if [[ ! -f "$cli_script" ]]; then
         echo "$(_red "Error"): CLI script not found at $cli_script" >&2
         exit 1
