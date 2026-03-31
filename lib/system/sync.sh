@@ -43,6 +43,9 @@ SOURCE_RULES=""
 SOURCE_SKILLS=""
 SOURCE_TOOLS=""
 
+# Paths claimed by enabled tools — cleanup must not delete these
+declare -a ENABLED_DEST_PATHS=()
+
 
 # Usage information
 usage() {
@@ -420,6 +423,17 @@ run_post_sync_hook() {
     return 0
 }
 
+# Check if a path is claimed by an enabled tool (should not be cleaned up)
+is_path_protected() {
+    local path="$1"
+    [[ ${#ENABLED_DEST_PATHS[@]} -eq 0 ]] && return 1
+    local p
+    for p in "${ENABLED_DEST_PATHS[@]}"; do
+        [[ "$p" == "$path" ]] && return 0
+    done
+    return 1
+}
+
 # Sync a single tool based on its YAML config
 sync_tool() {
     local tool_config="$1"
@@ -457,16 +471,16 @@ sync_tool() {
 
     # Check if tool is enabled in config
     if [[ "$enabled_value" == "false" ]]; then
-        # Cleanup disabled tool directories
+        # Cleanup disabled tool directories (skip paths claimed by enabled tools)
         local cleaned=false
-        [[ -n "$dest_agents_abs" ]] && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_rules_abs" ]] && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_skills_abs" ]] && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_commands_abs" ]] && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_subagents_abs" ]] && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_settings_abs" ]] && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_mcp_abs" ]] && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_hooks_abs" ]] && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
         
         if [[ "$cleaned" == "true" ]]; then
             log_info "Cleaned up $tool_name (disabled)"
@@ -857,16 +871,19 @@ main() {
                  d_agents_abs=$(resolve_dest_path "$d_agents" "targets.agents.dest in $tool_file_basename")
                  d_agents_rel=$(to_repo_relative_path "$d_agents_abs")
                  generated_paths+=("$d_agents_rel")
+                 ENABLED_DEST_PATHS+=("$d_agents_abs")
              fi
              if [[ -n "$d_rules" ]]; then
                  d_rules_abs=$(resolve_dest_path "$d_rules" "targets.rules.dest in $tool_file_basename")
                  d_rules_rel=$(to_repo_relative_path "$d_rules_abs")
                  generated_paths+=("$d_rules_rel/")
+                 ENABLED_DEST_PATHS+=("$d_rules_abs")
              fi
              if [[ -n "$d_skills" ]]; then
                  d_skills_abs=$(resolve_dest_path "$d_skills" "targets.skills.dest in $tool_file_basename")
                  d_skills_rel=$(to_repo_relative_path "$d_skills_abs")
                  generated_paths+=("$d_skills_rel/")
+                 ENABLED_DEST_PATHS+=("$d_skills_abs")
              fi
 
              local d_commands d_subagents
@@ -877,12 +894,14 @@ main() {
                  d_commands_abs=$(resolve_dest_path "$d_commands" "targets.commands.dest in $tool_file_basename")
                  d_commands_rel=$(to_repo_relative_path "$d_commands_abs")
                  generated_paths+=("$d_commands_rel/")
+                 ENABLED_DEST_PATHS+=("$d_commands_abs")
              fi
              if [[ -n "$d_subagents" ]]; then
                  local d_subagents_abs d_subagents_rel
                  d_subagents_abs=$(resolve_dest_path "$d_subagents" "targets.subagents.dest in $tool_file_basename")
                  d_subagents_rel=$(to_repo_relative_path "$d_subagents_abs")
                  generated_paths+=("$d_subagents_rel/")
+                 ENABLED_DEST_PATHS+=("$d_subagents_abs")
              fi
 
              # Settings are generated but typically committed (not gitignored)
@@ -895,12 +914,14 @@ main() {
                  d_settings_abs=$(resolve_dest_path "$d_settings" "targets.settings.dest in $tool_file_basename")
                  d_settings_rel=$(to_repo_relative_path "$d_settings_abs")
                  generated_paths+=("$d_settings_rel")
+                 ENABLED_DEST_PATHS+=("$d_settings_abs")
              fi
              if [[ -n "$d_mcp" ]]; then
                  local d_mcp_abs d_mcp_rel
                  d_mcp_abs=$(resolve_dest_path "$d_mcp" "targets.mcp.dest in $tool_file_basename")
                  d_mcp_rel=$(to_repo_relative_path "$d_mcp_abs")
                  generated_paths+=("$d_mcp_rel")
+                 ENABLED_DEST_PATHS+=("$d_mcp_abs")
              fi
              local d_hooks
              d_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
@@ -909,6 +930,7 @@ main() {
                  d_hooks_abs=$(resolve_dest_path "$d_hooks" "targets.hooks.dest in $tool_file_basename")
                  d_hooks_rel=$(to_repo_relative_path "$d_hooks_abs")
                  generated_paths+=("$d_hooks_rel")
+                 ENABLED_DEST_PATHS+=("$d_hooks_abs")
              fi
         fi
 
