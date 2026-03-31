@@ -126,23 +126,18 @@ AGENTS_EOF
 RULE_EOF
     fi
 
-    # ── Tool configs ──
-    local engine_root=""
-    if [[ -n "$system_dir" ]]; then
-        engine_root="$(cd "$system_dir/../.." && pwd)"
-    fi
-
+    # ── Tool configs (from templates/tools/) ──
     local copied_tools=false
-    if [[ -n "$engine_root" ]] && [[ -d "$engine_root/.ai/src/tools" ]]; then
-        for tool_file in "$engine_root/.ai/src/tools/"*.yaml; do
+    if [[ -n "$templates_dir" ]] && [[ -d "$templates_dir/tools" ]]; then
+        for tool_file in "$templates_dir/tools/"*.yaml; do
             [[ -f "$tool_file" ]] || continue
             local basename
             basename=$(basename "$tool_file")
             [[ "$basename" == _* ]] && continue
             cp "$tool_file" "$ai_dir/src/tools/$basename"
         done
-        if [[ -f "$engine_root/.ai/src/tools/_TEMPLATE.yaml" ]]; then
-            cp "$engine_root/.ai/src/tools/_TEMPLATE.yaml" "$ai_dir/src/tools/_TEMPLATE.yaml"
+        if [[ -f "$templates_dir/tools/_TEMPLATE.yaml" ]]; then
+            cp "$templates_dir/tools/_TEMPLATE.yaml" "$ai_dir/src/tools/_TEMPLATE.yaml"
         fi
         copied_tools=true
     fi

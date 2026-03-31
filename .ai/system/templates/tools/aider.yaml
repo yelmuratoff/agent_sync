@@ -1,0 +1,10 @@
+name: "Aider"
+enabled: true
+
+targets:
+  rules:
+    dest: "CONVENTIONS.md"
+    merge_to_file: true
+    prepend_agents: true
+  skills:
+    inline_into_agents: true

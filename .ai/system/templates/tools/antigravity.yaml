@@ -1,0 +1,14 @@
+# Google Antigravity Configuration
+name: "Google Antigravity"
+enabled: true
+
+targets:
+  agents:
+    dest: ".agent/AGENTS.md"
+
+  rules:
+    dest: ".agent/rules"
+    header: "---\ntrigger: always_on\n---"
+
+  skills:
+    dest: ".agent/skills"

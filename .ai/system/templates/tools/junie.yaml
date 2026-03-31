@@ -1,0 +1,10 @@
+name: "JetBrains Junie"
+enabled: true
+
+targets:
+  agents:
+    dest: ".junie/guidelines.md"
+  rules:
+    dest: ".junie/guidelines"
+  skills:
+    inline_into_agents: true
