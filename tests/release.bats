@@ -4,15 +4,13 @@
 load test_helper
 
 setup() {
-    # Release must run from the agentsync repo itself
     TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_release_test.XXXXXX")"
 
-    # Copy the repo (without .git) and init a fresh git repo
+    # Copy repo contents and create a fresh git repo
     cp -r "$REPO_ROOT"/* "$TEST_PROJECT/"
     cp -r "$REPO_ROOT"/.??* "$TEST_PROJECT/" 2>/dev/null || true
     cd "$TEST_PROJECT"
 
-    # Fresh git repo so we can commit/tag freely
     rm -rf .git
     git init --quiet
     git config user.email "test@test.com"
@@ -20,7 +18,6 @@ setup() {
     git add -A
     git commit -m "initial" --quiet
 
-    # Set a known version
     echo "1.0.0" > VERSION
     git add VERSION
     git commit -m "set version" --quiet
@@ -35,38 +32,38 @@ teardown() {
 }
 
 @test "release patch bumps version" {
-    echo "y" | bash bin/agentsync.sh release patch
+    echo "y" | bash bin/agentsync.sh release patch --no-push
     local version
     read -r version < VERSION
     [ "$version" = "1.0.1" ]
 }
 
 @test "release minor bumps version" {
-    echo "y" | bash bin/agentsync.sh release minor
+    echo "y" | bash bin/agentsync.sh release minor --no-push
     local version
     read -r version < VERSION
     [ "$version" = "1.1.0" ]
 }
 
 @test "release major bumps version" {
-    echo "y" | bash bin/agentsync.sh release major
+    echo "y" | bash bin/agentsync.sh release major --no-push
     local version
     read -r version < VERSION
     [ "$version" = "2.0.0" ]
 }
 
 @test "release creates git tag" {
-    echo "y" | bash bin/agentsync.sh release patch
+    echo "y" | bash bin/agentsync.sh release patch --no-push
     git tag -l | grep -q "1.0.1"
 }
 
 @test "release creates commit" {
-    echo "y" | bash bin/agentsync.sh release patch
+    echo "y" | bash bin/agentsync.sh release patch --no-push
     git log --oneline -1 | grep -q "release: v1.0.1"
 }
 
 @test "release default is patch" {
-    echo "y" | bash bin/agentsync.sh release
+    echo "y" | bash bin/agentsync.sh release --no-push
     local version
     read -r version < VERSION
     [ "$version" = "1.0.1" ]
@@ -74,7 +71,7 @@ teardown() {
 
 @test "release fails on dirty working tree" {
     echo "uncommitted" > dirty_file.txt
-    run bash -c 'echo "y" | bash bin/agentsync.sh release patch'
+    run bash -c 'echo "y" | bash bin/agentsync.sh release patch --no-push'
     [ "$status" -eq 1 ]
     [[ "$output" == *"not clean"* ]]
 }
@@ -86,8 +83,15 @@ teardown() {
 }
 
 @test "release can be cancelled" {
-    echo "n" | bash bin/agentsync.sh release patch
+    echo "n" | bash bin/agentsync.sh release patch --no-push
     local version
     read -r version < VERSION
     [ "$version" = "1.0.0" ]
+}
+
+@test "release --no-push does not push" {
+    run bash -c 'echo "y" | bash bin/agentsync.sh release patch --no-push'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"local only"* ]]
+    [[ "$output" == *"--no-push"* ]]
 }

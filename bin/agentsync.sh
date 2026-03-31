@@ -149,7 +149,7 @@ main() {
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
         generate|gen)  shift; cmd_generate "$*" ;;
         update)        cmd_update ;;
-        release)       shift; cmd_release "${1:-patch}" ;;
+        release)       shift; cmd_release "$@" ;;
         list|ls)       cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;
         help|--help|-h)       print_usage ;;

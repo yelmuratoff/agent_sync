@@ -2,7 +2,22 @@
 # agentsync release — bump version, tag, and push.
 
 cmd_release() {
-    local bump_type="${1:-patch}"
+    local bump_type="patch"
+    local skip_push=false
+
+    # Parse args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-push) skip_push=true; shift ;;
+            major|minor|patch) bump_type="$1"; shift ;;
+            *)
+                echo "$(_red "Error"): Unknown bump type: $1" >&2
+                echo "  Usage: agentsync release [major|minor|patch] [--no-push]" >&2
+                exit 1
+                ;;
+        esac
+    done
+
     local install_dir
     install_dir=$(resolve_install_dir 2>/dev/null) || install_dir=""
 
@@ -52,11 +67,6 @@ cmd_release() {
         patch)
             patch=$((patch + 1))
             ;;
-        *)
-            echo "$(_red "Error"): Unknown bump type: $bump_type" >&2
-            echo "  Usage: agentsync release [major|minor|patch]" >&2
-            exit 1
-            ;;
     esac
 
     local new_version="$major.$minor.$patch"
@@ -79,7 +89,7 @@ cmd_release() {
     echo "$new_version" > VERSION
     echo "  Updated $(_cyan "VERSION") → $new_version"
 
-    # Commit + tag + push
+    # Commit + tag
     git add VERSION
     git commit -m "release: v$new_version" --quiet
     echo "  Created commit: $(_dim "release: v$new_version")"
@@ -87,15 +97,24 @@ cmd_release() {
     git tag "$new_version"
     echo "  Created tag: $(_cyan "$new_version")"
 
-    echo ""
-    echo "  Pushing to origin..."
-    git push --quiet origin main
-    git push --quiet origin "$new_version"
-
-    echo ""
-    echo "  $(_green "Released v$new_version!")"
-    echo ""
-    echo "  GitHub Release will be created automatically by CI."
-    echo "  Users will see the update notification on next run."
-    echo ""
+    # Push
+    if [[ "$skip_push" == "true" ]]; then
+        echo ""
+        echo "  $(_green "Released v$new_version!") (local only, --no-push)"
+        echo ""
+        echo "  Push manually:"
+        echo "    git push origin main && git push origin $new_version"
+        echo ""
+    else
+        echo ""
+        echo "  Pushing to origin..."
+        git push --quiet origin main
+        git push --quiet origin "$new_version"
+        echo ""
+        echo "  $(_green "Released v$new_version!")"
+        echo ""
+        echo "  GitHub Release will be created automatically by CI."
+        echo "  Users will see the update notification on next run."
+        echo ""
+    fi
 }
