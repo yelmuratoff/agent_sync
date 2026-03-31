@@ -1,5 +1,6 @@
 # OpenAI Codex Configuration
-# Codex reads AGENTS.md from project root, not from .codex/
+# Codex reads AGENTS.md from project root (not from .codex/)
+# Codex rules (.codex/rules/*.rules) use Starlark format for command permissions — not managed by agentsync
 name: "OpenAI Codex"
 enabled: true
 
