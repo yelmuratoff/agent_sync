@@ -252,7 +252,7 @@ targets:
 | ------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
 | **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                           |
 | **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
-| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json                                                |
+| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                    |
 | **Gemini CLI**      | `gemini.yaml`   | GEMINI.md, skills, commands (MD→TOML), agents                                                  |
 | **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (root), skills, agents (MD→TOML)                                                     |
 | **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills                                                 |
