@@ -52,6 +52,22 @@ cmd_update() {
         exit 1
     fi
 
+    # Re-link CLI binary (handles renames across versions)
+    local cli_script="$install_dir/bin/agentsync.sh"
+    if [[ -f "$cli_script" ]]; then
+        chmod +x "$cli_script"
+        local current_bin
+        current_bin=$(command -v agentsync 2>/dev/null) || true
+        if [[ -n "$current_bin" ]] && [[ -L "$current_bin" ]]; then
+            local target
+            target=$(readlink "$current_bin") || true
+            if [[ "$target" != "$cli_script" ]]; then
+                ln -sf "$cli_script" "$current_bin"
+                echo "  Updated symlink: $(_dim "$current_bin")"
+            fi
+        fi
+    fi
+
     local new_version="$old_version"
     if [[ -f "$install_dir/VERSION" ]]; then
         read -r new_version < "$install_dir/VERSION"
