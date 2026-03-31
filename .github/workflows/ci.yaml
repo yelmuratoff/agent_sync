@@ -31,30 +31,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify install
+      - name: Install bats-core
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get install -y bats
+          else
+            brew install bats-core
+          fi
+
+      - name: Run tests
+        run: bats tests/ --tap
+        env:
+          TERM: xterm
+
+      - name: Verify install script
         run: |
           bash install.sh
           agentsync version
 
-      - name: Init + sync (fresh project)
+      - name: Smoke test (init + sync + check)
         run: |
-          mkdir /tmp/test-project && cd /tmp/test-project
+          mkdir /tmp/smoke-project && cd /tmp/smoke-project
           git init
+          git config user.email "ci@test.com"
+          git config user.name "CI"
           agentsync init
-          agentsync sync --dry-run
           agentsync sync
           agentsync check
-
-      - name: List tools
-        run: |
-          cd /tmp/test-project
           agentsync list
-
-      - name: Verify generated structure
-        run: |
-          cd /tmp/test-project
-          test -f .claude/CLAUDE.md
-          test -d .claude/rules
-          test -f .cursor/AGENTS.md
-          test -d .cursor/rules
-          test -f .github/copilot-instructions.md
