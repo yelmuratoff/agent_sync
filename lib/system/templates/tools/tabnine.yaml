@@ -1,5 +1,5 @@
 name: "Tabnine"
-enabled: true
+enabled: false
 
 targets:
   agents:

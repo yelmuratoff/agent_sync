@@ -1,5 +1,5 @@
 name: "Aider"
-enabled: true
+enabled: false
 
 targets:
   rules:

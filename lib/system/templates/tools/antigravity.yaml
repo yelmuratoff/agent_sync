@@ -1,6 +1,6 @@
 # Google Antigravity Configuration
 name: "Google Antigravity"
-enabled: true
+enabled: false
 
 targets:
   agents:

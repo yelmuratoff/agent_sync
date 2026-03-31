@@ -1,5 +1,5 @@
 name: "JetBrains Junie"
-enabled: true
+enabled: false
 
 targets:
   agents:

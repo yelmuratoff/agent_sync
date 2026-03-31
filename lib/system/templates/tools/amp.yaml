@@ -2,7 +2,7 @@
 # Amp reads AGENTS.md from project root
 # Rules are inlined into AGENTS.md (Amp has no separate rules directory)
 name: "Amp"
-enabled: true
+enabled: false
 
 targets:
   agents:

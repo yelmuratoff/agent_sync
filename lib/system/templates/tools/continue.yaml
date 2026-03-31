@@ -1,5 +1,5 @@
 name: "Continue"
-enabled: true
+enabled: false
 
 targets:
   rules:

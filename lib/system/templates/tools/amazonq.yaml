@@ -1,5 +1,5 @@
 name: "Amazon Q Developer"
-enabled: true
+enabled: false
 
 targets:
   agents:

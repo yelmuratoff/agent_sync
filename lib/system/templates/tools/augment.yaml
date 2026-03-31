@@ -1,5 +1,5 @@
 name: "Augment Code"
-enabled: true
+enabled: false
 
 targets:
   agents:
