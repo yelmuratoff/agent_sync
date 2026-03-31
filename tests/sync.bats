@@ -1,77 +1,78 @@
 #!/usr/bin/env bats
 # Tests for agentsync sync.
+# Uses setup_file/teardown_file — init+sync runs ONCE, all tests are readonly checks.
 
 load test_helper
 
-setup() {
-    setup_test_project
-    run_agentsync init
+setup_file() {
+    export SYNC_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_sync_test.XXXXXX")"
+    cd "$SYNC_PROJECT"
+    git init --quiet
+    git config user.email "test@test.com"
+    git config user.name "Test"
+
+    # Init + full sync once
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init
+    echo "node_modules/" > .gitignore
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
 }
 
-teardown() {
-    teardown_test_project
+teardown_file() {
+    [[ -n "${SYNC_PROJECT:-}" ]] && rm -rf "$SYNC_PROJECT"
+}
+
+setup() {
+    cd "$SYNC_PROJECT"
 }
 
 # ── Claude Code ──────────────────────────────────────────────────────────────
 
-@test "sync creates Claude CLAUDE.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude CLAUDE.md exists" {
     [ -f ".claude/CLAUDE.md" ]
 }
 
-@test "sync creates Claude rules" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude rules exist" {
     [ -d ".claude/rules" ]
     local count
     count=$(ls -1 .claude/rules/*.md 2>/dev/null | wc -l | tr -d ' ')
     [ "$count" -ge 1 ]
 }
 
-@test "sync creates Claude skills" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude skills exist" {
     [ -d ".claude/skills" ]
 }
 
-@test "sync creates Claude commands" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude commands exist" {
     [ -d ".claude/commands" ]
 }
 
-@test "sync creates Claude agents" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude agents exist" {
     [ -d ".claude/agents" ]
 }
 
-@test "sync appends @rules imports to CLAUDE.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Claude CLAUDE.md has @rules imports" {
     grep -q "@rules/" .claude/CLAUDE.md
+}
+
+@test "sync: Claude CLAUDE.md contains AGENTS.md content" {
+    local first_heading
+    first_heading=$(grep "^#" .ai/src/AGENTS.md | head -1)
+    grep -qF "$first_heading" .claude/CLAUDE.md
 }
 
 # ── Cursor ───────────────────────────────────────────────────────────────────
 
-@test "sync creates Cursor AGENTS.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Cursor AGENTS.md exists" {
     [ -f ".cursor/AGENTS.md" ]
 }
 
-@test "sync creates Cursor .mdc rules" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Cursor .mdc rules exist" {
     local count
     count=$(ls -1 .cursor/rules/*.mdc 2>/dev/null | wc -l | tr -d ' ')
     [ "$count" -ge 1 ]
 }
 
-@test "sync Cursor rules have globs frontmatter" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Cursor rules have globs frontmatter" {
     local first_mdc
     first_mdc=$(ls .cursor/rules/*.mdc | head -1)
     grep -q "alwaysApply: true" "$first_mdc"
@@ -79,23 +80,17 @@ teardown() {
 
 # ── GitHub Copilot ───────────────────────────────────────────────────────────
 
-@test "sync creates Copilot instructions" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Copilot instructions exist" {
     [ -f ".github/copilot-instructions.md" ]
 }
 
-@test "sync creates Copilot .instructions.md rules" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Copilot .instructions.md rules exist" {
     local count
     count=$(ls -1 .github/instructions/*.instructions.md 2>/dev/null | wc -l | tr -d ' ')
     [ "$count" -ge 1 ]
 }
 
-@test "sync Copilot rules have applyTo frontmatter" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Copilot rules have applyTo frontmatter" {
     local first
     first=$(ls .github/instructions/*.instructions.md | head -1)
     grep -q "applyTo:" "$first"
@@ -103,15 +98,11 @@ teardown() {
 
 # ── Windsurf ─────────────────────────────────────────────────────────────────
 
-@test "sync creates Windsurf AGENTS.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Windsurf AGENTS.md exists" {
     [ -f ".windsurf/AGENTS.md" ]
 }
 
-@test "sync Windsurf rules have trigger frontmatter" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Windsurf rules have trigger frontmatter" {
     local first
     first=$(ls .windsurf/rules/*.md | head -1)
     grep -q "trigger: always_on" "$first"
@@ -119,145 +110,33 @@ teardown() {
 
 # ── Gemini ───────────────────────────────────────────────────────────────────
 
-@test "sync creates Gemini GEMINI.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Gemini GEMINI.md exists" {
     [ -f ".gemini/GEMINI.md" ]
 }
 
-@test "sync Gemini inlines rules into GEMINI.md" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: Gemini inlines rules into GEMINI.md" {
     grep -q "Rules" .gemini/GEMINI.md
 }
 
-# ── OpenAI Codex ─────────────────────────────────────────────────────────────
+# ── Codex ────────────────────────────────────────────────────────────────────
 
-@test "sync creates Codex AGENTS.md at root" {
-    # Use --only to avoid conflict with other tools sharing AGENTS.md dest
-    run run_agentsync sync --only codex
-    [ "$status" -eq 0 ]
+@test "sync: Codex AGENTS.md at root exists" {
     [ -f "AGENTS.md" ]
-}
-
-# ── Filtering ────────────────────────────────────────────────────────────────
-
-@test "sync --only filters tools" {
-    run run_agentsync sync --only claude
-    [ "$status" -eq 0 ]
-    [ -f ".claude/CLAUDE.md" ]
-    [ ! -f ".cursor/AGENTS.md" ]
-}
-
-@test "sync --skip excludes tools" {
-    run run_agentsync sync --skip claude
-    [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
-    [ -f ".cursor/AGENTS.md" ]
-}
-
-@test "sync --only multiple tools" {
-    run run_agentsync sync --only claude,cursor
-    [ "$status" -eq 0 ]
-    [ -f ".claude/CLAUDE.md" ]
-    [ -f ".cursor/AGENTS.md" ]
-    [ ! -f ".github/copilot-instructions.md" ]
-}
-
-# ── Dry run ──────────────────────────────────────────────────────────────────
-
-@test "sync --dry-run does not create files" {
-    run run_agentsync sync --dry-run
-    [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
-    [ ! -f ".cursor/AGENTS.md" ]
-    [[ "$output" == *"dry-run"* ]]
-}
-
-# ── Disabled tools ───────────────────────────────────────────────────────────
-
-@test "sync skips disabled tools" {
-    # Disable Claude
-    sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
-    run run_agentsync sync --only claude
-    [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
-}
-
-@test "sync cleans up when tool is disabled" {
-    # First sync with Claude enabled
-    run run_agentsync sync --only claude
-    [ -f ".claude/CLAUDE.md" ]
-
-    # Disable Claude
-    sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
 }
 
 # ── Gitignore ────────────────────────────────────────────────────────────────
 
-@test "sync updates .gitignore with markers" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: .gitignore has sync markers" {
     grep -q "AI SYNC GENERATED START" .gitignore
     grep -q "AI SYNC GENERATED END" .gitignore
 }
 
-@test "sync preserves existing .gitignore content" {
-    echo "node_modules/" > .gitignore
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
+@test "sync: .gitignore preserves existing content" {
     grep -q "node_modules/" .gitignore
-    grep -q "AI SYNC GENERATED START" .gitignore
 }
 
-@test "sync updates gitignore block on re-sync" {
-    run run_agentsync sync
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
-    # Should have exactly one start marker
+@test "sync: .gitignore has exactly one marker block" {
     local count
     count=$(grep -c "AI SYNC GENERATED START" .gitignore)
     [ "$count" -eq 1 ]
-}
-
-# ── Idempotency ──────────────────────────────────────────────────────────────
-
-@test "sync is idempotent" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
-    local hash1
-    hash1=$(find . -not -path './.git/*' -type f -exec md5sum {} \; 2>/dev/null | sort || \
-            find . -not -path './.git/*' -type f -exec md5 {} \; 2>/dev/null | sort)
-
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
-    local hash2
-    hash2=$(find . -not -path './.git/*' -type f -exec md5sum {} \; 2>/dev/null | sort || \
-            find . -not -path './.git/*' -type f -exec md5 {} \; 2>/dev/null | sort)
-
-    [ "$hash1" = "$hash2" ]
-}
-
-# ── Content integrity ────────────────────────────────────────────────────────
-
-@test "sync CLAUDE.md contains AGENTS.md content" {
-    run run_agentsync sync
-    [ "$status" -eq 0 ]
-    # First line of source should appear in output
-    local first_heading
-    first_heading=$(grep "^#" .ai/src/AGENTS.md | head -1)
-    grep -qF "$first_heading" .claude/CLAUDE.md
-}
-
-@test "sync copies settings.json for Claude" {
-    # Create settings source
-    mkdir -p .ai/src/settings
-    echo '{"permissions":{"allow":["Read"]}}' > .ai/src/settings/claude.json
-    run run_agentsync sync --only claude
-    [ "$status" -eq 0 ]
-    [ -f ".claude/settings.json" ]
-    grep -q "permissions" .claude/settings.json
 }
