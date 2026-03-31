@@ -59,12 +59,7 @@ cmd_update() {
         local current_bin
         current_bin=$(command -v agentsync 2>/dev/null) || true
         if [[ -n "$current_bin" ]] && [[ -L "$current_bin" ]]; then
-            local target
-            target=$(readlink "$current_bin") || true
-            if [[ "$target" != "$cli_script" ]]; then
-                ln -sf "$cli_script" "$current_bin"
-                echo "  Updated symlink: $(_dim "$current_bin")"
-            fi
+            ln -sf "$cli_script" "$current_bin"
         fi
     fi
 
