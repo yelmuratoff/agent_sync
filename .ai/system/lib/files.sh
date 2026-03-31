@@ -232,6 +232,94 @@ merge_rules_to_file() {
     log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged)"
 }
 
+# Convert a markdown command file to Gemini TOML format
+# Usage: convert_md_command_to_toml "src_file" "dest_file" "dry_run"
+convert_md_command_to_toml() {
+    local src_file="$1"
+    local dest_file="$2"
+    local dry_run="${3:-false}"
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_step "$src_file → $dest_file (md→toml) (dry-run)"
+        return 0
+    fi
+
+    ensure_dir "$(dirname "$dest_file")"
+
+    local description=""
+    local in_frontmatter=false
+    local frontmatter_done=false
+    local body=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$frontmatter_done" == "false" ]]; then
+            if [[ "$line" == "---" ]] && [[ "$in_frontmatter" == "false" ]]; then
+                in_frontmatter=true
+                continue
+            elif [[ "$line" == "---" ]] && [[ "$in_frontmatter" == "true" ]]; then
+                frontmatter_done=true
+                continue
+            elif [[ "$in_frontmatter" == "true" ]]; then
+                if [[ "$line" =~ ^description:[[:space:]]*(.*) ]]; then
+                    description="${BASH_REMATCH[1]}"
+                    # Strip quotes
+                    description="${description#\"}"
+                    description="${description%\"}"
+                    description="${description#\'}"
+                    description="${description%\'}"
+                fi
+                continue
+            else
+                # No frontmatter at all
+                frontmatter_done=true
+            fi
+        fi
+        body+="$line"$'\n'
+    done < "$src_file"
+
+    # Convert !`cmd` syntax to !{cmd} syntax (Gemini format)
+    body=$(echo "$body" | sed 's/!`\([^`]*\)`/!{\1}/g')
+
+    # Convert $ARGUMENTS to {{args}} (Gemini format)
+    body=$(echo "$body" | sed 's/\$ARGUMENTS/{{args}}/g')
+
+    # Write TOML file
+    {
+        if [[ -n "$description" ]]; then
+            echo "description = \"$description\""
+        fi
+        echo "prompt = \"\"\""
+        printf '%s' "$body"
+        echo "\"\"\""
+    } > "$dest_file"
+}
+
+# Sync commands with MD→TOML conversion
+# Usage: sync_commands_as_toml "src_dir" "dest_dir" "dry_run"
+sync_commands_as_toml() {
+    local src_dir="$1"
+    local dest_dir="$2"
+    local dry_run="${3:-false}"
+
+    if [[ ! -d "$src_dir" ]]; then
+        return 0
+    fi
+
+    local count=0
+    for src_file in "$src_dir"/*.md; do
+        [[ -f "$src_file" ]] || continue
+        local basename
+        basename=$(basename "$src_file" .md)
+        local dest_file="$dest_dir/$basename.toml"
+        convert_md_command_to_toml "$src_file" "$dest_file" "$dry_run"
+        count=$((count + 1))
+    done
+
+    if [[ $count -gt 0 ]]; then
+        log_step "$src_dir/ → $dest_dir/ ($count commands, md→toml)"
+    fi
+}
+
 # Check if file matches include/exclude patterns
 # Usage: matches_filter "filename" "include_glob" "exclude_glob"
 matches_filter() {

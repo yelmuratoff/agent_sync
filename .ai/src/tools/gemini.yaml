@@ -1,6 +1,5 @@
 # Gemini CLI Configuration
-# Gemini uses hierarchical GEMINI.md files for instructions
-# Commands use .toml format (not supported by agentsync yet)
+# Commands are auto-converted from MD to TOML format during sync
 name: "Gemini CLI"
 enabled: true
 
@@ -10,3 +9,10 @@ targets:
 
   skills:
     dest: ".gemini/skills"
+
+  commands:
+    dest: ".gemini/commands"
+    format: toml
+
+  subagents:
+    dest: ".gemini/agents"

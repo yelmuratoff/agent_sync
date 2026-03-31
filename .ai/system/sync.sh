@@ -555,13 +555,18 @@ sync_tool() {
     fi
     
     # 4. COMMANDS
-    local dest_cmd_ext
+    local dest_cmd_ext dest_cmd_format
     dest_cmd_ext=$(parse_yaml_value "$tool_config" "targets.commands.extension") || true
+    dest_cmd_format=$(parse_yaml_value "$tool_config" "targets.commands.format") || true
     if [[ -n "$dest_commands_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
         local src_commands_abs
         src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $tool_name")
         if [[ -d "$src_commands_abs" ]]; then
-            sync_rules "$src_commands_abs" "$dest_commands_abs" "$dest_cmd_ext" "" "$DRY_RUN" "" ""
+            if [[ "$dest_cmd_format" == "toml" ]]; then
+                sync_commands_as_toml "$src_commands_abs" "$dest_commands_abs" "$DRY_RUN"
+            else
+                sync_rules "$src_commands_abs" "$dest_commands_abs" "$dest_cmd_ext" "" "$DRY_RUN" "" ""
+            fi
         fi
     fi
 

@@ -349,6 +349,7 @@ targets:
   # commands:
   #   dest: ".tool/commands"           # Where to copy custom commands
   #   # extension: ".cmd.md"           # Optional extension change
+  #   # format: "toml"                 # Convert MD→TOML (for Gemini CLI)
 
   # subagents:
   #   dest: ".tool/agents"             # Where to copy subagent personas
@@ -401,7 +402,7 @@ alwaysApply: true
 | Claude Code     | `claude.yaml`   | `.claude/`                     | Full: CLAUDE.md, rules, skills, commands, agents, settings, mcp    |
 | GitHub Copilot  | `copilot.yaml`  | `.github/`                     | instructions, skills, prompts (`.prompt.md`), agents (`.agent.md`) |
 | Cursor          | `cursor.yaml`   | `.cursor/`                     | Rules as `.mdc`, mcp.json                                          |
-| Gemini CLI      | `gemini.yaml`   | `.gemini/`                     | GEMINI.md, skills                                                  |
+| Gemini CLI      | `gemini.yaml`   | `.gemini/`                     | GEMINI.md, skills, commands (auto MD→TOML), agents                 |
 | OpenAI Codex    | `codex.yaml`    | `AGENTS.md`, `.agents/skills/` | AGENTS.md at project root                                          |
 | Windsurf        | `windsurf.yaml` | `.windsurf/`                   | AGENTS.md, rules (`trigger` frontmatter), skills                   |
 | JetBrains Junie | `junie.yaml`    | `.junie/`                      | guidelines.md, guidelines/                                         |
