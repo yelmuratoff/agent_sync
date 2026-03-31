@@ -16,9 +16,11 @@
 
 ## What is AgentSync
 
+Every AI coding tool expects instructions in its own format and directory — `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`... Managing them separately leads to drift, inconsistency, and wasted time when you use more than one tool (or your team does).
+
 AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for **17 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Amp, Cline, Devin, Augment Code, Amazon Q, Tabnine, Zed, Continue, Aider, and more.
 
-Each AI tool expects instructions in its own format and directory (`.claude/`, `.github/`, `.cursor/`, `.windsurf/`...). AgentSync lets you write them once and distribute to all tools with a single command.
+Write once → `agentsync sync` → every tool gets instructions in its native format.
 
 ## Table of Contents
 
@@ -65,6 +67,21 @@ agentsync sync                      # Distribute to all tools
 ```
 
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
+
+**Example: one rule → every tool:**
+
+```
+.ai/src/rules/testing.md
+    ↓ agentsync sync
+├── .claude/rules/testing.md              # + @rules/testing.md import in CLAUDE.md
+├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
+├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
+├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
+├── .junie/rules/testing.md
+├── .amazonq/rules/testing.md
+├── AGENTS.md                             # inlined rule reference (Codex, Amp, Devin)
+└── CONVENTIONS.md                        # merged into single file (Aider)
+```
 
 ## Project Structure
 
@@ -116,8 +133,8 @@ AgentSync supports two source layouts:
 | **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini.                                                                        | Claude, Gemini, Copilot (as `.prompt.md`)                   |
 | **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                                                                               | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
 | **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                                                                                  | Claude                                                      |
-| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                            | Claude, Cursor                                              |
-| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                  | Cursor, Codex                                               |
+| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                            | Claude, Cursor, Windsurf                                    |
+| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                  | Cursor, Codex, Copilot                                      |
 | **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                    | —                                                           |
 
 ## CLI Commands
@@ -150,12 +167,12 @@ agentsync sync --dry-run              # Preview without writing
 ### Generate
 
 ```bash
-agentsync generate                    # AI analyzes codebase
+agentsync generate                    # Generate bootstrap prompt
 agentsync generate | pbcopy           # Copy to clipboard (macOS)
-agentsync generate "React + Next.js"  # With context
+agentsync generate "React + Next.js"  # With project context
 ```
 
-Outputs a prompt for any AI (Claude, ChatGPT, Gemini) to generate tailored AGENTS.md, rules, skills, commands, agents, and settings.
+Works like `claude /init` — generates a prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your codebase description and creates a complete `.ai/src/` config: AGENTS.md, rules, skills, commands, and agents tailored to your project's stack and conventions.
 
 ## Tool Configuration
 
@@ -257,24 +274,24 @@ targets:
 
 ## Supported Tools
 
-| Tool                | Config          | Syncs                                                                                          |
-| ------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
-| **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                           |
-| **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
-| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                    |
-| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                 |
-| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                               |
-| **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills                                                 |
-| **JetBrains Junie** | `junie.yaml`    | guidelines.md, guidelines/, +inlined skills index                                              |
-| **Amp**             | `amp.yaml`      | AGENTS.md (+inlined rules), skills                                                             |
-| **Aider**           | `aider.yaml`    | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                       |
-| **Cline**           | `cline.yaml`    | 00-context.md, .clinerules/, +inlined skills index                                             |
-| **Amazon Q**        | `amazonq.yaml`  | 00-context.md, .amazonq/rules/, +inlined skills index                                          |
-| **Augment Code**    | `augment.yaml`  | 00-context.md, .augment/rules/, +inlined skills index                                          |
-| **Devin**           | `devin.yaml`    | AGENTS.md (+inlined rules), skills                                                             |
-| **Tabnine**         | `tabnine.yaml`  | 00-context.md, .tabnine/guidelines/, +inlined skills index                                     |
-| **Zed**             | `zed.yaml`      | .rules (prepend AGENTS.md + merged rules), +inlined skills index                               |
-| **Continue**        | `continue.yaml` | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                       |
+| Tool                | Config          | Syncs                                                                                                      |
+| ------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                                       |
+| **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents, hooks.json |
+| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                                |
+| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                             |
+| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                                           |
+| **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
+| **JetBrains Junie** | `junie.yaml`    | guidelines.md, rules/, +inlined skills index                                                               |
+| **Amp**             | `amp.yaml`      | AGENTS.md (+inlined rules), skills                                                                         |
+| **Aider**           | `aider.yaml`    | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                                   |
+| **Cline**           | `cline.yaml`    | 00-context.md, .clinerules/, +inlined skills index                                                         |
+| **Amazon Q**        | `amazonq.yaml`  | 00-context.md, .amazonq/rules/, +inlined skills index                                                      |
+| **Augment Code**    | `augment.yaml`  | 00-context.md, .augment/rules/, +inlined skills index                                                      |
+| **Devin**           | `devin.yaml`    | AGENTS.md (+inlined rules), skills                                                                         |
+| **Tabnine**         | `tabnine.yaml`  | 00-context.md, .tabnine/guidelines/, +inlined skills index                                                 |
+| **Zed**             | `zed.yaml`      | .rules (prepend AGENTS.md + merged rules), +inlined skills index                                           |
+| **Continue**        | `continue.yaml` | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                                   |
 
 ## Format Conversions
 
