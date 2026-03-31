@@ -87,7 +87,9 @@ cmd_generate() {
     done
 
     # Trim trailing newlines
-    lines=$(echo "$lines" | sed -e :a -e '/^[[:space:]]*$/{ $d; N; ba; }')
+    while [[ "$lines" == *$'\n' ]]; do
+        lines="${lines%$'\n'}"
+    done
 
     echo "" >&2
     _output_prompt "$prompt_file" "$lines"
