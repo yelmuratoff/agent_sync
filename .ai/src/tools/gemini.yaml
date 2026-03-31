@@ -1,4 +1,5 @@
 # Gemini CLI Configuration
+# Rules are inlined into GEMINI.md (Gemini uses hierarchical GEMINI.md files)
 # Commands are auto-converted from MD to TOML format during sync
 name: "Gemini CLI"
 enabled: true
@@ -6,6 +7,9 @@ enabled: true
 targets:
   agents:
     dest: ".gemini/GEMINI.md"
+
+  rules:
+    inline_into_agents: true
 
   skills:
     dest: ".gemini/skills"

@@ -514,11 +514,36 @@ sync_tool() {
     append_imports=$(parse_yaml_value "$tool_config" "targets.rules.append_imports") || true
     rule_include=$(parse_yaml_value "$tool_config" "targets.rules.include") || true
     rule_exclude=$(parse_yaml_value "$tool_config" "targets.rules.exclude") || true
-    local merge_to_file
+    local merge_to_file inline_into_agents
     merge_to_file=$(parse_yaml_value "$tool_config" "targets.rules.merge_to_file") || true
+    inline_into_agents=$(parse_yaml_value "$tool_config" "targets.rules.inline_into_agents") || true
 
     # Sync rules
-    if [[ -n "$dest_rules_abs" ]]; then
+    if [[ "$inline_into_agents" == "true" ]] && [[ -n "$dest_agents_abs" ]]; then
+        # Inline all rules into the agents file (for tools without separate rules support)
+        if [[ -d "$src_rules_abs" ]] && [[ "$DRY_RUN" != "true" ]]; then
+            {
+                echo ""
+                echo ""
+                echo "---"
+                echo ""
+                echo "# Rules"
+                echo ""
+                for rule_file in "$src_rules_abs"/*.md; do
+                    [[ -f "$rule_file" ]] || continue
+                    local basename
+                    basename=$(basename "$rule_file")
+                    if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
+                        cat "$rule_file"
+                        echo ""
+                    fi
+                done
+            } >> "$dest_agents_abs"
+            log_step "Inlined rules into $dest_agents"
+        elif [[ "$DRY_RUN" == "true" ]]; then
+            log_step "Would inline rules into $dest_agents (dry-run)"
+        fi
+    elif [[ -n "$dest_rules_abs" ]]; then
       if [[ "$merge_to_file" == "true" ]]; then
         # Merge all rules into a single file (e.g., Aider's CONVENTIONS.md)
         merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude"

@@ -247,6 +247,7 @@ targets:
   agents: { dest: ".cursor/AGENTS.md" }
   rules: { dest: ".cursor/rules", extension: ".mdc", header: "---\nglobs: '**/*'\nalwaysApply: true\n---" }
   skills: { dest: ".cursor/skills" }
+  subagents: { dest: ".cursor/agents" }
 EOF
 
     cat > "$ai_dir/src/tools/gemini.yaml" << 'EOF'
@@ -254,7 +255,10 @@ name: "Gemini CLI"
 enabled: true
 targets:
   agents: { dest: ".gemini/GEMINI.md" }
+  rules: { inline_into_agents: true }
   skills: { dest: ".gemini/skills" }
+  commands: { dest: ".gemini/commands", format: toml }
+  subagents: { dest: ".gemini/agents" }
 EOF
 
     cat > "$ai_dir/src/tools/codex.yaml" << 'EOF'
@@ -262,7 +266,9 @@ name: "OpenAI Codex"
 enabled: true
 targets:
   agents: { dest: "AGENTS.md" }
+  rules: { inline_into_agents: true }
   skills: { dest: ".agents/skills" }
+  subagents: { dest: ".codex/agents", format: toml }
 EOF
 
     cat > "$ai_dir/src/tools/windsurf.yaml" << 'EOF'
@@ -287,6 +293,7 @@ name: "Amp"
 enabled: true
 targets:
   agents: { dest: "AGENTS.md" }
+  rules: { inline_into_agents: true }
   skills: { dest: ".agents/skills" }
 EOF
 
@@ -323,6 +330,7 @@ name: "Devin"
 enabled: true
 targets:
   agents: { dest: "AGENTS.md" }
+  rules: { inline_into_agents: true }
   skills: { dest: ".devin/skills" }
 EOF
 

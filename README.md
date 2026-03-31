@@ -203,6 +203,7 @@ targets:
     # exclude: "secret-*.md"
     # append_imports: true
     # merge_to_file: true
+    # inline_into_agents: true
 
   skills:
     dest: ".tool/skills"
@@ -243,6 +244,7 @@ targets:
 | `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)    |
 | `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                        |
 | `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                     |
+| `inline_into_agents`          | Append all rules into AGENTS file (Codex, Amp, Devin, Gemini)                 |
 | `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                          |
 | `source` (settings/mcp/hooks) | Required — per-tool source file path                                          |
 
@@ -253,16 +255,16 @@ targets:
 | **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                           |
 | **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
 | **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                    |
-| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md, skills, commands (MD→TOML), agents                                                  |
-| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (root), skills, agents (MD→TOML)                                                     |
+| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                 |
+| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                               |
 | **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills                                                 |
 | **JetBrains Junie** | `junie.yaml`    | guidelines.md, guidelines/                                                                     |
-| **Amp**             | `amp.yaml`      | AGENTS.md (root), skills                                                                       |
+| **Amp**             | `amp.yaml`      | AGENTS.md (+inlined rules), skills                                                             |
 | **Aider**           | `aider.yaml`    | CONVENTIONS.md (merged rules)                                                                  |
 | **Cline**           | `cline.yaml`    | .clinerules/                                                                                   |
 | **Amazon Q**        | `amazonq.yaml`  | .amazonq/rules/                                                                                |
 | **Augment Code**    | `augment.yaml`  | .augment/rules/                                                                                |
-| **Devin**           | `devin.yaml`    | AGENTS.md (root), skills                                                                       |
+| **Devin**           | `devin.yaml`    | AGENTS.md (+inlined rules), skills                                                             |
 | **Tabnine**         | `tabnine.yaml`  | .tabnine/guidelines/                                                                           |
 | **Zed**             | `zed.yaml`      | .rules (merged)                                                                                |
 | **Continue**        | `continue.yaml` | .continuerules (merged)                                                                        |
@@ -277,6 +279,7 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot              |
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf             |
 | Rules `.md`    | Single merged file                               | Aider, Zed, Continue |
+| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Amp, Devin, Gemini |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI           |
 | Commands `.md` | `.prompt.md`                                     | Copilot              |
 | Agents `.md`   | `.agent.md`                                      | Copilot              |
