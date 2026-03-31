@@ -38,7 +38,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 - [Gitignore](#gitignore)
 - [How Sync Works](#how-sync-works)
 - [Path Overrides](#path-overrides)
-- [Migrating from v1](#migrating-from-v1)
+- [Migrating Existing Configurations](#migrating-existing-configurations)
 - [Uninstall](#uninstall)
 
 ## Installation
@@ -67,6 +67,8 @@ agentsync sync                      # Distribute to all tools
 ```
 
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
+
+> **Important:** `agentsync sync` **overwrites** generated tool directories entirely. If you already have custom rules, skills, commands, settings, or MCP configs in `.claude/`, `.cursor/`, `.github/`, etc., move them into `.ai/src/` first. See [Migrating Existing Configurations](#migrating-existing-configurations).
 
 **Example: one rule → every tool:**
 
@@ -364,32 +366,81 @@ source:
   tools: ".ai/src/tools"
 ```
 
-## Migrating from v1
+## Migrating Existing Configurations
 
-**New source directories** (optional — add only what you need):
-`commands/`, `agents/`, `settings/`, `mcp/`
+If you already have tool-specific configs (`.claude/rules/`, `.cursor/rules/`, custom `settings.json`, etc.), **move them into `.ai/src/` before running `agentsync sync`**. Sync treats generated directories as fully managed — any files not present in the source will be overwritten or removed.
 
-**Tool config changes:**
+### Step-by-step
 
-- Gemini rules: `.gemini/prompts` → removed (Gemini uses GEMINI.md hierarchy)
-- Codex: `.codex/AGENTS.md` → `AGENTS.md` (project root)
+1. **Run `agentsync init`** to create the `.ai/src/` structure (skips files that already exist).
 
-**New tools:** windsurf, junie, amp, aider, cline, amazonq, augment, devin, tabnine, zed, continue
+2. **Move your rules** from tool-specific directories into `.ai/src/rules/`:
 
-**New target types:** `commands`, `subagents`, `settings`, `mcp`, `hooks` — all opt-in.
+   ```bash
+   # Example: you had custom Cursor rules
+   mv .cursor/rules/my-api-conventions.mdc .ai/src/rules/my-api-conventions.md
+   # Remove Cursor-specific frontmatter (---/globs/alwaysApply) — AgentSync adds it automatically
 
-**New inline features:**
+   # Example: you had custom Claude rules
+   mv .claude/rules/testing.md .ai/src/rules/testing.md
+   ```
 
-- `inline_into_agents` for rules: appends lightweight rule references to agents file (Codex, Amp, Devin, Gemini)
-- `inline_into_agents` for skills: appends skill index to agents file (Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue)
-- `prepend_agents` for merged rules: prepends AGENTS.md before merged content (Aider, Zed, Continue)
-- `00-context.md` pattern: AGENTS.md copied as first file in rules dir (Cline, Amazon Q, Augment, Tabnine)
+3. **Move your skills** into `.ai/src/skills/`:
 
-**Init changes:** `init` no longer copies the engine into the project. The engine runs from `~/.agentsync/`.
+   ```bash
+   mv .claude/skills/my-skill/ .ai/src/skills/my-skill/
+   ```
+
+4. **Move your commands** into `.ai/src/commands/`:
+
+   ```bash
+   mv .claude/commands/deploy.md .ai/src/commands/deploy.md
+   ```
+
+5. **Move your agents** into `.ai/src/agents/`:
+
+   ```bash
+   mv .claude/agents/security-auditor.md .ai/src/agents/security-auditor.md
+   ```
+
+6. **Move settings, MCP, and hooks** into `.ai/src/settings/`, `.ai/src/mcp/`, `.ai/src/hooks/`:
+
+   ```bash
+   mv .claude/settings.json .ai/src/settings/claude.json
+   mv .claude/.mcp.json .ai/src/mcp/claude.json
+   mv .cursor/mcp.json .ai/src/mcp/cursor.json
+   ```
+
+7. **Run sync** and verify:
+
+   ```bash
+   agentsync sync --dry-run   # Preview what will be generated
+   agentsync sync              # Apply
+   ```
+
+### What gets overwritten
+
+| Target                                                           | Behavior                                                                                                                                  |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rules directories** (`.claude/rules/`, `.cursor/rules/`, etc.) | Files matching the synced extension (`.md`, `.mdc`, `.instructions.md`) are managed by sync. Files not present in source are **removed**. |
+| **AGENTS/CLAUDE.md/GEMINI.md**                                   | **Fully replaced** from `.ai/src/AGENTS.md` on every sync.                                                                                |
+| **settings.json, .mcp.json, hooks.json**                         | **Fully replaced** from their respective source files.                                                                                    |
+| **Skills, commands, agents directories**                         | Synced contents replace existing files. Extra files are **removed**.                                                                      |
+| **.gitignore**                                                   | Only the `AI SYNC GENERATED START/END` block is managed. Your other entries are safe.                                                     |
+
+### Disabling sync for specific tools
+
+If you want to keep managing a tool manually, disable it in its YAML config:
+
+```yaml
+# .ai/src/tools/cursor.yaml
+enabled: false
+```
+
+Or exclude it at sync time:
 
 ```bash
-# Get latest templates:
-mkdir /tmp/agentsync-v2 && agentsync init /tmp/agentsync-v2
+agentsync sync --skip cursor
 ```
 
 ## Uninstall
