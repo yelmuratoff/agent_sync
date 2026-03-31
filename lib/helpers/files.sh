@@ -88,12 +88,12 @@ sync_dir() {
             source_items="$source_items|$basename|"
             
             if [[ "$dry_run" == "true" ]]; then
-                ((count_copy++))
+                count_copy=$((count_copy + 1))
             else
                 # Recursive copy (overwrite)
                 rm -rf "${dest:?}/$basename" 2>/dev/null || true
                 cp -r "$item" "$dest/$basename"
-                ((count_copy++))
+                count_copy=$((count_copy + 1))
             fi
         fi
     done
@@ -115,7 +115,7 @@ sync_dir() {
                 rm -rf "$dest_item"
                 log_step "Removed: $dest/$basename"
             fi
-            ((count_clean++))
+            count_clean=$((count_clean + 1))
         fi
     done
     
@@ -613,7 +613,7 @@ sync_rules() {
                     rm -f "$dest_file"
                     log_step "Removed: $dest_dir/$basename"
                 fi
-                ((count_clean++))
+                count_clean=$((count_clean + 1))
             fi
         fi
     done
