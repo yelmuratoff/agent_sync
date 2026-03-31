@@ -523,7 +523,7 @@ copy_rules() {
             add_header "$dest_file" "$header"
         fi
         
-        ((count++))
+        count=$((count + 1))
     done
     
     local extra=""
@@ -572,14 +572,14 @@ sync_rules() {
             valid_dest_files="$valid_dest_files|$dest_name|"
             
             if [[ "$dry_run" == "true" ]]; then
-                ((count_copy++))
+                count_copy=$((count_copy + 1))
             else
                 local dest_path="$dest_dir/$dest_name"
                 cp "$src_file" "$dest_path"
                 if [[ -n "$header" ]]; then
                     add_header "$dest_path" "$header"
                 fi
-                ((count_copy++))
+                count_copy=$((count_copy + 1))
             fi
         fi
     done
