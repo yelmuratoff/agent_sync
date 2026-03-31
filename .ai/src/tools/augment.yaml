@@ -1,7 +1,11 @@
 # Augment Code Configuration
+# 00-context.md contains AGENTS.md so Augment knows agent identity
 name: "Augment Code"
 enabled: true
 
 targets:
+  agents:
+    dest: ".augment/rules/00-context.md"
+
   rules:
     dest: ".augment/rules"

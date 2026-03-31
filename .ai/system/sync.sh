@@ -546,7 +546,13 @@ sync_tool() {
     elif [[ -n "$dest_rules_abs" ]]; then
       if [[ "$merge_to_file" == "true" ]]; then
         # Merge all rules into a single file (e.g., Aider's CONVENTIONS.md)
-        merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude"
+        local prepend_agents
+        prepend_agents=$(parse_yaml_value "$tool_config" "targets.rules.prepend_agents") || true
+        local agents_for_prepend=""
+        if [[ "$prepend_agents" == "true" ]] && [[ -f "$src_agents_abs" ]]; then
+            agents_for_prepend="$src_agents_abs"
+        fi
+        merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude" "$agents_for_prepend"
       else
         sync_rules "$src_rules_abs" "$dest_rules_abs" "$rule_ext" "$rule_header" "$DRY_RUN" "$rule_include" "$rule_exclude"
         
@@ -563,7 +569,14 @@ sync_tool() {
         fi
       fi
     fi
-    
+
+    # Re-copy agents if its dest is inside the rules dest (sync_rules cleanup may have removed it)
+    if [[ -n "$dest_agents_abs" ]] && [[ -n "$dest_rules_abs" ]] && [[ "$dest_agents_abs" == "$dest_rules_abs"/* ]]; then
+        if [[ "$DRY_RUN" != "true" ]]; then
+            copy_file "$src_agents_abs" "$dest_agents_abs" "false" 2>/dev/null || true
+        fi
+    fi
+
     # 3. SKILLS
     # Check for override
     local override_skills src_skills

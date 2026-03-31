@@ -1,5 +1,5 @@
 # Zed Editor Configuration
-# Zed reads .rules file from project root (single file)
+# All rules merged into single .rules file with AGENTS.md prepended
 name: "Zed"
 enabled: true
 
@@ -7,3 +7,4 @@ targets:
   rules:
     dest: ".rules"
     merge_to_file: true
+    prepend_agents: true

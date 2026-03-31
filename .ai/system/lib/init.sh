@@ -301,13 +301,14 @@ EOF
 name: "Aider"
 enabled: true
 targets:
-  rules: { dest: "CONVENTIONS.md", merge_to_file: true }
+  rules: { dest: "CONVENTIONS.md", merge_to_file: true, prepend_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/cline.yaml" << 'EOF'
 name: "Cline"
 enabled: true
 targets:
+  agents: { dest: ".clinerules/00-context.md" }
   rules: { dest: ".clinerules" }
 EOF
 
@@ -315,6 +316,7 @@ EOF
 name: "Amazon Q Developer"
 enabled: true
 targets:
+  agents: { dest: ".amazonq/rules/00-context.md" }
   rules: { dest: ".amazonq/rules" }
 EOF
 
@@ -322,6 +324,7 @@ EOF
 name: "Augment Code"
 enabled: true
 targets:
+  agents: { dest: ".augment/rules/00-context.md" }
   rules: { dest: ".augment/rules" }
 EOF
 
@@ -338,6 +341,7 @@ EOF
 name: "Tabnine"
 enabled: true
 targets:
+  agents: { dest: ".tabnine/guidelines/00-context.md" }
   rules: { dest: ".tabnine/guidelines" }
 EOF
 
@@ -345,13 +349,13 @@ EOF
 name: "Zed"
 enabled: true
 targets:
-  rules: { dest: ".rules", merge_to_file: true }
+  rules: { dest: ".rules", merge_to_file: true, prepend_agents: true }
 EOF
 
     cat > "$ai_dir/src/tools/continue.yaml" << 'EOF'
 name: "Continue"
 enabled: true
 targets:
-  rules: { dest: ".continuerules", merge_to_file: true }
+  rules: { dest: ".continuerules", merge_to_file: true, prepend_agents: true }
 EOF
 }

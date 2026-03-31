@@ -186,13 +186,14 @@ append_imports() {
 }
 
 # Merge all rule files into a single output file
-# Usage: merge_rules_to_file "src_dir" "dest_file" "dry_run" "include" "exclude"
+# Usage: merge_rules_to_file "src_dir" "dest_file" "dry_run" "include" "exclude" ["agents_file"]
 merge_rules_to_file() {
     local src_dir="$1"
     local dest_file="$2"
     local dry_run="${3:-false}"
     local include="${4:-}"
     local exclude="${5:-}"
+    local agents_file="${6:-}"
 
     if [[ ! -d "$src_dir" ]]; then
         log_warning "Rules source not found: $src_dir"
@@ -210,12 +211,22 @@ merge_rules_to_file() {
     done
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged) (dry-run)"
+        local extra=""
+        [[ -n "$agents_file" ]] && extra=" +agents"
+        log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged${extra}) (dry-run)"
         return 0
     fi
 
     ensure_dir "$(dirname "$dest_file")"
     rm -f "$dest_file" 2>/dev/null || true
+
+    # Prepend AGENTS.md content if provided
+    if [[ -n "$agents_file" ]] && [[ -f "$agents_file" ]]; then
+        cat "$agents_file" >> "$dest_file"
+        echo "" >> "$dest_file"
+        echo "---" >> "$dest_file"
+        echo "" >> "$dest_file"
+    fi
 
     local first=true
     for src_file in "${files_to_merge[@]}"; do

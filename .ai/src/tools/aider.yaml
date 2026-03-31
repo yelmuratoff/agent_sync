@@ -1,3 +1,5 @@
+# Aider Configuration
+# All rules merged into single CONVENTIONS.md with AGENTS.md prepended
 name: "Aider"
 enabled: true
 
@@ -5,3 +7,4 @@ targets:
   rules:
     dest: "CONVENTIONS.md"
     merge_to_file: true
+    prepend_agents: true
