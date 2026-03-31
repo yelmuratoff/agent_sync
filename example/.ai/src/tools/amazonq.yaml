@@ -1,0 +1,11 @@
+# Amazon Q Developer Configuration
+# 00-context.md contains AGENTS.md so Amazon Q knows agent identity
+name: "Amazon Q Developer"
+enabled: true
+
+targets:
+  agents:
+    dest: ".amazonq/rules/00-context.md"
+
+  rules:
+    dest: ".amazonq/rules"

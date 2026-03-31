@@ -1,0 +1,25 @@
+# OpenAI Codex Configuration
+# Codex reads AGENTS.md from project root
+# Rules are inlined into AGENTS.md (Codex has no separate rules directory)
+# Codex .rules files use Starlark format for command permissions — not managed by agentsync
+# Subagents use TOML format — auto-converted from MD during sync
+name: "OpenAI Codex"
+enabled: true
+
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  rules:
+    inline_into_agents: true
+
+  skills:
+    dest: ".agents/skills"
+
+  subagents:
+    dest: ".codex/agents"
+    format: toml
+
+  hooks:
+    source: ".ai/src/hooks/codex.json"
+    dest: ".codex/hooks.json"

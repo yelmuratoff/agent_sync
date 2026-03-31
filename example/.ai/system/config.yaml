@@ -1,0 +1,13 @@
+# AgentSync - Global Configuration
+# Source paths (relative to repo root)
+
+source:
+  agents: ".ai/src/AGENTS.md"
+  rules: ".ai/src/rules"
+  skills: ".ai/src/skills"
+  tools: ".ai/src/tools"
+
+# Default settings for all tools
+defaults:
+  enabled: true
+  cleanup: true

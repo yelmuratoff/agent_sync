@@ -1,0 +1,12 @@
+# Cline (VS Code) Configuration
+# Rules in .clinerules/ directory, .md files auto-concatenated
+# 00-context.md contains AGENTS.md so Cline knows agent identity
+name: "Cline"
+enabled: true
+
+targets:
+  agents:
+    dest: ".clinerules/00-context.md"
+
+  rules:
+    dest: ".clinerules"

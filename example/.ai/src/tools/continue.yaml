@@ -1,0 +1,10 @@
+# Continue.dev Configuration
+# All rules merged into single .continuerules file with AGENTS.md prepended
+name: "Continue"
+enabled: true
+
+targets:
+  rules:
+    dest: ".continuerules"
+    merge_to_file: true
+    prepend_agents: true
