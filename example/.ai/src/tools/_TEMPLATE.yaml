@@ -41,6 +41,13 @@ targets:
     # Optional: Merge all rules into a single file instead of a directory
     # merge_to_file: false
 
+    # Optional: Append lightweight rule references (name + title) into agents file
+    # instead of syncing rules as separate files (for tools without separate rules dir)
+    # inline_into_agents: false
+
+    # Optional: Prepend AGENTS.md content before merged rules (used with merge_to_file)
+    # prepend_agents: false
+
   # The "Skills" directory
   skills:
     # Destination directory for skill folders
@@ -52,6 +59,10 @@ targets:
 
     # Optional: Override source directory
     # source: ".ai/src/my-skills"
+
+    # Optional: Append lightweight skill index (name + description) into agents file
+    # instead of syncing skills as directories (for tools without native skills support)
+    # inline_into_agents: false
 
   # Custom slash commands (optional)
   # commands:
