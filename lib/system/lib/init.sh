@@ -178,14 +178,51 @@ RULE_EOF
     done
     echo "   Created $(_cyan ".ai/src/tools/")          — $tool_count tool(s)"
 
+    # ── Enabled tools ──
+    local enabled_tools=""
+    local enabled_count=0
+    for f in "$ai_dir/src/tools/"*.yaml; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f")" == _* ]] && continue
+        local tool_enabled=""
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^enabled:[[:space:]]*(true|false) ]]; then
+                tool_enabled="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "$f"
+        if [[ "$tool_enabled" == "true" ]]; then
+            local tool_label=""
+            while IFS= read -r line; do
+                if [[ "$line" =~ ^name:[[:space:]]*[\"\']?([^\"\']+)[\"\']? ]]; then
+                    tool_label="${BASH_REMATCH[1]}"
+                    break
+                fi
+            done < "$f"
+            [[ -z "$tool_label" ]] && tool_label="$(basename "$f" .yaml)"
+            if [[ -n "$enabled_tools" ]]; then
+                enabled_tools="$enabled_tools, $tool_label"
+            else
+                enabled_tools="$tool_label"
+            fi
+            enabled_count=$((enabled_count + 1))
+        fi
+    done
+
     echo ""
     echo "$(_green "Done!")"
+    if [[ $enabled_count -gt 0 ]]; then
+        echo ""
+        echo "   Enabled tools ($enabled_count): $(_cyan "$enabled_tools")"
+        echo "   $(_dim "Enable more in .ai/src/tools/<name>.yaml → enabled: true")"
+    fi
     echo ""
     echo "Next steps:"
     echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") — customize your agent's identity"
     echo "  2. Edit rules in $(_cyan ".ai/src/rules/") — add project-specific constraints"
-    echo "  3. Run $(_cyan "agentsync generate") — get a prompt to auto-generate rules for your project"
-    echo "  4. Run $(_cyan "agentsync sync") — distribute to all tools"
+    echo "  3. Run $(_cyan "agentsync generate | pbcopy") — generate project-specific config via AI"
+    echo "  4. Run $(_cyan "agentsync sync") — distribute to all enabled tools"
+    echo "  5. Run $(_cyan "agentsync help") — see all available commands"
     echo ""
 }
 
