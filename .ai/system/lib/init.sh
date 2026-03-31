@@ -30,7 +30,6 @@ cmd_init() {
     mkdir -p "$ai_dir/src/mcp"
     mkdir -p "$ai_dir/src/hooks"
     mkdir -p "$ai_dir/src/tools"
-    mkdir -p "$ai_dir/system"
 
     # ── Copy starter templates from engine ──
     local system_dir=""
@@ -150,25 +149,6 @@ RULE_EOF
 
     if [[ "$copied_tools" != "true" ]]; then
         _init_fallback_tools "$ai_dir"
-    fi
-
-    # ── Copy the sync engine if available ──
-    if [[ -n "$system_dir" ]]; then
-        cp -r "$system_dir/"* "$ai_dir/system/" 2>/dev/null || true
-        echo "   Copied sync engine from $(_dim "$system_dir")"
-    else
-        cat > "$ai_dir/system/config.yaml" << 'CFG_EOF'
-source:
-  agents: ".ai/src/AGENTS.md"
-  rules: ".ai/src/rules"
-  skills: ".ai/src/skills"
-  tools: ".ai/src/tools"
-
-defaults:
-  enabled: true
-  cleanup: true
-CFG_EOF
-        echo "   $(_yellow "Note"): Sync engine not found. Install AgentSync globally or copy .ai/system/ manually."
     fi
 
     # ── Summary ──

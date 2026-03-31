@@ -520,28 +520,29 @@ sync_tool() {
 
     # Sync rules
     if [[ "$inline_into_agents" == "true" ]] && [[ -n "$dest_agents_abs" ]]; then
-        # Inline all rules into the agents file (for tools without separate rules support)
+        # Append rule file references into the agents file (lightweight, saves context tokens)
         if [[ -d "$src_rules_abs" ]] && [[ "$DRY_RUN" != "true" ]]; then
             {
                 echo ""
                 echo ""
-                echo "---"
+                echo "## Rules"
                 echo ""
-                echo "# Rules"
+                echo "The following rule files define project constraints. Read them before making changes:"
                 echo ""
                 for rule_file in "$src_rules_abs"/*.md; do
                     [[ -f "$rule_file" ]] || continue
                     local basename
                     basename=$(basename "$rule_file")
                     if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
-                        cat "$rule_file"
-                        echo ""
+                        echo "- \`$basename\` — $(head -1 "$rule_file" | sed 's/^[#]* *//')"
                     fi
                 done
+                echo ""
+                echo "Find all rules in \`.ai/src/rules/\`."
             } >> "$dest_agents_abs"
-            log_step "Inlined rules into $dest_agents"
+            log_step "Appended rule references to $dest_agents"
         elif [[ "$DRY_RUN" == "true" ]]; then
-            log_step "Would inline rules into $dest_agents (dry-run)"
+            log_step "Would append rule references to $dest_agents (dry-run)"
         fi
     elif [[ -n "$dest_rules_abs" ]]; then
       if [[ "$merge_to_file" == "true" ]]; then
