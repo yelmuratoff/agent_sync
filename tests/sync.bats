@@ -134,7 +134,8 @@ teardown() {
 # ── OpenAI Codex ─────────────────────────────────────────────────────────────
 
 @test "sync creates Codex AGENTS.md at root" {
-    run run_agentsync sync
+    # Use --only to avoid conflict with other tools sharing AGENTS.md dest
+    run run_agentsync sync --only codex
     [ "$status" -eq 0 ]
     [ -f "AGENTS.md" ]
 }
