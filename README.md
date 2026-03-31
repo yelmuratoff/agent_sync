@@ -104,16 +104,17 @@ AgentSync supports two source layouts:
 
 ## What Each Part Does
 
-| Source | Purpose | Tools that use it |
-|--------|---------|-------------------|
-| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`). | All |
-| **rules/** | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf). | All |
-| **skills/** | On-demand recipes. Each skill = directory with `SKILL.md`. Frontmatter triggers: `USE WHEN [conditions]`. `Gotchas` section prevents repeated mistakes. | Claude, Copilot, Cursor, Gemini, Codex, Windsurf, Amp, Devin |
-| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. | Claude, Gemini, Copilot (as `.prompt.md`) |
-| **agents/** | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex. | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
-| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. | Claude |
-| **mcp/** | MCP server configs. Per-tool JSON files. Define external tool servers. | Claude, Cursor |
-| **tools/** | YAML configs — define where and how files are synced per tool. | — |
+| Source        | Purpose                                                                                                                                                 | Tools that use it                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`).                                | All                                                          |
+| **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).      | All                                                          |
+| **skills/**   | On-demand recipes. Each skill = directory with `SKILL.md`. Frontmatter triggers: `USE WHEN [conditions]`. `Gotchas` section prevents repeated mistakes. | Claude, Copilot, Cursor, Gemini, Codex, Windsurf, Amp, Devin |
+| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini.              | Claude, Gemini, Copilot (as `.prompt.md`)                    |
+| **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                     | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML)  |
+| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                        | Claude                                                       |
+| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                  | Claude, Cursor                                               |
+| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                        | Cursor                                                       |
+| **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                          | —                                                            |
 
 ## CLI Commands
 
@@ -121,17 +122,17 @@ AgentSync supports two source layouts:
 agentsync <command> [options]
 ```
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `init [dir]` | | Create `.ai/` structure with starter templates |
-| `sync` | | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`) |
-| `check` | | Verify outputs match source (CI-friendly, exit code 0/1) |
-| `generate [context]` | `gen` | Print AI prompt for project-specific config generation |
-| `setup-hooks` | | Install git hooks for auto-sync on pull/checkout |
-| `list` | `ls` | Show configured tools and status |
-| `update` | | Self-update via git pull (auto-check every 24h) |
-| `version` | `-v` | Print version |
-| `help` | `-h` | Show help |
+| Command              | Alias | Description                                                 |
+| -------------------- | ----- | ----------------------------------------------------------- |
+| `init [dir]`         |       | Create `.ai/` structure with starter templates              |
+| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`) |
+| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)    |
+| `generate [context]` | `gen` | Print AI prompt for project-specific config generation      |
+| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout            |
+| `list`               | `ls`  | Show configured tools and status                            |
+| `update`             |       | Self-update via git pull (auto-check every 24h)             |
+| `version`            | `-v`  | Print version                                               |
+| `help`               | `-h`  | Show help                                                   |
 
 ### Sync options
 
@@ -227,55 +228,59 @@ targets:
     source: ".ai/src/mcp/tool.json"
     dest: ".tool/.mcp.json"
 
+  hooks:
+    source: ".ai/src/hooks/tool.json"
+    dest: ".tool/hooks.json"
+
 # post_sync: "npx prettier --write .tool/**/*.mdc"
 ```
 
 ### Key Fields
 
-| Field | Purpose |
-|-------|---------|
-| `extension` | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`) |
-| `header` | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot) |
-| `append_imports` | Append `@rules/*` import lines to AGENTS file (Claude) |
-| `merge_to_file` | Merge all rules into a single file (Aider, Zed, Continue) |
-| `format: "toml"` | Auto-convert MD→TOML (Gemini commands, Codex agents) |
-| `source` (settings/mcp) | Required — per-tool source file path |
+| Field                         | Purpose                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `extension`                   | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`) |
+| `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)    |
+| `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                        |
+| `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                     |
+| `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                          |
+| `source` (settings/mcp/hooks) | Required — per-tool source file path                                          |
 
 ## Supported Tools
 
-| Tool | Config | Syncs |
-|------|--------|-------|
-| **Claude Code** | `claude.yaml` | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json |
-| **GitHub Copilot** | `copilot.yaml` | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
-| **Cursor** | `cursor.yaml` | AGENTS.md, .mdc rules, skills, agents, mcp.json |
-| **Gemini CLI** | `gemini.yaml` | GEMINI.md, skills, commands (MD→TOML), agents |
-| **OpenAI Codex** | `codex.yaml` | AGENTS.md (root), skills, agents (MD→TOML) |
-| **Windsurf** | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills |
-| **JetBrains Junie** | `junie.yaml` | guidelines.md, guidelines/ |
-| **Amp** | `amp.yaml` | AGENTS.md (root), skills |
-| **Aider** | `aider.yaml` | CONVENTIONS.md (merged rules) |
-| **Cline** | `cline.yaml` | .clinerules/ |
-| **Amazon Q** | `amazonq.yaml` | .amazonq/rules/ |
-| **Augment Code** | `augment.yaml` | .augment/rules/ |
-| **Devin** | `devin.yaml` | AGENTS.md (root), skills |
-| **Tabnine** | `tabnine.yaml` | .tabnine/guidelines/ |
-| **Zed** | `zed.yaml` | .rules (merged) |
-| **Continue** | `continue.yaml` | .continuerules (merged) |
+| Tool                | Config          | Syncs                                                                                          |
+| ------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                           |
+| **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents |
+| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json                                                |
+| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md, skills, commands (MD→TOML), agents                                                  |
+| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (root), skills, agents (MD→TOML)                                                     |
+| **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills                                                 |
+| **JetBrains Junie** | `junie.yaml`    | guidelines.md, guidelines/                                                                     |
+| **Amp**             | `amp.yaml`      | AGENTS.md (root), skills                                                                       |
+| **Aider**           | `aider.yaml`    | CONVENTIONS.md (merged rules)                                                                  |
+| **Cline**           | `cline.yaml`    | .clinerules/                                                                                   |
+| **Amazon Q**        | `amazonq.yaml`  | .amazonq/rules/                                                                                |
+| **Augment Code**    | `augment.yaml`  | .augment/rules/                                                                                |
+| **Devin**           | `devin.yaml`    | AGENTS.md (root), skills                                                                       |
+| **Tabnine**         | `tabnine.yaml`  | .tabnine/guidelines/                                                                           |
+| **Zed**             | `zed.yaml`      | .rules (merged)                                                                                |
+| **Continue**        | `continue.yaml` | .continuerules (merged)                                                                        |
 
 ## Format Conversions
 
 AgentSync auto-converts between formats during sync:
 
-| Source format | Target format | Used by |
-|---------------|---------------|---------|
-| Rules `.md` | `.mdc` + YAML frontmatter | Cursor |
-| Rules `.md` | `.instructions.md` + `applyTo` header | Copilot |
-| Rules `.md` | `.md` + `trigger: always_on` header | Windsurf |
-| Rules `.md` | Single merged file | Aider, Zed, Continue |
-| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI |
-| Commands `.md` | `.prompt.md` | Copilot |
-| Agents `.md` | `.agent.md` | Copilot |
-| Agents `.md` | `.toml` (developer_instructions field) | Codex |
+| Source format  | Target format                                    | Used by              |
+| -------------- | ------------------------------------------------ | -------------------- |
+| Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor               |
+| Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot              |
+| Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf             |
+| Rules `.md`    | Single merged file                               | Aider, Zed, Continue |
+| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI           |
+| Commands `.md` | `.prompt.md`                                     | Copilot              |
+| Agents `.md`   | `.agent.md`                                      | Copilot              |
+| Agents `.md`   | `.toml` (developer_instructions field)           | Codex                |
 
 You write everything in Markdown. AgentSync handles the rest.
 
@@ -332,6 +337,7 @@ source:
 `commands/`, `agents/`, `settings/`, `mcp/`
 
 **Tool config changes:**
+
 - Gemini rules: `.gemini/prompts` → removed (Gemini uses GEMINI.md hierarchy)
 - Codex: `.codex/AGENTS.md` → `AGENTS.md` (project root)
 

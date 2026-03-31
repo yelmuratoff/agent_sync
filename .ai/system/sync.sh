@@ -432,7 +432,7 @@ sync_tool() {
     [[ -z "$tool_name" ]] && tool_name="$tool_basename"
     
     # Read target destinations (once, reused for both cleanup and sync)
-    local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp
+    local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp dest_hooks
     dest_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
     dest_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
     dest_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
@@ -440,8 +440,9 @@ sync_tool() {
     dest_subagents=$(parse_yaml_value "$tool_config" "targets.subagents.dest")
     dest_settings=$(parse_yaml_value "$tool_config" "targets.settings.dest")
     dest_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.dest")
+    dest_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
 
-    local dest_agents_abs="" dest_rules_abs="" dest_skills_abs="" dest_commands_abs="" dest_subagents_abs="" dest_settings_abs="" dest_mcp_abs=""
+    local dest_agents_abs="" dest_rules_abs="" dest_skills_abs="" dest_commands_abs="" dest_subagents_abs="" dest_settings_abs="" dest_mcp_abs="" dest_hooks_abs=""
     [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_dest_path "$dest_agents" "targets.agents.dest for $tool_name")
     [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_dest_path "$dest_rules" "targets.rules.dest for $tool_name")
     [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_dest_path "$dest_skills" "targets.skills.dest for $tool_name")
@@ -449,6 +450,7 @@ sync_tool() {
     [[ -n "$dest_subagents" ]] && dest_subagents_abs=$(resolve_dest_path "$dest_subagents" "targets.subagents.dest for $tool_name")
     [[ -n "$dest_settings" ]] && dest_settings_abs=$(resolve_dest_path "$dest_settings" "targets.settings.dest for $tool_name")
     [[ -n "$dest_mcp" ]] && dest_mcp_abs=$(resolve_dest_path "$dest_mcp" "targets.mcp.dest for $tool_name")
+    [[ -n "$dest_hooks" ]] && dest_hooks_abs=$(resolve_dest_path "$dest_hooks" "targets.hooks.dest for $tool_name")
 
     local enabled_value
     enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_name") || return 1
@@ -464,6 +466,7 @@ sync_tool() {
         [[ -n "$dest_subagents_abs" ]] && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
         [[ -n "$dest_settings_abs" ]] && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
         [[ -n "$dest_mcp_abs" ]] && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
+        [[ -n "$dest_hooks_abs" ]] && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
         
         if [[ "$cleaned" == "true" ]]; then
             log_info "Cleaned up $tool_name (disabled)"
@@ -612,7 +615,20 @@ sync_tool() {
         fi
     fi
 
-    # 8. POST_SYNC
+    # 8. HOOKS (file copy — source is per-tool)
+    if [[ -n "$dest_hooks_abs" ]]; then
+        local src_hooks
+        src_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.source")
+        if [[ -n "$src_hooks" ]]; then
+            local src_hooks_abs
+            src_hooks_abs=$(resolve_source_path "$src_hooks" "targets.hooks.source for $tool_name")
+            if [[ -f "$src_hooks_abs" ]]; then
+                copy_file "$src_hooks_abs" "$dest_hooks_abs" "$DRY_RUN"
+            fi
+        fi
+    fi
+
+    # 9. POST_SYNC
     local post_sync_cmd
     post_sync_cmd=$(parse_yaml_value "$tool_config" "post_sync") || true
     
@@ -800,6 +816,14 @@ main() {
                  d_mcp_abs=$(resolve_dest_path "$d_mcp" "targets.mcp.dest in $tool_file_basename")
                  d_mcp_rel=$(to_repo_relative_path "$d_mcp_abs")
                  generated_paths+=("$d_mcp_rel")
+             fi
+             local d_hooks
+             d_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
+             if [[ -n "$d_hooks" ]]; then
+                 local d_hooks_abs d_hooks_rel
+                 d_hooks_abs=$(resolve_dest_path "$d_hooks" "targets.hooks.dest in $tool_file_basename")
+                 d_hooks_rel=$(to_repo_relative_path "$d_hooks_abs")
+                 generated_paths+=("$d_hooks_rel")
              fi
         fi
 

@@ -73,5 +73,10 @@ targets:
   #   source: ".ai/src/mcp/tool.json"
   #   dest: ".tool/.mcp.json"
 
+  # Hooks (optional, file copy)
+  # hooks:
+  #   source: ".ai/src/hooks/tool.json"
+  #   dest: ".tool/hooks.json"
+
 # Optional: Command to run after sync (e.g. linter or formatter)
 # post_sync: "npx prettier --write .tool/rules/*.mdc"

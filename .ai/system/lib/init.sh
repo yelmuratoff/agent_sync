@@ -28,6 +28,7 @@ cmd_init() {
     mkdir -p "$ai_dir/src/agents"
     mkdir -p "$ai_dir/src/settings"
     mkdir -p "$ai_dir/src/mcp"
+    mkdir -p "$ai_dir/src/hooks"
     mkdir -p "$ai_dir/src/tools"
     mkdir -p "$ai_dir/system"
 
@@ -84,6 +85,14 @@ cmd_init() {
             for mcp_file in "$templates_dir/mcp/"*; do
                 [[ -f "$mcp_file" ]] || continue
                 cp "$mcp_file" "$ai_dir/src/mcp/"
+            done
+        fi
+
+        # Hooks
+        if [[ -d "$templates_dir/hooks" ]]; then
+            for hooks_file in "$templates_dir/hooks/"*; do
+                [[ -f "$hooks_file" ]] || continue
+                cp "$hooks_file" "$ai_dir/src/hooks/"
             done
         fi
     else

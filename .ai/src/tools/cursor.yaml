@@ -22,3 +22,7 @@ targets:
   mcp:
     source: ".ai/src/mcp/cursor.json"
     dest: ".cursor/mcp.json"
+
+  hooks:
+    source: ".ai/src/hooks/cursor.json"
+    dest: ".cursor/hooks.json"
