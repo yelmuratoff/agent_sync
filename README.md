@@ -61,10 +61,18 @@ Restart your terminal or run `source ~/.zshrc` after installation. Running the i
 
 ```bash
 cd your-project
-agentsync init                      # Create .ai/ structure with starter templates
-agentsync generate | pbcopy         # (Optional) Generate project-specific config via AI
-agentsync sync                      # Distribute to all tools
+agentsync init                      # 1. Create .ai/ structure with starter templates
+agentsync generate | pbcopy         # 2. (Optional) Generate project-specific config via AI
+agentsync sync                      # 3. Distribute to all tools
 ```
+
+**What each step does:**
+
+1. **`agentsync init`** — Creates the `.ai/src/` directory with starter templates: `AGENTS.md` (agent identity), sample rules, skills, commands, agent personas, and tool YAML configs for all 17 supported tools. Safe to run only once — if `.ai/src/` already exists, it skips to avoid overwriting your content.
+
+2. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
+
+3. **`agentsync sync`** — Reads each tool YAML config from `.ai/src/tools/`, then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also updates `.gitignore` to exclude generated files.
 
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
 
