@@ -1,27 +1,10 @@
 #!/usr/bin/env bash
 # agentsync init — scaffolds the .ai/ directory in a project.
 
-cmd_init() {
-    local target_dir="${1:-.}"
-    target_dir="$(cd "$target_dir" 2>/dev/null && pwd)" || {
-        echo "$(_red "Error"): Directory not found: $1" >&2
-        exit 1
-    }
+# ── Private helpers ───────────────────────────────────────────────────────────
 
-    local ai_dir="$target_dir/.ai"
-
-    if [[ -d "$ai_dir/src" ]]; then
-        echo "$(_yellow "Warning"): .ai/src/ already exists in $target_dir"
-        echo "Skipping init to avoid overwriting your content."
-        echo ""
-        echo "Run $(_cyan "agentsync sync") to synchronize."
-        return 0
-    fi
-
-    echo ""
-    echo "$(_bold "Initializing AgentSync") in $(_cyan "$target_dir")"
-    echo ""
-
+_init_create_directories() {
+    local ai_dir="$1"
     mkdir -p "$ai_dir/src/rules"
     mkdir -p "$ai_dir/src/skills"
     mkdir -p "$ai_dir/src/commands"
@@ -30,14 +13,11 @@ cmd_init() {
     mkdir -p "$ai_dir/src/mcp"
     mkdir -p "$ai_dir/src/hooks"
     mkdir -p "$ai_dir/src/tools"
+}
 
-    # ── Copy starter templates from engine ──
-    local system_dir=""
-    system_dir=$(resolve_system_dir 2>/dev/null) || true
-    local templates_dir=""
-    if [[ -n "$system_dir" ]] && [[ -d "$system_dir/templates" ]]; then
-        templates_dir="$system_dir/templates"
-    fi
+_init_copy_source_templates() {
+    local ai_dir="$1"
+    local templates_dir="$2"
 
     if [[ -n "$templates_dir" ]]; then
         [[ -f "$templates_dir/AGENTS.md" ]] && cp "$templates_dir/AGENTS.md" "$ai_dir/src/AGENTS.md"
@@ -55,7 +35,6 @@ cmd_init() {
             cp "$skill_dir"* "$ai_dir/src/skills/$skill_name/" 2>/dev/null || true
         done
 
-        # Commands
         if [[ -d "$templates_dir/commands" ]]; then
             for cmd_file in "$templates_dir/commands/"*.md; do
                 [[ -f "$cmd_file" ]] || continue
@@ -63,7 +42,6 @@ cmd_init() {
             done
         fi
 
-        # Agents (subagent personas)
         if [[ -d "$templates_dir/agents" ]]; then
             for agent_file in "$templates_dir/agents/"*.md; do
                 [[ -f "$agent_file" ]] || continue
@@ -71,7 +49,6 @@ cmd_init() {
             done
         fi
 
-        # Settings
         if [[ -d "$templates_dir/settings" ]]; then
             for settings_file in "$templates_dir/settings/"*; do
                 [[ -f "$settings_file" ]] || continue
@@ -79,7 +56,6 @@ cmd_init() {
             done
         fi
 
-        # MCP configs
         if [[ -d "$templates_dir/mcp" ]]; then
             for mcp_file in "$templates_dir/mcp/"*; do
                 [[ -f "$mcp_file" ]] || continue
@@ -87,7 +63,6 @@ cmd_init() {
             done
         fi
 
-        # Hooks
         if [[ -d "$templates_dir/hooks" ]]; then
             for hooks_file in "$templates_dir/hooks/"*; do
                 [[ -f "$hooks_file" ]] || continue
@@ -95,7 +70,7 @@ cmd_init() {
             done
         fi
     else
-        # Fallback: inline minimal templates if engine is not available
+        # Fallback: minimal inline templates when engine is unavailable
         cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
 # Project Agent
 
@@ -125,9 +100,13 @@ AGENTS_EOF
 - Never hardcode secrets, API keys, or credentials.
 RULE_EOF
     fi
+}
 
-    # ── Tool configs (from templates/tools/) ──
-    local copied_tools=false
+_init_copy_tool_configs() {
+    local ai_dir="$1"
+    local templates_dir="$2"
+
+    local copied=false
     if [[ -n "$templates_dir" ]] && [[ -d "$templates_dir/tools" ]]; then
         for tool_file in "$templates_dir/tools/"*.yaml; do
             [[ -f "$tool_file" ]] || continue
@@ -139,14 +118,17 @@ RULE_EOF
         if [[ -f "$templates_dir/tools/_TEMPLATE.yaml" ]]; then
             cp "$templates_dir/tools/_TEMPLATE.yaml" "$ai_dir/src/tools/_TEMPLATE.yaml"
         fi
-        copied_tools=true
+        copied=true
     fi
 
-    if [[ "$copied_tools" != "true" ]]; then
+    if [[ "$copied" != "true" ]]; then
         _init_fallback_tools "$ai_dir"
     fi
+}
 
-    # ── Summary ──
+_init_print_summary() {
+    local ai_dir="$1"
+
     echo ""
     echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
 
@@ -178,12 +160,12 @@ RULE_EOF
     done
     echo "   Created $(_cyan ".ai/src/tools/")          — $tool_count tool(s)"
 
-    # ── Enabled tools ──
     local enabled_tools=""
     local enabled_count=0
     for f in "$ai_dir/src/tools/"*.yaml; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == _* ]] && continue
+
         local tool_enabled=""
         while IFS= read -r line; do
             if [[ "$line" =~ ^enabled:[[:space:]]*(true|false) ]]; then
@@ -191,6 +173,7 @@ RULE_EOF
                 break
             fi
         done < "$f"
+
         if [[ "$tool_enabled" == "true" ]]; then
             local tool_label=""
             while IFS= read -r line; do
@@ -225,6 +208,45 @@ RULE_EOF
     echo "  5. Run $(_cyan "agentsync help") — see all available commands"
     echo ""
 }
+
+# ── Public command ────────────────────────────────────────────────────────────
+
+cmd_init() {
+    local target_dir="${1:-.}"
+    target_dir="$(cd "$target_dir" 2>/dev/null && pwd)" || {
+        echo "$(_red "Error"): Directory not found: $1" >&2
+        exit 1
+    }
+
+    local ai_dir="$target_dir/.ai"
+
+    if [[ -d "$ai_dir/src" ]]; then
+        echo "$(_yellow "Warning"): .ai/src/ already exists in $target_dir"
+        echo "Skipping init to avoid overwriting your content."
+        echo ""
+        echo "Run $(_cyan "agentsync sync") to synchronize."
+        return 0
+    fi
+
+    echo ""
+    echo "$(_bold "Initializing AgentSync") in $(_cyan "$target_dir")"
+    echo ""
+
+    _init_create_directories "$ai_dir"
+
+    local templates_dir=""
+    local system_dir=""
+    system_dir=$(resolve_system_dir 2>/dev/null) || true
+    if [[ -n "$system_dir" ]] && [[ -d "$system_dir/templates" ]]; then
+        templates_dir="$system_dir/templates"
+    fi
+
+    _init_copy_source_templates "$ai_dir" "$templates_dir"
+    _init_copy_tool_configs "$ai_dir" "$templates_dir"
+    _init_print_summary "$ai_dir"
+}
+
+# ── Fallback tool configs ─────────────────────────────────────────────────────
 
 # Fallback tool configs when engine templates are unavailable
 _init_fallback_tools() {

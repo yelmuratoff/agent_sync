@@ -8,7 +8,10 @@ setup() {
     # Source the file utilities
     source "$REPO_ROOT/lib/helpers/cli_colors.sh"
     source "$REPO_ROOT/lib/helpers/logging.sh"
-    source "$REPO_ROOT/lib/helpers/files.sh"
+    source "$REPO_ROOT/lib/helpers/filters.sh"
+    source "$REPO_ROOT/lib/helpers/file_ops.sh"
+    source "$REPO_ROOT/lib/helpers/rule_operations.sh"
+    source "$REPO_ROOT/lib/helpers/format_conversion.sh"
 }
 
 teardown() {
