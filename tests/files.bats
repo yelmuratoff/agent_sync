@@ -6,9 +6,9 @@ load test_helper
 setup() {
     setup_test_project
     # Source the file utilities
-    source "$REPO_ROOT/lib/system/lib/cli_colors.sh"
-    source "$REPO_ROOT/lib/system/lib/logging.sh"
-    source "$REPO_ROOT/lib/system/lib/files.sh"
+    source "$REPO_ROOT/lib/helpers/cli_colors.sh"
+    source "$REPO_ROOT/lib/helpers/logging.sh"
+    source "$REPO_ROOT/lib/helpers/files.sh"
 }
 
 teardown() {

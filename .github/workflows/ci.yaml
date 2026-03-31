@@ -17,10 +17,10 @@ jobs:
       - name: Lint shell scripts
         run: |
           shellcheck -x bin/agentsync.sh
-          shellcheck -x lib/system/sync.sh
-          shellcheck -x lib/system/check.sh
-          shellcheck -x lib/system/setup_hooks.sh
-          shellcheck -x lib/system/lib/*.sh
+          shellcheck -x lib/sync.sh
+          shellcheck -x lib/check.sh
+          shellcheck -x lib/setup_hooks.sh
+          shellcheck -x lib/helpers/*.sh
 
   test:
     name: Test (${{ matrix.os }})

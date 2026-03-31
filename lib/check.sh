@@ -51,5 +51,5 @@ echo "⚠️  AgentSync configurations are out of sync with source."
 echo "Differences detected (showing up to 20):"
 echo "$DIFF_OUTPUT" | head -n 20
 echo ""
-echo "Please run: lib/system/sync.sh"
+echo "Please run: lib/sync.sh"
 exit 1

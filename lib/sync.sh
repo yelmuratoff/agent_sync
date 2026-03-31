@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chmod +x lib/system/sync.sh
+# chmod +x lib/sync.sh
 # Cross-platform AgentSync Config Sync Script
 # Works in Git Bash on Windows and Unix/macOS
 
@@ -19,14 +19,14 @@ REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 REPO_ROOT_CANONICAL="$(cd -P "$REPO_ROOT" && pwd)"
 
 # Source helper libraries
-# shellcheck source=lib/logging.sh
-source "$SCRIPT_DIR/lib/logging.sh"
-# shellcheck source=lib/files.sh
-source "$SCRIPT_DIR/lib/files.sh"
-# shellcheck source=lib/yaml.sh
-source "$SCRIPT_DIR/lib/yaml.sh"
-# shellcheck source=lib/gitignore.sh
-source "$SCRIPT_DIR/lib/gitignore.sh"
+# shellcheck source=helpers/logging.sh
+source "$SCRIPT_DIR/helpers/logging.sh"
+# shellcheck source=helpers/files.sh
+source "$SCRIPT_DIR/helpers/files.sh"
+# shellcheck source=helpers/yaml.sh
+source "$SCRIPT_DIR/helpers/yaml.sh"
+# shellcheck source=helpers/gitignore.sh
+source "$SCRIPT_DIR/helpers/gitignore.sh"
 
 # Global variables
 DRY_RUN="false"
@@ -823,7 +823,7 @@ main() {
     [[ -n "$override_tools" ]] && SOURCE_TOOLS="$override_tools"
 
     if [[ -z "$SOURCE_TOOLS" ]]; then
-        SOURCE_TOOLS="lib/system/tools"
+        SOURCE_TOOLS="lib/tools"
         log_warning "source.tools is not set, falling back to $SOURCE_TOOLS"
     fi
 

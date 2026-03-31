@@ -80,8 +80,8 @@ main() {
 
     # 2. Verify the engine is present
     local engine_dir="$INSTALL_DIR"
-    if [[ ! -d "$engine_dir/lib/system" ]]; then
-        echo "$(_red "Error"): Engine not found at $engine_dir/lib/system" >&2
+    if [[ ! -d "$engine_dir/lib" ]]; then
+        echo "$(_red "Error"): Engine not found at $engine_dir/lib" >&2
         echo "The repository structure may have changed." >&2
         exit 1
     fi

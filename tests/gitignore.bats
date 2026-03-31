@@ -5,9 +5,9 @@ load test_helper
 
 setup() {
     setup_test_project
-    source "$REPO_ROOT/lib/system/lib/cli_colors.sh"
-    source "$REPO_ROOT/lib/system/lib/logging.sh"
-    source "$REPO_ROOT/lib/system/lib/gitignore.sh"
+    source "$REPO_ROOT/lib/helpers/cli_colors.sh"
+    source "$REPO_ROOT/lib/helpers/logging.sh"
+    source "$REPO_ROOT/lib/helpers/gitignore.sh"
 }
 
 teardown() {

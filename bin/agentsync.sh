@@ -41,9 +41,9 @@ _load_lib() {
     # Engine root is one level up from bin/
     _AGENTSYNC_ENGINE_ROOT="$(cd "$script_dir/.." && pwd)"
 
-    local lib_dir="$_AGENTSYNC_ENGINE_ROOT/lib/system/lib"
+    local lib_dir="$_AGENTSYNC_ENGINE_ROOT/lib/helpers"
     if [[ ! -d "$lib_dir" ]]; then
-        lib_dir="${AGENTSYNC_HOME:-.}/lib/system/lib"
+        lib_dir="${AGENTSYNC_HOME:-.}/lib/helpers"
     fi
 
     if [[ ! -d "$lib_dir" ]]; then
@@ -112,9 +112,9 @@ cmd_engine() {
         echo "$(_red "Error"): Sync engine not found." >&2
         echo "" >&2
         echo "Looked in:" >&2
-        echo "  1. \$AGENTSYNC_HOME/lib/system/" >&2
+        echo "  1. \$AGENTSYNC_HOME/lib/" >&2
         echo "  2. Relative to agentsync script (following symlinks)" >&2
-        echo "  3. $(pwd)/lib/system/" >&2
+        echo "  3. $(pwd)/lib/" >&2
         echo "" >&2
         echo "Run $(_cyan "agentsync init") or install AgentSync globally:" >&2
         echo "  curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2

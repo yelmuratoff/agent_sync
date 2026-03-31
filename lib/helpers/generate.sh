@@ -13,7 +13,7 @@ cmd_generate() {
 
     if [[ -z "$prompt_file" ]]; then
         echo "Error: Prompt file not found." >&2
-        echo "Expected at: <engine>/lib/system/prompts/generate.md" >&2
+        echo "Expected at: <engine>/lib/prompts/generate.md" >&2
         exit 1
     fi
 
