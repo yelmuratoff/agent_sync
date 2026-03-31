@@ -38,13 +38,6 @@ cmd_update() {
         return 0
     fi
 
-    echo ""
-    echo "  $(_cyan "Changelog:")"
-    git log --oneline "$local_head..$remote_head" | while IFS= read -r line; do
-        echo "    $(_dim "•") $line"
-    done
-    echo ""
-
     echo "  Updating..."
     if ! git pull --quiet origin main 2>/dev/null; then
         echo "  $(_red "Error"): git pull failed. Try reinstalling:" >&2
@@ -76,7 +69,61 @@ cmd_update() {
     else
         echo "  $(_green "Updated!") (v${new_version})"
     fi
+
+    # Show what's new from CHANGELOG.md
+    _show_changelog "$install_dir" "$new_version"
+
     echo ""
+}
+
+# Show changelog entries for a specific version
+# Usage: _show_changelog "/path/to/install" "0.2.0"
+_show_changelog() {
+    local install_dir="$1"
+    local version="$2"
+    local changelog="$install_dir/CHANGELOG.md"
+
+    [[ -f "$changelog" ]] || return 0
+
+    # Extract the section for this version (between ## $version and the next ## or EOF)
+    local in_section=false
+    local entries=""
+
+    while IFS= read -r line; do
+        if [[ "$line" == "## $version"* ]]; then
+            in_section=true
+            continue
+        fi
+        if [[ "$in_section" == "true" ]]; then
+            # Stop at the next version header
+            if [[ "$line" == "## "* ]]; then
+                break
+            fi
+            entries+="$line"$'\n'
+        fi
+    done < "$changelog"
+
+    if [[ -z "$entries" ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo "  $(_cyan "What's new in v${version}:")"
+    echo ""
+
+    # Print entries with indentation, skip empty lines at start/end
+    local started=false
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && [[ "$started" == "false" ]] && continue
+        started=true
+        if [[ "$line" == "### "* ]]; then
+            echo "  $(_bold "${line#"### "}")"
+        elif [[ "$line" == "- "* ]]; then
+            echo "    $(_dim "•") ${line#"- "}"
+        elif [[ -n "$line" ]]; then
+            echo "    $line"
+        fi
+    done <<< "$entries"
 }
 
 _update_check_timestamp() {
@@ -117,11 +164,36 @@ check_for_updates() {
     fi
 
     if [[ "$latest_tag" != "$VERSION" ]] && [[ "$(printf '%s\n%s' "$VERSION" "$latest_tag" | sort -V | tail -1)" == "$latest_tag" ]]; then
+        # Fetch changelog summary for the latest version
+        local changelog_hint=""
+        local remote_changelog
+        remote_changelog=$(curl -sf --max-time 3 \
+            "https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/CHANGELOG.md" 2>/dev/null) || true
+
+        if [[ -n "$remote_changelog" ]]; then
+            # Count entries in the target version section
+            local count=0
+            local in_section=false
+            while IFS= read -r line; do
+                if [[ "$line" == "## $latest_tag"* ]]; then
+                    in_section=true
+                    continue
+                fi
+                if [[ "$in_section" == "true" ]]; then
+                    [[ "$line" == "## "* ]] && break
+                    [[ "$line" == "- "* ]] && count=$((count + 1))
+                fi
+            done <<< "$remote_changelog"
+            if [[ $count -gt 0 ]]; then
+                changelog_hint=" ($count changes)"
+            fi
+        fi
+
         echo ""
-        echo "  ╭──────────────────────────────────────────────╮"
-        echo "  │  $(_yellow "Update available"): $(_dim "v${VERSION}") → $(_green "v${latest_tag}")              │"
-        echo "  │  Run: $(_cyan "agentsync update")                        │"
-        echo "  ╰──────────────────────────────────────────────╯"
+        echo "  ╭──────────────────────────────────────────────────────╮"
+        echo "  │  $(_yellow "Update available"): $(_dim "v${VERSION}") → $(_green "v${latest_tag}")${changelog_hint}              "
+        echo "  │  Run: $(_cyan "agentsync update")                                "
+        echo "  ╰──────────────────────────────────────────────────────╯"
         echo ""
     fi
 }
