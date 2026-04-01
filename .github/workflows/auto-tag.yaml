@@ -39,5 +39,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.version.outputs.version }}"
-          git push origin "${{ steps.version.outputs.version }}"
+          version="${{ steps.version.outputs.version }}"
+          tag_body=$(awk -v ver="## ${version}" \
+            '$0 == ver {found=1; next} found && /^## /{exit} found' CHANGELOG.md)
+          printf 'v%s\n\n%s' "$version" "$tag_body" > /tmp/tag_message.txt
+          git tag -a "$version" -F /tmp/tag_message.txt
+          git push origin "$version"

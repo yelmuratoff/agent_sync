@@ -16,7 +16,7 @@ if [[ ! -d "$REPO_ROOT" ]]; then
 fi
 
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
-REPO_ROOT_CANONICAL="$(cd -P "$REPO_ROOT" && pwd)"
+export REPO_ROOT_CANONICAL="$(cd -P "$REPO_ROOT" && pwd)"
 
 # Source helper libraries
 # shellcheck source=helpers/logging.sh

@@ -35,23 +35,15 @@ jobs:
       - name: Generate release notes
         id: notes
         run: |
-          # Get previous tag
-          prev_tag=$(git tag --sort=-version:refname | head -2 | tail -1)
-          if [[ -z "$prev_tag" ]] || [[ "$prev_tag" == "${{ steps.version.outputs.version }}" ]]; then
-            # First release — all commits
-            log=$(git log --oneline --no-decorate HEAD)
-          else
-            log=$(git log --oneline --no-decorate "$prev_tag..HEAD")
-          fi
+          version="${{ steps.version.outputs.version }}"
+          changelog_body=$(awk -v ver="## ${version}" \
+            '$0 == ver {found=1; next} found && /^## /{exit} found' CHANGELOG.md)
 
-          # Write to file to preserve newlines
           {
-            echo "## What's Changed"
-            echo ""
-            echo "$log" | while IFS= read -r line; do
-              echo "- $line"
-            done
-            echo ""
+            if [[ -n "$changelog_body" ]]; then
+              echo "$changelog_body"
+              echo ""
+            fi
             echo "## Install"
             echo ""
             echo '```bash'

@@ -94,7 +94,13 @@ cmd_release() {
     git commit -m "release: v$new_version" --quiet
     echo "  Created commit: $(_dim "release: v$new_version")"
 
-    git tag "$new_version"
+    # Build annotated tag message from CHANGELOG.md
+    local tag_body
+    tag_body=$(awk -v ver="## ${new_version}" \
+        '$0 == ver {found=1; next} found && /^## /{exit} found' CHANGELOG.md)
+    printf 'v%s\n\n%s' "$new_version" "$tag_body" > /tmp/agentsync_tag_msg.txt
+    git tag -a "$new_version" -F /tmp/agentsync_tag_msg.txt
+    rm -f /tmp/agentsync_tag_msg.txt
     echo "  Created tag: $(_cyan "$new_version")"
 
     # Push
