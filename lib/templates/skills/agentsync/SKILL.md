@@ -45,7 +45,7 @@ The agent's identity. Every sentence should change behavior.
 - **Include the stack** — The agent needs to know what it's working with.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
 - **What NOT to do** — Constraints are often more useful than instructions.
-- Under 60 lines. No generic filler.
+- 40–70 lines. No generic filler.
 
 ## Writing Rules
 
@@ -54,7 +54,7 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 - **One concern per file** — `testing.md`, `security.md`. Not `everything.md`.
 - **Imperative and specific** — "Use `snake_case` for DB columns" not "Follow naming conventions".
 - **Constraints, not tutorials** — Say what to do and what not to do. Don't explain concepts.
-- **Scannable in 30 seconds** — If too long, split it.
+- **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
 
 ## Writing Skills — The Most Important Part
 
@@ -113,6 +113,10 @@ description: >
 ### The Gotchas section
 
 This is the highest-signal content. Every time the agent makes a mistake, add it to Gotchas. This section prevents the same error from happening twice.
+
+### Size
+
+50–100 lines per skill. Skills are loaded on demand so can be more detailed than rules, but if a skill grows beyond that, it's likely two separate workflows — split by responsibility.
 
 ### Rule of Three
 

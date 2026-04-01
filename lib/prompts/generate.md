@@ -25,11 +25,13 @@ The main file describing who the AI agent is. Be specific to this project:
 - Key principles specific to this project
 - What the agent must never do
 
-Under 60 lines. Every sentence should change behavior. No generic filler.
+40–70 lines. Every sentence should change behavior. No generic filler.
 
 ### 2. `.ai/src/rules/` — Always-On Constraints
 
 One `.md` file per topic. Rules are short, imperative, specific to this project.
+
+20–50 lines per file. If a file grows beyond that, it likely covers two topics — split it. One focused rule file is more useful than one large catch-all.
 
 Create only what's relevant. Possible files:
 
@@ -57,6 +59,8 @@ Format:
 ```
 
 ### 3. `.ai/src/skills/` — On-Demand Recipes
+
+50–100 lines per skill. Skills can be more detailed since they're loaded on demand, but if a skill grows beyond that, it's likely two separate workflows — split by responsibility. One focused skill triggers reliably; a bloated one becomes noise.
 
 Each skill = a directory with `SKILL.md`. Think about what developers do repeatedly:
 
@@ -98,7 +102,7 @@ description: >
 
 ### 4. `.ai/src/commands/` — Custom Slash Commands
 
-Commands are `.md` files that become slash commands (e.g., `review.md` → `/project:review` in Claude Code). Create commands for the 2-3 most common workflows in this project.
+15–40 lines per command. A command is a focused prompt for one workflow — not a tutorial. Commands are `.md` files that become slash commands (e.g., `review.md` → `/project:review` in Claude Code). Create commands for the 2-3 most common workflows in this project.
 
 Format:
 
@@ -121,7 +125,7 @@ Only generate commands relevant to this project's actual workflows.
 
 ### 5. `.ai/src/agents/` — Subagent Personas
 
-Agents are `.md` files that define specialized AI personas for focused tasks. They run in isolated contexts with restricted tool access.
+30–70 lines per agent. Enough to define the role, scope, and constraints clearly — no more. Agents are `.md` files that define specialized AI personas for focused tasks. They run in isolated contexts with restricted tool access.
 
 Format:
 
