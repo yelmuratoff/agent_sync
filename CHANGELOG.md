@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6
+
+### Fixed
+- **ShellCheck SC2155:** split `export REPO_ROOT_CANONICAL="$(…)"` into two lines in `sync.sh` — assign first, then export — so a non-zero exit code from the subshell is not masked.
+
 ## 0.2.5
 
 ### Fixed
