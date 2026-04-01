@@ -70,60 +70,87 @@ cmd_update() {
         echo "  $(_green "Updated!") (v${new_version})"
     fi
 
-    # Show what's new from CHANGELOG.md
-    _show_changelog "$install_dir" "$new_version"
+    # Show what's new from CHANGELOG.md (all versions between old and new)
+    _show_changelog_range "$install_dir" "$old_version" "$new_version"
 
     echo ""
 }
 
-# Show changelog entries for a specific version
-# Usage: _show_changelog "/path/to/install" "0.2.0"
-_show_changelog() {
+# Show changelog entries for all versions between old_version (exclusive) and new_version (inclusive).
+# Falls back to showing only new_version if old_version is unknown or equal.
+# Usage: _show_changelog_range "/path/to/install" "0.2.0" "0.2.3"
+_show_changelog_range() {
     local install_dir="$1"
-    local version="$2"
+    local old_version="$2"
+    local new_version="$3"
     local changelog="$install_dir/CHANGELOG.md"
 
     [[ -f "$changelog" ]] || return 0
 
-    # Extract the section for this version (between ## $version and the next ## or EOF)
-    local in_section=false
-    local entries=""
-
+    # Collect all version headers from the changelog
+    local all_versions=()
     while IFS= read -r line; do
-        if [[ "$line" == "## $version"* ]]; then
-            in_section=true
-            continue
-        fi
-        if [[ "$in_section" == "true" ]]; then
-            # Stop at the next version header
-            if [[ "$line" == "## "* ]]; then
-                break
-            fi
-            entries+="$line"$'\n'
+        if [[ "$line" == "## "* ]]; then
+            local v="${line#"## "}"
+            v="${v%% *}"
+            all_versions+=("$v")
         fi
     done < "$changelog"
 
-    if [[ -z "$entries" ]]; then
-        return 0
-    fi
-
-    echo ""
-    echo "  $(_cyan "What's new in v${version}:")"
-    echo ""
-
-    # Print entries with indentation, skip empty lines at start/end
-    local started=false
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && [[ "$started" == "false" ]] && continue
-        started=true
-        if [[ "$line" == "### "* ]]; then
-            echo "  $(_bold "${line#"### "}")"
-        elif [[ "$line" == "- "* ]]; then
-            echo "    $(_dim "•") ${line#"- "}"
-        elif [[ -n "$line" ]]; then
-            echo "    $line"
+    # Filter: old_version < v <= new_version
+    local in_range=()
+    for v in "${all_versions[@]}"; do
+        local top_of_old_v
+        top_of_old_v=$(printf '%s\n%s' "$old_version" "$v" | sort -V | tail -1)
+        local top_of_v_new
+        top_of_v_new=$(printf '%s\n%s' "$v" "$new_version" | sort -V | tail -1)
+        if [[ "$top_of_old_v" == "$v" ]] && [[ "$v" != "$old_version" ]] \
+            && [[ "$top_of_v_new" == "$new_version" ]]; then
+            in_range+=("$v")
         fi
-    done <<< "$entries"
+    done
+
+    [[ ${#in_range[@]} -eq 0 ]] && return 0
+
+    # Sort ascending so the user reads oldest → newest
+    local sorted_versions
+    sorted_versions=$(printf '%s\n' "${in_range[@]}" | sort -V)
+
+    _show_changelog_sections "$changelog" "$sorted_versions"
+}
+
+# Print the changelog body for each version in sorted_versions (newline-separated list).
+_show_changelog_sections() {
+    local changelog="$1"
+    local sorted_versions="$2"
+
+    while IFS= read -r version; do
+        [[ -z "$version" ]] && continue
+        echo ""
+        echo "  $(_cyan "What's new in v${version}:")"
+        echo ""
+
+        local in_section=false
+        local started=false
+        while IFS= read -r line; do
+            if [[ "$line" == "## $version"* ]]; then
+                in_section=true
+                continue
+            fi
+            if [[ "$in_section" == "true" ]]; then
+                [[ "$line" == "## "* ]] && break
+                [[ -z "$line" ]] && [[ "$started" == "false" ]] && continue
+                started=true
+                if [[ "$line" == "### "* ]]; then
+                    echo "  $(_bold "${line#"### "}")"
+                elif [[ "$line" == "- "* ]]; then
+                    echo "    $(_dim "•") ${line#"- "}"
+                elif [[ -n "$line" ]]; then
+                    echo "    $line"
+                fi
+            fi
+        done < "$changelog"
+    done <<< "$sorted_versions"
 }
 
 _update_check_timestamp() {
