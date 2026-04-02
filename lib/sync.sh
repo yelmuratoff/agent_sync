@@ -51,6 +51,8 @@ SOURCE_AGENTS=""
 SOURCE_RULES=""
 SOURCE_SKILLS=""
 SOURCE_TOOLS=""
+DEFAULT_ENABLED="true"
+DEFAULT_CLEANUP="true"
 
 # Paths claimed by enabled tools — cleanup must not delete these
 declare -a ENABLED_DEST_PATHS=()
@@ -197,7 +199,8 @@ read_tool_enabled_flag() {
     if [[ $parse_status -ne 0 ]]; then
         case "$parse_status" in
             2)
-                log_error "Tool config is missing required boolean 'enabled': $tool_config ($tool_name)"
+                echo "$DEFAULT_ENABLED"
+                return 0
                 ;;
             3)
                 local raw_value
@@ -292,15 +295,17 @@ sync_tool() {
     if [[ "$enabled_value" == "false" ]]; then
         # Cleanup disabled tool directories (skip paths claimed by enabled tools)
         local cleaned=false
-        [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
-        [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
-        
+        if [[ "$DEFAULT_CLEANUP" == "true" ]]; then
+            [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
+        fi
+
         if [[ "$cleaned" == "true" ]]; then
             log_info "Cleaned up $tool_name (disabled)"
         else
@@ -584,6 +589,26 @@ main() {
     # Resolve project config and detect source layout
     resolve_project_config_path
 
+    # Load project-level defaults and post_sync settings from agent_sync.yaml
+    if [[ -n "$PROJECT_CONFIG_PATH" ]]; then
+        local cfg_default_enabled cfg_default_cleanup cfg_allow_post_sync cfg_skip_post_sync
+        cfg_default_enabled=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.enabled")
+        cfg_default_cleanup=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.cleanup")
+        cfg_allow_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.allow")
+        cfg_skip_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.skip")
+
+        [[ -n "$cfg_default_enabled" ]] && DEFAULT_ENABLED="$cfg_default_enabled"
+        [[ -n "$cfg_default_cleanup" ]] && DEFAULT_CLEANUP="$cfg_default_cleanup"
+
+        # Env vars take precedence: only apply config value if env var was not explicitly set
+        if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$cfg_allow_post_sync" == "true" ]]; then
+            ALLOW_POST_SYNC="true"
+        fi
+        if [[ -z "${AGENTSYNC_SKIP_POST_SYNC:-}" ]] && [[ "$cfg_skip_post_sync" == "true" ]]; then
+            SKIP_POST_SYNC="true"
+        fi
+    fi
+
     # 1. Load global defaults
     SOURCE_AGENTS=$(parse_yaml_value "$global_config" "source.agents")
     SOURCE_RULES=$(parse_yaml_value "$global_config" "source.rules")
@@ -630,16 +655,20 @@ main() {
     fi
 
     # Apply optional project-level overrides from agent_sync.yaml
-    local override_agents override_rules override_skills override_tools
+    local override_agents override_rules override_skills override_tools override_commands override_subagents
     override_agents=$(resolve_source_override "agents")
     override_rules=$(resolve_source_override "rules")
     override_skills=$(resolve_source_override "skills")
     override_tools=$(resolve_source_override "tools")
+    override_commands=$(resolve_source_override "commands")
+    override_subagents=$(resolve_source_override "subagents")
 
     [[ -n "$override_agents" ]] && SOURCE_AGENTS="$override_agents"
     [[ -n "$override_rules" ]] && SOURCE_RULES="$override_rules"
     [[ -n "$override_skills" ]] && SOURCE_SKILLS="$override_skills"
     [[ -n "$override_tools" ]] && SOURCE_TOOLS="$override_tools"
+    [[ -n "$override_commands" ]] && SOURCE_COMMANDS="$override_commands"
+    [[ -n "$override_subagents" ]] && SOURCE_SUBAGENTS="$override_subagents"
 
     if [[ -z "$SOURCE_TOOLS" ]]; then
         SOURCE_TOOLS="lib/tools"
