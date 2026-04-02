@@ -102,6 +102,27 @@ RULE_EOF
     fi
 }
 
+_init_create_project_config() {
+    local target_dir="$1"
+    local config_file="$target_dir/agent_sync.yaml"
+
+    if [[ -f "$config_file" ]]; then
+        return 0
+    fi
+
+    cat > "$config_file" << 'EOF'
+# AgentSync — Project Configuration
+# Override source paths if you want a custom layout.
+# Defaults shown below (can be removed if unchanged).
+
+source:
+  agents: ".ai/src/AGENTS.md"
+  rules: ".ai/src/rules"
+  skills: ".ai/src/skills"
+  tools: ".ai/src/tools"
+EOF
+}
+
 _init_copy_tool_configs() {
     local ai_dir="$1"
     local templates_dir="$2"
@@ -130,6 +151,7 @@ _init_print_summary() {
     local ai_dir="$1"
 
     echo ""
+    echo "   Created $(_cyan "agent_sync.yaml")         — project config (source paths)"
     echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
 
     local rule_count=0
@@ -233,6 +255,7 @@ cmd_init() {
     echo ""
 
     _init_create_directories "$ai_dir"
+    _init_create_project_config "$target_dir"
 
     local templates_dir=""
     local system_dir=""

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+### Improvements
+- **`agentsync init` generates `agent_sync.yaml`:** a project-level config file is now scaffolded in the repository root on first init, giving users a ready-made place to override source paths (`agents`, `rules`, `skills`, `tools`) without touching the global config.
+
 ## 0.2.7
 
 ### Improved
