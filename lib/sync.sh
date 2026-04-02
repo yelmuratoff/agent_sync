@@ -53,6 +53,7 @@ SOURCE_SKILLS=""
 SOURCE_TOOLS=""
 DEFAULT_ENABLED="true"
 DEFAULT_CLEANUP="true"
+UPDATE_GITIGNORE="true"
 
 # Paths claimed by enabled tools — cleanup must not delete these
 declare -a ENABLED_DEST_PATHS=()
@@ -607,6 +608,12 @@ main() {
         if [[ -z "${AGENTSYNC_SKIP_POST_SYNC:-}" ]] && [[ "$cfg_skip_post_sync" == "true" ]]; then
             SKIP_POST_SYNC="true"
         fi
+
+        local cfg_update_gitignore
+        cfg_update_gitignore=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "gitignore.update")
+        if [[ "$cfg_update_gitignore" == "false" ]]; then
+            UPDATE_GITIGNORE="false"
+        fi
     fi
 
     # 1. Load global defaults
@@ -786,8 +793,8 @@ main() {
         echo ""
     done
     
-    # Update .gitignore if not dry-run
-    if [[ "$DRY_RUN" != "true" ]]; then
+    # Update .gitignore if not dry-run and not disabled
+    if [[ "$DRY_RUN" != "true" ]] && [[ "$UPDATE_GITIGNORE" == "true" ]]; then
         log_separator
         log_info "Updating .gitignore..."
         local generated_paths_payload=""

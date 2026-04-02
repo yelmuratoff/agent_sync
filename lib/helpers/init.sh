@@ -137,6 +137,10 @@ defaults:
 post_sync:
   allow: false    # set to true to allow post-sync hooks defined in tool configs
   skip: false     # set to true to skip post-sync hooks even when allow is true
+
+# .gitignore management
+gitignore:
+  update: true    # set to false to disable automatic .gitignore updates
 EOF
 }
 
