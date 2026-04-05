@@ -1,0 +1,10 @@
+name: "Continue"
+enabled: false
+
+targets:
+  rules:
+    dest: ".continuerules"
+    merge_to_file: true
+    prepend_agents: true
+  skills:
+    inline_into_agents: true
