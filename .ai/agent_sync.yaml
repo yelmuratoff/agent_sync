@@ -1,0 +1,30 @@
+# AgentSync — Project Configuration
+# All keys are optional — remove any that you leave at the default.
+
+# Source paths (override if you use a custom layout)
+source:
+  agents: ".ai/src/AGENTS.md"   # agent identity file
+  rules: ".ai/src/rules"        # directory with *.md rule files
+  skills: ".ai/src/skills"      # directory with skill subdirectories
+  commands: ".ai/src/commands"  # directory with slash-command *.md files
+  subagents: ".ai/src/agents"   # directory with sub-agent *.md files
+  tools: ".ai/src/tools"        # directory with tool *.yaml configs
+
+# mcp, hooks, and settings sources are configured per-tool
+# inside each .ai/src/tools/<tool>.yaml under targets.mcp.source,
+# targets.hooks.source, and targets.settings.source.
+
+# Global defaults applied to all tools
+defaults:
+  enabled: true   # default enabled state for tools that omit the 'enabled' key
+  cleanup: true   # remove generated files when a tool is disabled
+
+# Post-sync hook execution (also controllable via env vars)
+# AGENTSYNC_ALLOW_POST_SYNC and AGENTSYNC_SKIP_POST_SYNC take precedence.
+post_sync:
+  allow: false    # set to true to allow post-sync hooks defined in tool configs
+  skip: false     # set to true to skip post-sync hooks even when allow is true
+
+# .gitignore management
+gitignore:
+  update: true    # set to false to disable automatic .gitignore updates

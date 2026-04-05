@@ -1,0 +1,18 @@
+# Windsurf Configuration
+name: "Windsurf"
+enabled: true
+
+targets:
+  agents:
+    dest: ".windsurf/AGENTS.md"
+
+  rules:
+    dest: ".windsurf/rules"
+    header: "---\ntrigger: always_on\n---"
+
+  skills:
+    dest: ".windsurf/skills"
+
+  mcp:
+    source: ".ai/src/mcp/windsurf.json"
+    dest: ".windsurf/mcp_config.json"
