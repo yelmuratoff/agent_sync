@@ -56,8 +56,11 @@ _load_lib() {
     source "$lib_dir/init.sh"
     source "$lib_dir/list.sh"
     source "$lib_dir/generate.sh"
+    source "$lib_dir/yaml.sh"
     source "$lib_dir/update.sh"
     source "$lib_dir/release.sh"
+    source "$lib_dir/export.sh"
+    source "$lib_dir/import.sh"
 }
 _load_lib
 
@@ -77,6 +80,8 @@ print_usage() {
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "list")           Show available tools and their status"
+    echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
+    echo "    $(_cyan "import")         Import config from GitHub, archive, or directory"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
     echo "    $(_cyan "release")        Bump version, tag, and push (maintainer)"
     echo "    $(_cyan "version")        Print version"
@@ -95,6 +100,9 @@ print_usage() {
     echo "    agentsync check"
     echo "    agentsync generate"
     echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
+    echo "    agentsync export"
+    echo "    agentsync import https://github.com/user/repo"
+    echo "    agentsync import agentsync-bundle.tar.gz"
     echo "    agentsync generate | pbcopy"
     echo ""
     echo "  $(_green "DOCS")"
@@ -137,7 +145,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks)
+        sync|init|check|list|ls|setup-hooks|export|import)
             check_for_updates
             ;;
     esac
@@ -148,6 +156,8 @@ main() {
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
         generate|gen)  shift; cmd_generate "$*" ;;
+        export)        shift; cmd_export "$@" ;;
+        import)        shift; cmd_import "$@" ;;
         update)        cmd_update ;;
         release)       shift; cmd_release "$@" ;;
         list|ls)       cmd_list ;;
