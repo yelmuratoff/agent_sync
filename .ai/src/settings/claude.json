@@ -5,6 +5,12 @@
       "Bash(git status)",
       "Bash(git diff *)",
       "Bash(git log *)",
+      "Bash(git blame *)",
+      "Bash(shellcheck *)",
+      "Bash(bats *)",
+      "Bash(bash -x *)",
+      "Bash(ls *)",
+      "Bash(cat VERSION)",
       "Read",
       "Write",
       "Edit"
@@ -12,6 +18,7 @@
     "deny": [
       "Bash(rm -rf *)",
       "Bash(curl *)",
+      "Bash(wget *)",
       "Read(.env)",
       "Read(.env.*)"
     ]

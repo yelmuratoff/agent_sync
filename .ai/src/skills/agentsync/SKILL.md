@@ -5,217 +5,52 @@ description: >
   USE WHEN adding rules, creating skills, writing commands, defining agents, editing permissions, configuring tools, or setting up .ai/ directory.
 ---
 
-# Working with AgentSync
+# Working with AgentSync Configuration
 
-Create and maintain AI agent instructions in the AgentSync format.
+Edit AI agent instructions in `.ai/src/`. After changes, run `agentsync sync` to distribute.
 
 ## Structure
 
 ```
-.ai/src/                        # Source of truth. Edit ONLY here.
-├── AGENTS.md                   # Agent identity: role, approach, principles
-├── rules/                      # Always-on constraints (one file per topic)
-│   ├── core.md
-│   └── testing.md
-├── skills/                     # On-demand recipes (one directory per skill)
-│   └── deploy/
-│       └── SKILL.md
-├── commands/                   # Custom slash commands (.md files)
-│   ├── review.md
-│   └── fix-issue.md
-├── agents/                     # Subagent personas (.md files)
-│   └── code-reviewer.md
-├── settings/                   # Tool-specific permissions (JSON)
+.ai/src/
+├── AGENTS.md                   # Agent identity (40–70 lines)
+├── rules/                      # Always-on constraints (one .md per topic, 20–50 lines)
+├── skills/                     # On-demand recipes (one dir per skill, 50–100 lines)
+│   └── <name>/SKILL.md
+├── commands/                   # Slash commands (.md files, 15–40 lines)
+├── agents/                     # Subagent personas (.md files, 30–70 lines)
+├── settings/                   # Tool permissions (JSON)
 │   └── claude.json
 ├── mcp/                        # MCP server configs (JSON)
-│   └── claude.json
 ├── hooks/                      # Event hooks (JSON)
-│   ├── cursor.json
-│   └── codex.json
-└── tools/                      # Tool configs (claude.yaml, cursor.yaml, etc.)
+└── tools/                      # Tool sync configs (YAML)
+    └── <tool>.yaml
 ```
-
-After editing, run `agentsync sync` to distribute to all tools.
-
-## Writing AGENTS.md
-
-The agent's identity. Every sentence should change behavior.
-
-- **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
-- **Include the stack** — The agent needs to know what it's working with.
-- **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
-- **What NOT to do** — Constraints are often more useful than instructions.
-- 40–70 lines. No generic filler.
-
-## Writing Rules
-
-Always-on constraints. One file per topic in `.ai/src/rules/`.
-
-- **One concern per file** — `testing.md`, `security.md`. Not `everything.md`.
-- **Imperative and specific** — "Use `snake_case` for DB columns" not "Follow naming conventions".
-- **Constraints, not tutorials** — Say what to do and what not to do. Don't explain concepts.
-- **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
-
-## Writing Skills — The Most Important Part
-
-Skills are the highest-leverage configuration. A skill is a directory with a `SKILL.md`.
-
-### The description is a TRIGGER, not a summary
-
-The agent scans every skill description at startup. Vague = invisible.
-
-Bad: `description: "Helps with testing"`
-Good: `description: "Write unit and integration tests for new features. USE WHEN adding tests, writing test cases, or asked to verify behavior."`
-
-Always include `USE WHEN` with concrete trigger conditions.
-
-### Frontmatter fields
-
-```yaml
----
-name: skill-name # Required. Lowercase, kebab-case.
-description: > # Required. Trigger description with USE WHEN clause.
-  What this skill does.
-  USE WHEN [concrete trigger conditions].
-
-
-# Optional fields (tool-specific, passed through by agentsync):
-# context: fork                 # Run in isolated subagent (Claude Code)
-# allowed-tools: [Read, Grep]   # Limit available tools (Claude Code)
-# paths: ["src/api/**"]         # Only activate for matching paths
----
-```
-
-### Structure of a good skill
-
-```markdown
----
-name: example
-description: >
-  [What it does]. USE WHEN [triggers].
----
-
-# Skill Name
-
-[One line: what this skill does and when.]
 
 ## Steps
 
-1. [Concrete numbered steps]
-2. [With real commands and paths]
-
-## Gotchas
-
-- [Every mistake the agent has made using this skill]
-- [Edge cases and common pitfalls]
-```
-
-### The Gotchas section
-
-This is the highest-signal content. Every time the agent makes a mistake, add it to Gotchas. This section prevents the same error from happening twice.
-
-### Size
-
-50–100 lines per skill. Skills are loaded on demand so can be more detailed than rules, but if a skill grows beyond that, it's likely two separate workflows — split by responsibility.
-
-### Rule of Three
-
-Don't create a skill for everything. If you've done something three times manually, then create a skill.
-
-## Writing Commands
-
-Custom slash commands. Each `.md` file in `.ai/src/commands/` becomes a command (e.g., `review.md` → `/project:review`).
-
-```markdown
----
-description: What this command does (shown in command list)
-argument-hint: "<optional-arg>"
----
-
-[Prompt content with instructions for the AI.]
-```
-
-Key features:
-
-- `$ARGUMENTS` — replaced with text after the command name.
-- `` !`shell command` `` — runs a shell command and embeds output into the prompt.
-- Keep commands focused — one workflow per command.
-- Good commands: `review`, `fix-issue`, `deploy`, `migrate`.
-
-## Writing Agents (Subagent Personas)
-
-Specialized AI personas in `.ai/src/agents/`. Each `.md` file defines an agent with its own system prompt and tool restrictions.
-
-```markdown
----
-name: code-reviewer
-description: >
-  Expert code reviewer. USE PROACTIVELY when reviewing PRs or validating implementations.
-model: sonnet # Cheaper model for focused tasks
-tools: [Read, Grep, Glob] # Restrict to read-only tools
----
-
-You are a senior code reviewer...
-```
-
-Guidelines:
-
-- Restrict `tools` to what the agent actually needs. Read-only agents shouldn't have Write.
-- Use `model: sonnet` or `model: haiku` for focused tasks to save cost.
-- Only create agents for distinct specializations — don't duplicate what skills already do.
-
-## Settings & Permissions
-
-Tool-specific settings in `.ai/src/settings/`. Each file is named after the tool and copied directly.
-
-Example `claude.json`:
-
-```json
-{
-  "permissions": {
-    "allow": ["Bash(npm run *)", "Read", "Write", "Edit"],
-    "deny": ["Bash(rm -rf *)", "Read(.env)"]
-  }
-}
-```
-
-## MCP Configs
-
-MCP server configurations in `.ai/src/mcp/`. Each file is named after the tool.
-
-Example `claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-playwright"]
-    }
-  }
-}
-```
-
-## Inline Options
-
-For tools without separate rules/skills directories, use inline options:
-
-- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Amp, Devin, Gemini.
-- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue.
-- **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Aider, Zed, Continue.
-- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Cline, Amazon Q, Augment, Tabnine.
+1. Identify what to create/edit — rule, skill, command, agent, or tool config.
+2. Edit files only in `.ai/src/`. Never edit generated dirs (`.claude/`, `.cursor/`, etc.).
+3. Follow format conventions:
+   - Rules: imperative, one topic per file, 20–50 lines.
+   - Skills: must have `description` with `USE WHEN` trigger clause, include `## Gotchas`.
+   - Commands: frontmatter with `description`, use `$ARGUMENTS` and `` !`cmd` `` for dynamic content.
+   - Agents: frontmatter with `name`, `description`, `model`, `tools` list.
+   - Tools: copy `_TEMPLATE.yaml`, set `name`, `enabled`, and `targets`.
+4. Run `agentsync sync` to distribute, or `agentsync sync --only <tool>` to test one tool.
+5. Run `agentsync check` to verify outputs are in sync.
 
 ## Adding a New Tool
 
 1. Copy `.ai/src/tools/_TEMPLATE.yaml` to `.ai/src/tools/<tool>.yaml`.
-2. Set `name`, `enabled: true`, and configure `targets`.
-3. Run `agentsync sync --only <tool>` to test.
+2. Set `name`, `enabled: true`, configure `targets` with `dest` paths.
+3. Run `agentsync sync --only <tool>`.
+4. Add bats tests in `tests/sync.bats` and `tests/sync_options.bats`.
 
 ## Gotchas
 
-- Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
-- Run `agentsync sync` after every change to distribute updates.
-- Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
-- Don't create overlapping skills — if two skills could trigger on the same task, merge them or make descriptions mutually exclusive.
-- Commands and agents only work in tools that support them (Claude, Gemini for commands; Claude, Copilot for agents).
-- Settings and MCP files are per-tool — each tool has its own format.
+- Always edit in `.ai/src/`, never in output directories — they're overwritten by sync.
+- Skill descriptions are TRIGGERS — vague descriptions make skills invisible. Always include `USE WHEN`.
+- The YAML parser is custom and minimal — supports `key: value` and dot-notation only. No arrays, no multiline blocks.
+- Tool-specific frontmatter fields (`context: fork`, `allowed-tools`) pass through as-is — agentsync doesn't validate them.
+- Running `agentsync sync` is idempotent. Running it twice must produce identical output.

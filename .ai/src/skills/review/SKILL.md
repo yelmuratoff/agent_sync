@@ -1,49 +1,41 @@
 ---
 name: review
 description: >
-  Perform a structured code review on a diff, PR, or set of changes.
+  Perform a structured code review on AgentSync changes.
   USE WHEN reviewing code, reviewing PRs, checking diffs, or asked to find issues in changes.
 ---
 
 # Code Review
 
-Systematically review changes for correctness, security, and maintainability.
+Review changes to the AgentSync codebase for correctness, portability, and maintainability.
 
 ## Steps
 
 1. Read the full diff. Understand the scope before commenting.
-2. Check PR description or commit messages for context — what problem is being solved?
-3. Review in priority order:
-   - **Correctness** — Logic errors, off-by-one bugs, missing edge cases, race conditions.
-   - **Security** — Injection risks, hardcoded secrets, missing validation, exposed PII.
-   - **Error handling** — Unhandled failures, swallowed exceptions, missing error paths.
-   - **Architecture** — Does this follow existing patterns? Are boundaries respected?
-   - **Testing** — Are new behaviors tested? Are error paths covered?
-   - **Naming & clarity** — Would a new team member understand this?
-4. For each issue:
+2. Review in priority order:
+   - **Portability** — Will this work on macOS, Linux, AND Git Bash on Windows?
+   - **Correctness** — Logic errors, missing edge cases, unquoted variables.
+   - **Idempotency** — Does `agentsync sync` still produce identical output on repeated runs?
+   - **Error handling** — Are failures handled with proper exit codes and log messages?
+   - **YAML parser safety** — No `eval`, no unquoted expansions from user-controlled YAML.
+   - **Test coverage** — Are new behaviors covered in bats tests?
+3. For each issue:
    - Point to the exact file and line.
-   - Explain *why* it's a problem, not just *what* to change.
+   - Explain *why* it's a problem.
    - Suggest a fix when possible.
-   - Mark as **blocking** (must fix) or **suggestion** (nice to have).
-5. If the code is solid, say so. Don't manufacture criticism.
+   - Mark as **blocking** or **suggestion**.
+4. If the code is solid, say so.
 
-## Output Format
+## AgentSync-Specific Checks
 
-```
-## Summary
-[1-2 sentence overview]
-
-## Issues
-- **[blocking]** file.ts:42 — [problem and suggested fix]
-- **[suggestion]** file.ts:15 — [observation and reasoning]
-
-## Verdict
-[Approve / Request changes / Needs discussion]
-```
+- New tool support must include a `.yaml` config AND bats tests.
+- Shell scripts must pass `shellcheck -x -S warning -e SC1091`.
+- No external dependencies (yq, jq, python, node).
+- Variables must be quoted. `$var` → `"$var"`.
+- No GNU-specific flags in `sed`, `grep`, `readlink`.
 
 ## Gotchas
 
-- Don't nitpick style if a formatter/linter handles it.
-- Don't rewrite the author's approach — review what's there, not what you'd have written.
-- Don't approve with unresolved blocking issues just to be polite.
-- Check the full PR, not just the latest commit — bugs often hide in earlier commits.
+- Don't nitpick style — focus on correctness and portability.
+- Check the full PR, not just the latest commit.
+- `example/` output dirs are regenerated — don't review their diffs.

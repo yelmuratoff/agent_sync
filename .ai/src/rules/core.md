@@ -1,28 +1,33 @@
 # Core Rules
 
-## Code Quality
+## Shell Script Quality
 
-- Follow the project's established conventions and patterns.
-- Prefer readability over cleverness. Code is read far more than written.
-- Keep functions focused — one function, one responsibility.
-- Use meaningful names that describe intent, not implementation.
-- Handle errors explicitly. Don't swallow exceptions.
+- Always use `set -euo pipefail` at the top of every script.
+- Quote all variable expansions: `"$var"`, not `$var`. No exceptions.
+- Use `local` for all function-scoped variables.
+- Prefer `[[ ]]` over `[ ]` for conditionals.
+- Use `$(command)` not backticks for command substitution.
+- Functions under 50 lines. Extract helpers when logic branches.
+
+## Portability
+
+- No GNU-specific flags. `sed`, `grep`, `readlink` must work on macOS, Linux, and Git Bash.
+- No `sed -i ''` or `sed -i` — both are non-portable. Write to temp file and `mv`.
+- No `realpath` — use `cd "$(dirname "$path")" && pwd` pattern.
+- No `readlink -f` — follow symlinks manually with a `while` loop (see `bin/agentsync.sh`).
+- No `mapfile`/`readarray` — use `while IFS= read -r` loops.
+- Test changes on macOS and verify CI passes on all three platforms.
 
 ## Changes
 
-- Change only what's needed to complete the task. Don't refactor unrelated code.
-- Don't add features, abstractions, or "improvements" beyond what was asked.
-- Don't add comments that restate what the code already says.
-- Remove dead code instead of commenting it out.
+- Change only what's needed. Don't refactor adjacent code.
+- Don't add features beyond what was asked.
+- Remove dead code completely — don't comment it out.
+- Keep the YAML parser minimal. It handles `key: value` and dot-notation; don't extend it without a clear need.
 
-## Testing
+## Error Handling
 
-- Write tests for business logic and error paths.
-- Tests should be deterministic — no real network, no randomness, no timing dependencies.
-- Name tests to describe the behavior being verified, not the method being called.
-
-## Security
-
-- Never hardcode secrets, API keys, or credentials.
-- Validate and sanitize untrusted input (user input, external API responses).
-- Never log sensitive data (tokens, passwords, PII).
+- Use `log_error`, `log_warning`, `log_info` from `lib/helpers/logging.sh` — not raw `echo`.
+- Always check file existence before reading: `[[ -f "$file" ]] || return`.
+- Return meaningful exit codes: 0 success, 1 error, 2 usage error.
+- Don't use `set +e` to swallow errors — handle them explicitly.
