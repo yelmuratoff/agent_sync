@@ -10,8 +10,8 @@ _BUNDLE_CONFIG="agent_sync.yaml"
 # ── Source path resolution ───────────────────────────────────────────────────
 
 # Resolve all source paths respecting agent_sync.yaml overrides and layout auto-detection.
-# Sets: _SRC_AGENTS, _SRC_RULES, _SRC_SKILLS, _SRC_COMMANDS, _SRC_SUBAGENTS,
-#        _SRC_SETTINGS, _SRC_MCP, _SRC_HOOKS, _SRC_TOOLS
+# Sets: _SRC_AGENTS, _SRC_RULES, _SRC_SKILLS, _SRC_COMMANDS,
+#        _SRC_AGENTS_DIR, _SRC_SETTINGS, _SRC_MCP, _SRC_HOOKS, _SRC_TOOLS
 # Also sets _SRC_BASE (detected base dir, e.g. ".ai/src" or ".ai")
 _resolve_source_paths() {
     local repo_root="$1"
@@ -28,32 +28,32 @@ _resolve_source_paths() {
 
     # Defaults from auto-detection
     _SRC_AGENTS=""
-    [[ -f "$repo_root/$_SRC_BASE/AGENTS.md" ]] && _SRC_AGENTS="$_SRC_BASE/AGENTS.md"
+    [[ -n "$_SRC_BASE" ]] && [[ -f "$repo_root/$_SRC_BASE/AGENTS.md" ]] \
+        && _SRC_AGENTS="$_SRC_BASE/AGENTS.md"
 
     _SRC_RULES=""
     _SRC_SKILLS=""
     _SRC_COMMANDS=""
-    # Note: "agents" subdir = subagents (not the AGENTS.md file)
     _SRC_AGENTS_DIR=""
     _SRC_SETTINGS=""
     _SRC_MCP=""
     _SRC_HOOKS=""
     _SRC_TOOLS=""
 
+    # Auto-detect directories using the shared target list
     local dir_name
-    for dir_name in rules skills commands agents settings mcp hooks tools; do
-        if [[ -d "$repo_root/$_SRC_BASE/$dir_name" ]]; then
-            case "$dir_name" in
-                rules)    _SRC_RULES="$_SRC_BASE/$dir_name" ;;
-                skills)   _SRC_SKILLS="$_SRC_BASE/$dir_name" ;;
-                commands) _SRC_COMMANDS="$_SRC_BASE/$dir_name" ;;
-                agents)   _SRC_AGENTS_DIR="$_SRC_BASE/$dir_name" ;;
-                settings) _SRC_SETTINGS="$_SRC_BASE/$dir_name" ;;
-                mcp)      _SRC_MCP="$_SRC_BASE/$dir_name" ;;
-                hooks)    _SRC_HOOKS="$_SRC_BASE/$dir_name" ;;
-                tools)    _SRC_TOOLS="$_SRC_BASE/$dir_name" ;;
-            esac
-        fi
+    for dir_name in "${_BUNDLE_DIR_TARGETS[@]}"; do
+        [[ -n "$_SRC_BASE" ]] && [[ -d "$repo_root/$_SRC_BASE/$dir_name" ]] || continue
+        case "$dir_name" in
+            rules)    _SRC_RULES="$_SRC_BASE/$dir_name" ;;
+            skills)   _SRC_SKILLS="$_SRC_BASE/$dir_name" ;;
+            commands) _SRC_COMMANDS="$_SRC_BASE/$dir_name" ;;
+            agents)   _SRC_AGENTS_DIR="$_SRC_BASE/$dir_name" ;;
+            settings) _SRC_SETTINGS="$_SRC_BASE/$dir_name" ;;
+            mcp)      _SRC_MCP="$_SRC_BASE/$dir_name" ;;
+            hooks)    _SRC_HOOKS="$_SRC_BASE/$dir_name" ;;
+            tools)    _SRC_TOOLS="$_SRC_BASE/$dir_name" ;;
+        esac
     done
 
     # Override from agent_sync.yaml if present
@@ -135,7 +135,7 @@ cmd_export() {
         item_labels+=("$(basename "$_SRC_AGENTS")")
     fi
 
-    # Directory targets — map names to resolved source paths
+    # Directory targets — map labels to resolved source paths
     local _dir_pairs=(
         "rules:$_SRC_RULES"
         "skills:$_SRC_SKILLS"

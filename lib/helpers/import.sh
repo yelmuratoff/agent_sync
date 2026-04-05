@@ -48,12 +48,11 @@ cmd_import() {
     _bold "  AgentSync Import"; echo ""
     echo ""
 
-    # Create temp dir and ensure cleanup
+    # Create temp dir with guaranteed cleanup
     local tmp_dir
     tmp_dir=$(mktemp -d)
-    local _prev_trap
-    _prev_trap=$(trap -p EXIT 2>/dev/null || true)
-    trap "rm -rf '$tmp_dir'; $_prev_trap" EXIT
+    # shellcheck disable=SC2064
+    trap "rm -rf '${tmp_dir}'" EXIT
 
     # Determine source type and extract
     local source_label=""
@@ -76,7 +75,7 @@ cmd_import() {
     echo ""
 
     # Locate .ai/src (or .ai/) inside extracted content
-    local src_root=""
+    local src_root="" src_project_root=""
     src_root=$(_import_find_ai_src "$tmp_dir")
     if [[ -z "$src_root" ]]; then
         echo "  $(_red "Error"): No .ai/src/ (or .ai/) directory found in source." >&2
@@ -84,10 +83,17 @@ cmd_import() {
         return 1
     fi
 
+    # Derive project root from found source:
+    #   .ai/src → project root is 2 levels up
+    #   .ai     → project root is 1 level up
+    if [[ "$src_root" == */src ]]; then
+        src_project_root=$(dirname "$(dirname "$src_root")")
+    else
+        src_project_root=$(dirname "$src_root")
+    fi
+
     # Locate project config relative to found .ai/
     local imported_config=""
-    local src_project_root
-    src_project_root=$(dirname "$(dirname "$src_root")")
     [[ -f "$src_project_root/$_BUNDLE_CONFIG" ]] && imported_config="$src_project_root/$_BUNDLE_CONFIG"
 
     # Resolve local destination base
@@ -105,10 +111,9 @@ cmd_import() {
         IFS=',' read -ra selected_arr <<< "$only"
         for t in "${targets[@]}"; do
             for selected_item in "${selected_arr[@]}"; do
-                # Trim whitespace without subprocess
+                # Trim whitespace via parameter expansion (no subprocess)
                 selected_item="${selected_item#"${selected_item%%[![:space:]]*}"}"
                 selected_item="${selected_item%"${selected_item##*[![:space:]]}"}"
-                # Match: "rules" == "rules", "AGENTS.md" basename match "AGENTS"
                 if [[ "$t" == "$selected_item" ]] || [[ "${t%.md}" == "$selected_item" ]]; then
                     filtered+=("$t")
                     break
@@ -213,7 +218,7 @@ cmd_import() {
     echo "  $(_green "Imported!") ${new_count} new, ${update_count} updated files."
     echo ""
     echo "  Next steps:"
-    echo "    1. Review imported files in $(_cyan "$dest_base/")"
+    echo "    1. Review imported files in $(_cyan "${dest_base#"$repo_root/"}")"
     echo "    2. Run $(_cyan "agentsync sync") to distribute to all tools"
     echo ""
 }
@@ -303,27 +308,24 @@ _import_from_github() {
     url="${url%.git}"
     url="${url%/}"
 
-    # Extract owner/repo and optional branch from /tree/<branch>
-    local repo_path=""
-    if [[ "$url" =~ github\.com/([^/]+/[^/]+)/tree/([^/]+)$ ]]; then
-        repo_path="${BASH_REMATCH[1]}"
-        [[ -z "$branch" ]] && branch="${BASH_REMATCH[2]}"
-    elif [[ "$url" =~ github\.com/([^/]+/[^/]+) ]]; then
-        repo_path="${BASH_REMATCH[1]}"
+    # Extract owner/repo (always the two segments after github.com/)
+    local owner="" repo_name=""
+    if [[ "$url" =~ github\.com/([^/]+)/([^/]+) ]]; then
+        owner="${BASH_REMATCH[1]}"
+        repo_name="${BASH_REMATCH[2]}"
     fi
 
-    if [[ -z "$repo_path" ]]; then
+    if [[ -z "$owner" ]] || [[ -z "$repo_name" ]]; then
         echo "  $(_red "Error"): Cannot parse GitHub URL: $url" >&2
         return 1
     fi
 
-    # Strip any trailing URL segments after owner/repo (e.g. /tree/branch/subpath)
-    repo_path="${repo_path%%/*}"
-    # Actually we want owner/repo, re-extract properly
-    if [[ "$url" =~ github\.com/([^/]+)/([^/]+) ]]; then
-        repo_path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-    fi
+    local repo_path="$owner/$repo_name"
 
+    # Extract branch from /tree/<branch> if not provided via --branch
+    if [[ -z "$branch" ]] && [[ "$url" =~ /tree/([^/]+) ]]; then
+        branch="${BASH_REMATCH[1]}"
+    fi
     [[ -z "$branch" ]] && branch="main"
 
     echo "  Downloading $(_cyan "$repo_path") (branch: $branch)..."
@@ -392,7 +394,7 @@ _import_from_directory() {
 _import_find_ai_src() {
     local search_root="$1"
 
-    # Direct: .ai/src/ or .ai/
+    # Direct: prefer .ai/src/ over .ai/
     if [[ -d "$search_root/.ai/src" ]]; then
         echo "$search_root/.ai/src"
         return 0
@@ -402,7 +404,7 @@ _import_find_ai_src() {
         return 0
     fi
 
-    # One level deep (GitHub archives extract into a subdirectory)
+    # One level deep (GitHub archives extract into a subdirectory like repo-main/)
     local dir
     for dir in "$search_root"/*/; do
         [[ -d "$dir" ]] || continue
