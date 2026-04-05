@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+- **`agentsync export`** — bundles `.ai/src/` (rules, skills, commands, agents, settings, mcp, hooks, tools) and `agent_sync.yaml` into a single shareable `agentsync-bundle.tar.gz` archive.
+- **`agentsync import <source>`** — imports agent config from three source types:
+  - **GitHub URL** — downloads repository archive by branch (`--branch`, auto-detects `/tree/<branch>` in URL, falls back from `main` to `master`)
+  - **Archive file** — extracts a `.tar.gz` / `.tgz` bundle (e.g. from `agentsync export`)
+  - **Local directory** — copies `.ai/` and `agent_sync.yaml` from another project
+- **Selective import** — `--only rules,skills` imports only specified targets
+- **Diff preview** — both commands show a summary of new / updated / unchanged files before writing
+- **Dry-run** — `--dry-run` on both export and import previews changes without writing
+- **Confirmation prompt** — import asks before overwriting existing files (skip with `--force`)
+- **Dynamic source paths** — export and import resolve source paths from `agent_sync.yaml` overrides and auto-detect `.ai/src/` vs `.ai/` (legacy) layout
+
 ## 0.3.0
 
 ### Improvements
