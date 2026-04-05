@@ -1,6 +1,6 @@
 # Windsurf Configuration
 name: "Windsurf"
-enabled: true
+enabled: false
 
 targets:
   agents:

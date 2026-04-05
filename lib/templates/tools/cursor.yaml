@@ -1,6 +1,6 @@
 # Cursor Configuration
 name: "Cursor"
-enabled: true
+enabled: false
 
 targets:
   agents:

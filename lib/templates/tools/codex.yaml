@@ -4,7 +4,7 @@
 # Codex .rules files use Starlark format for command permissions — not managed by agentsync
 # Subagents use TOML format — auto-converted from MD during sync
 name: "OpenAI Codex"
-enabled: true
+enabled: false
 
 targets:
   agents:

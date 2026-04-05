@@ -9,5 +9,5 @@ source:
 
 # Default settings for all tools
 defaults:
-  enabled: true
+  enabled: false
   cleanup: true

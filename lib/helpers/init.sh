@@ -130,7 +130,7 @@ source:
 
 # Global defaults applied to all tools
 defaults:
-  enabled: true   # default enabled state for tools that omit the 'enabled' key
+  enabled: false   # default enabled state for tools that omit the 'enabled' key
   cleanup: true   # remove generated files when a tool is disabled
 
 # Post-sync hook execution (also controllable via env vars)
@@ -241,8 +241,9 @@ _init_print_summary() {
     if [[ $enabled_count -gt 0 ]]; then
         echo ""
         echo "   Enabled tools ($enabled_count): $(_cyan "$enabled_tools")"
-        echo "   $(_dim "Enable more in .ai/src/tools/<name>.yaml → enabled: true")"
     fi
+    echo ""
+    echo "   $(_dim "Enable tools in .ai/src/tools/<name>.yaml → enabled: true")"
     echo ""
     echo "Next steps:"
     echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") — customize your agent's identity"
@@ -299,7 +300,7 @@ _init_fallback_tools() {
 
     cat > "$ai_dir/src/tools/claude.yaml" << 'EOF'
 name: "Claude Code"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".claude/CLAUDE.md" }
   rules: { dest: ".claude/rules", append_imports: true }
@@ -310,7 +311,7 @@ EOF
 
     cat > "$ai_dir/src/tools/copilot.yaml" << 'EOF'
 name: "GitHub Copilot"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".github/copilot-instructions.md" }
   rules: { dest: ".github/instructions", extension: ".instructions.md", header: "---\napplyTo: '**'\n---" }
@@ -321,7 +322,7 @@ EOF
 
     cat > "$ai_dir/src/tools/cursor.yaml" << 'EOF'
 name: "Cursor"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".cursor/AGENTS.md" }
   rules: { dest: ".cursor/rules", extension: ".mdc", header: "---\nglobs: '**/*'\nalwaysApply: true\n---" }
@@ -333,7 +334,7 @@ EOF
 
     cat > "$ai_dir/src/tools/gemini.yaml" << 'EOF'
 name: "Gemini CLI"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".gemini/GEMINI.md" }
   rules: { inline_into_agents: true }
@@ -344,7 +345,7 @@ EOF
 
     cat > "$ai_dir/src/tools/codex.yaml" << 'EOF'
 name: "OpenAI Codex"
-enabled: true
+enabled: false
 targets:
   agents: { dest: "AGENTS.md" }
   rules: { inline_into_agents: true }
@@ -355,7 +356,7 @@ EOF
 
     cat > "$ai_dir/src/tools/windsurf.yaml" << 'EOF'
 name: "Windsurf"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".windsurf/AGENTS.md" }
   rules: { dest: ".windsurf/rules", header: "---\ntrigger: always_on\n---" }
@@ -364,7 +365,7 @@ EOF
 
     cat > "$ai_dir/src/tools/junie.yaml" << 'EOF'
 name: "JetBrains Junie"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".junie/guidelines.md" }
   rules: { dest: ".junie/guidelines" }
@@ -373,7 +374,7 @@ EOF
 
     cat > "$ai_dir/src/tools/amp.yaml" << 'EOF'
 name: "Amp"
-enabled: true
+enabled: false
 targets:
   agents: { dest: "AGENTS.md" }
   rules: { inline_into_agents: true }
@@ -382,7 +383,7 @@ EOF
 
     cat > "$ai_dir/src/tools/aider.yaml" << 'EOF'
 name: "Aider"
-enabled: true
+enabled: false
 targets:
   rules: { dest: "CONVENTIONS.md", merge_to_file: true, prepend_agents: true }
   skills: { inline_into_agents: true }
@@ -390,7 +391,7 @@ EOF
 
     cat > "$ai_dir/src/tools/cline.yaml" << 'EOF'
 name: "Cline"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".clinerules/00-context.md" }
   rules: { dest: ".clinerules" }
@@ -399,7 +400,7 @@ EOF
 
     cat > "$ai_dir/src/tools/amazonq.yaml" << 'EOF'
 name: "Amazon Q Developer"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".amazonq/rules/00-context.md" }
   rules: { dest: ".amazonq/rules" }
@@ -408,7 +409,7 @@ EOF
 
     cat > "$ai_dir/src/tools/augment.yaml" << 'EOF'
 name: "Augment Code"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".augment/rules/00-context.md" }
   rules: { dest: ".augment/rules" }
@@ -417,7 +418,7 @@ EOF
 
     cat > "$ai_dir/src/tools/devin.yaml" << 'EOF'
 name: "Devin"
-enabled: true
+enabled: false
 targets:
   agents: { dest: "AGENTS.md" }
   rules: { inline_into_agents: true }
@@ -426,7 +427,7 @@ EOF
 
     cat > "$ai_dir/src/tools/tabnine.yaml" << 'EOF'
 name: "Tabnine"
-enabled: true
+enabled: false
 targets:
   agents: { dest: ".tabnine/guidelines/00-context.md" }
   rules: { dest: ".tabnine/guidelines" }
@@ -435,7 +436,7 @@ EOF
 
     cat > "$ai_dir/src/tools/zed.yaml" << 'EOF'
 name: "Zed"
-enabled: true
+enabled: false
 targets:
   rules: { dest: ".rules", merge_to_file: true, prepend_agents: true }
   skills: { inline_into_agents: true }
@@ -443,7 +444,7 @@ EOF
 
     cat > "$ai_dir/src/tools/continue.yaml" << 'EOF'
 name: "Continue"
-enabled: true
+enabled: false
 targets:
   rules: { dest: ".continuerules", merge_to_file: true, prepend_agents: true }
   skills: { inline_into_agents: true }

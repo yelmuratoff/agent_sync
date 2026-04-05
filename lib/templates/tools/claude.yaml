@@ -1,6 +1,6 @@
 # Claude Code Configuration
 name: "Claude Code"
-enabled: true
+enabled: false
 
 targets:
   agents:

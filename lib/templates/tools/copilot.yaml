@@ -1,6 +1,6 @@
 # GitHub Copilot Configuration
 name: "GitHub Copilot"
-enabled: true
+enabled: false
 
 targets:
   agents:
