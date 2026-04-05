@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+### Changed
+- **`agent_sync.yaml` moved inside `.ai/`:** project config is now created at `.ai/agent_sync.yaml` instead of the repository root, keeping all AgentSync files in one place and simplifying export/import.
+- **Backward compatible:** `sync`, `export`, and `import` check `.ai/agent_sync.yaml` first, then fall back to the legacy root-level `agent_sync.yaml` — existing projects continue to work without changes.
+- **`init` respects both locations:** skips config creation if either path already exists.
+
+### Fixed
+- **`set -e` safety in `_resolve_source_paths`:** `[[ -n "" ]] && ...` without `|| true` caused silent exit under `set -e` when `agent_sync.yaml` keys were missing.
+
 ## 0.4.0
 
 ### Added

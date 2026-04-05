@@ -5,7 +5,8 @@
 # Order matches init.sh directory creation.
 _BUNDLE_FILE_TARGETS=("AGENTS.md")
 _BUNDLE_DIR_TARGETS=("rules" "skills" "commands" "agents" "settings" "mcp" "hooks" "tools")
-_BUNDLE_CONFIG="agent_sync.yaml"
+_BUNDLE_CONFIG=".ai/agent_sync.yaml"
+_BUNDLE_CONFIG_LEGACY="agent_sync.yaml"
 
 # ── Source path resolution ───────────────────────────────────────────────────
 
@@ -15,7 +16,9 @@ _BUNDLE_CONFIG="agent_sync.yaml"
 # Also sets _SRC_BASE (detected base dir, e.g. ".ai/src" or ".ai")
 _resolve_source_paths() {
     local repo_root="$1"
+    # Resolve config: canonical .ai/ location, then legacy root-level fallback
     local config="$repo_root/$_BUNDLE_CONFIG"
+    [[ -f "$config" ]] || config="$repo_root/$_BUNDLE_CONFIG_LEGACY"
 
     # Auto-detect base layout
     if [[ -d "$repo_root/.ai/src" ]]; then
@@ -59,23 +62,23 @@ _resolve_source_paths() {
     # Override from agent_sync.yaml if present
     if [[ -f "$config" ]]; then
         local override
-        override=$(parse_yaml_value "$config" "source.agents")
-        [[ -n "$override" ]] && _SRC_AGENTS="$override"
+        override=$(parse_yaml_value "$config" "source.agents") || true
+        [[ -n "$override" ]] && _SRC_AGENTS="$override" || true
 
-        override=$(parse_yaml_value "$config" "source.rules")
-        [[ -n "$override" ]] && _SRC_RULES="$override"
+        override=$(parse_yaml_value "$config" "source.rules") || true
+        [[ -n "$override" ]] && _SRC_RULES="$override" || true
 
-        override=$(parse_yaml_value "$config" "source.skills")
-        [[ -n "$override" ]] && _SRC_SKILLS="$override"
+        override=$(parse_yaml_value "$config" "source.skills") || true
+        [[ -n "$override" ]] && _SRC_SKILLS="$override" || true
 
-        override=$(parse_yaml_value "$config" "source.commands")
-        [[ -n "$override" ]] && _SRC_COMMANDS="$override"
+        override=$(parse_yaml_value "$config" "source.commands") || true
+        [[ -n "$override" ]] && _SRC_COMMANDS="$override" || true
 
-        override=$(parse_yaml_value "$config" "source.subagents")
-        [[ -n "$override" ]] && _SRC_AGENTS_DIR="$override"
+        override=$(parse_yaml_value "$config" "source.subagents") || true
+        [[ -n "$override" ]] && _SRC_AGENTS_DIR="$override" || true
 
-        override=$(parse_yaml_value "$config" "source.tools")
-        [[ -n "$override" ]] && _SRC_TOOLS="$override"
+        override=$(parse_yaml_value "$config" "source.tools") || true
+        [[ -n "$override" ]] && _SRC_TOOLS="$override" || true
     fi
 }
 
@@ -161,10 +164,13 @@ cmd_export() {
         fi
     done
 
-    # Project config
+    # Project config (canonical or legacy location)
     if [[ -f "$repo_root/$_BUNDLE_CONFIG" ]]; then
         items+=("$_BUNDLE_CONFIG")
-        item_labels+=("$_BUNDLE_CONFIG")
+        item_labels+=("agent_sync.yaml")
+    elif [[ -f "$repo_root/$_BUNDLE_CONFIG_LEGACY" ]]; then
+        items+=("$_BUNDLE_CONFIG_LEGACY")
+        item_labels+=("agent_sync.yaml $(_dim "(legacy)")")
     fi
 
     if [[ ${#items[@]} -eq 0 ]]; then

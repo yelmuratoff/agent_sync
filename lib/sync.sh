@@ -85,7 +85,8 @@ EOF
 # Resolve project config path
 # Priority:
 # 1) AGENTSYNC_CONFIG_PATH env var (absolute or relative to REPO_ROOT)
-# 2) REPO_ROOT/agent_sync.yaml
+# 2) REPO_ROOT/.ai/agent_sync.yaml
+# 3) REPO_ROOT/agent_sync.yaml
 resolve_project_config_path() {
     local config_env="${AGENTSYNC_CONFIG_PATH:-}"
     if [[ -n "$config_env" ]]; then
@@ -102,9 +103,16 @@ resolve_project_config_path() {
         log_warning "AGENTSYNC_CONFIG_PATH is set but file not found: $env_path"
     fi
 
-    local project_config="$REPO_ROOT/agent_sync.yaml"
+    local project_config="$REPO_ROOT/.ai/agent_sync.yaml"
     if [[ -f "$project_config" ]]; then
         PROJECT_CONFIG_PATH="$project_config"
+        return 0
+    fi
+
+    # Legacy fallback: root-level config
+    local legacy_config="$REPO_ROOT/agent_sync.yaml"
+    if [[ -f "$legacy_config" ]]; then
+        PROJECT_CONFIG_PATH="$legacy_config"
     fi
 }
 

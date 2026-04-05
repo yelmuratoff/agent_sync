@@ -92,9 +92,13 @@ cmd_import() {
         src_project_root=$(dirname "$src_root")
     fi
 
-    # Locate project config relative to found .ai/
+    # Locate project config (canonical or legacy location)
     local imported_config=""
-    [[ -f "$src_project_root/$_BUNDLE_CONFIG" ]] && imported_config="$src_project_root/$_BUNDLE_CONFIG"
+    if [[ -f "$src_project_root/$_BUNDLE_CONFIG" ]]; then
+        imported_config="$src_project_root/$_BUNDLE_CONFIG"
+    elif [[ -f "$src_project_root/$_BUNDLE_CONFIG_LEGACY" ]]; then
+        imported_config="$src_project_root/$_BUNDLE_CONFIG_LEGACY"
+    fi
 
     # Resolve local destination base
     _resolve_source_paths "$repo_root"
@@ -141,11 +145,12 @@ cmd_import() {
         fi
     done
 
-    # Check project config
+    # Check project config (compare against canonical location; ignore legacy)
     local config_action=""
+    local config_dest="$repo_root/$_BUNDLE_CONFIG"
     if [[ -n "$imported_config" ]]; then
-        if [[ -f "$repo_root/$_BUNDLE_CONFIG" ]]; then
-            if ! cmp -s "$imported_config" "$repo_root/$_BUNDLE_CONFIG"; then
+        if [[ -f "$config_dest" ]]; then
+            if ! cmp -s "$imported_config" "$config_dest"; then
                 config_action="update"
                 update_count=$((update_count + 1))
             fi
@@ -174,8 +179,8 @@ cmd_import() {
             dir)    echo "    $(_cyan "↳") $name" ;;
         esac
     done
-    [[ "$config_action" == "new" ]]    && echo "    $(_green "+") $_BUNDLE_CONFIG $(_dim "(new)")"
-    [[ "$config_action" == "update" ]] && echo "    $(_yellow "~") $_BUNDLE_CONFIG $(_dim "(update)")"
+    [[ "$config_action" == "new" ]]    && echo "    $(_green "+") agent_sync.yaml $(_dim "(new)")"
+    [[ "$config_action" == "update" ]] && echo "    $(_yellow "~") agent_sync.yaml $(_dim "(update)")"
     echo ""
     echo "  $(_dim "Summary:") ${new_count} new, ${update_count} updated, ${skip_count} unchanged"
     echo ""
@@ -212,7 +217,8 @@ cmd_import() {
     done
 
     if [[ -n "$config_action" ]] && [[ -n "$imported_config" ]]; then
-        cp "$imported_config" "$repo_root/$_BUNDLE_CONFIG"
+        mkdir -p "$(dirname "$config_dest")"
+        cp "$imported_config" "$config_dest"
     fi
 
     echo "  $(_green "Imported!") ${new_count} new, ${update_count} updated files."
@@ -386,7 +392,11 @@ _import_from_directory() {
         mkdir -p "$tmp_dir/.ai"
         cp -R "$src_dir/.ai/." "$tmp_dir/.ai/"
     fi
-    [[ -f "$src_dir/$_BUNDLE_CONFIG" ]] && cp "$src_dir/$_BUNDLE_CONFIG" "$tmp_dir/"
+    # Legacy fallback: copy root-level config if .ai/ one doesn't exist
+    if [[ ! -f "$tmp_dir/$_BUNDLE_CONFIG" ]] && [[ -f "$src_dir/$_BUNDLE_CONFIG_LEGACY" ]]; then
+        mkdir -p "$tmp_dir/.ai"
+        cp "$src_dir/$_BUNDLE_CONFIG_LEGACY" "$tmp_dir/$_BUNDLE_CONFIG"
+    fi
 }
 
 # ── Find .ai/src inside extracted content ────────────────────────────────────

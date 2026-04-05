@@ -104,9 +104,10 @@ RULE_EOF
 
 _init_create_project_config() {
     local target_dir="$1"
-    local config_file="$target_dir/agent_sync.yaml"
+    local config_file="$target_dir/.ai/agent_sync.yaml"
 
-    if [[ -f "$config_file" ]]; then
+    # Skip if already exists (either new or legacy location)
+    if [[ -f "$config_file" ]] || [[ -f "$target_dir/agent_sync.yaml" ]]; then
         return 0
     fi
 
@@ -172,7 +173,7 @@ _init_print_summary() {
     local ai_dir="$1"
 
     echo ""
-    echo "   Created $(_cyan "agent_sync.yaml")         — project config (source paths)"
+    echo "   Created $(_cyan ".ai/agent_sync.yaml")     — project config (source paths)"
     echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
 
     local rule_count=0
