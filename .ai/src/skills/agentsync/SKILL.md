@@ -47,6 +47,65 @@ Edit AI agent instructions in `.ai/src/`. After changes, run `agentsync sync` to
 3. Run `agentsync sync --only <tool>`.
 4. Add bats tests in `tests/sync.bats` and `tests/sync_options.bats`.
 
+## Claude Code: settings.json Reference
+
+Edit `.ai/src/settings/claude.json` — synced to `.claude/settings.json`. Top-level fields:
+
+- `model` — `"sonnet"`, `"opus"`, or `"haiku"`. Sets the default for the project.
+- `includeCoAuthoredBy` — adds `Co-Authored-By: Claude` to commits Claude makes.
+- `env` — environment variables exposed to Claude Code (`{ "DEBUG": "true" }`).
+- `permissions` — `{ allow, ask, deny, defaultMode, additionalDirectories }`. Modes: `default`, `acceptEdits`, `plan`, `bypassPermissions`.
+- `enableAllProjectMcpServers` / `enabledMcpjsonServers` / `disabledMcpjsonServers` — gate which `.mcp.json` servers load.
+- `statusLine` — `{ "type": "command", "command": "your-script.sh" }` renders a custom status line.
+- `outputStyle` — name of an output style (`engineer`, `explanatory`, `learning`, or a custom one in `.claude/output-styles/`).
+- `hooks` — event handlers (see below).
+
+### Hooks (Claude Code lives inside settings.json)
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".claude/hooks/pre-bash.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": ".claude/hooks/format.sh" }] }
+    ]
+  }
+}
+```
+
+Events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `SubagentStop`, `Notification`, `PreCompact`. Matchers are regex on tool names. Hooks return non-zero to block the action.
+
+## Claude Code: .mcp.json Reference
+
+Edit `.ai/src/mcp/claude.json` — synced to `.claude/.mcp.json`. Three transport types: `stdio`, `sse`, `http`.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "Authorization": "Bearer ${CONTEXT7_API_KEY}" }
+    }
+  }
+}
+```
+
+Use `${VAR}` for env-var expansion. Never inline secrets — keep them in shell env or a secret manager.
+
 ## Gotchas
 
 - Always edit in `.ai/src/`, never in output directories — they're overwritten by sync.
