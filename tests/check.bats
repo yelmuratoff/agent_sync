@@ -6,6 +6,7 @@ load test_helper
 setup() {
     setup_test_project
     run_agentsync init
+    enable_tools claude
     run_agentsync sync
 }
 

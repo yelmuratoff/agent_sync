@@ -20,3 +20,9 @@ targets:
 
   subagents:
     dest: ".gemini/agents"
+
+  # Gemini CLI stores both general settings and MCP servers in settings.json.
+  # Put `mcpServers` inside this file (not a separate .mcp.json).
+  settings:
+    source: ".ai/src/settings/gemini.json"
+    dest: ".gemini/settings.json"

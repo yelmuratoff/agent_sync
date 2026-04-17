@@ -81,10 +81,10 @@ teardown() {
     [[ "$output" == *"already exists"* ]]
 }
 
-@test "init shows enabled tools count" {
+@test "init prompts user to enable tools" {
     run run_agentsync init
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Enabled tools"* ]]
+    [[ "$output" == *"Enable tools"* ]]
 }
 
 @test "init to custom directory" {
@@ -124,16 +124,9 @@ teardown() {
     run run_agentsync init
     [ "$status" -eq 0 ]
 
-    # These should be enabled by default
-    grep -q "^enabled: true" .ai/src/tools/claude.yaml
-    grep -q "^enabled: true" .ai/src/tools/cursor.yaml
-    grep -q "^enabled: true" .ai/src/tools/copilot.yaml
-    grep -q "^enabled: true" .ai/src/tools/windsurf.yaml
-    grep -q "^enabled: true" .ai/src/tools/gemini.yaml
-    grep -q "^enabled: true" .ai/src/tools/codex.yaml
-
-    # These should be disabled by default
-    grep -q "^enabled: false" .ai/src/tools/aider.yaml
-    grep -q "^enabled: false" .ai/src/tools/cline.yaml
-    grep -q "^enabled: false" .ai/src/tools/devin.yaml
+    # All tools default to disabled — users opt in explicitly per project.
+    for f in .ai/src/tools/*.yaml; do
+        [[ "$(basename "$f")" == _* ]] && continue
+        grep -q "^enabled: false" "$f"
+    done
 }

@@ -9,6 +9,7 @@ load test_helper
 @test "sync --only filters to single tool" {
     setup_test_project
     run_agentsync init
+    enable_tools claude cursor
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ -f ".claude/CLAUDE.md" ]
@@ -19,6 +20,7 @@ load test_helper
 @test "sync --skip excludes a tool" {
     setup_test_project
     run_agentsync init
+    enable_tools claude cursor
     run run_agentsync sync --skip claude
     [ "$status" -eq 0 ]
     [ ! -f ".claude/CLAUDE.md" ]
@@ -29,6 +31,7 @@ load test_helper
 @test "sync --only multiple tools" {
     setup_test_project
     run_agentsync init
+    enable_tools claude cursor copilot
     run run_agentsync sync --only claude,cursor
     [ "$status" -eq 0 ]
     [ -f ".claude/CLAUDE.md" ]
@@ -40,6 +43,7 @@ load test_helper
 @test "sync --dry-run does not create files" {
     setup_test_project
     run_agentsync init
+    enable_tools claude
     run run_agentsync sync --dry-run
     [ "$status" -eq 0 ]
     [ ! -f ".claude/CLAUDE.md" ]
@@ -50,7 +54,7 @@ load test_helper
 @test "sync skips disabled tools" {
     setup_test_project
     run_agentsync init
-    sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
+    # Claude is disabled by default after init — no need to flip.
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ ! -f ".claude/CLAUDE.md" ]
@@ -60,6 +64,7 @@ load test_helper
 @test "sync cleans up when tool is disabled" {
     setup_test_project
     run_agentsync init
+    enable_tools claude
     run_agentsync sync --only claude
     [ -f ".claude/CLAUDE.md" ]
     sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
@@ -72,6 +77,7 @@ load test_helper
 @test "sync copies settings.json for Claude" {
     setup_test_project
     run_agentsync init
+    enable_tools claude
     mkdir -p .ai/src/settings
     echo '{"permissions":{"allow":["Read"]}}' > .ai/src/settings/claude.json
     run run_agentsync sync --only claude
@@ -84,6 +90,7 @@ load test_helper
 @test "sync is idempotent" {
     setup_test_project
     run_agentsync init
+    enable_tools claude
     run_agentsync sync --only claude
     local hash1
     hash1=$(find .claude -type f -exec md5sum {} \; 2>/dev/null | sort || \

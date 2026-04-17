@@ -14,6 +14,11 @@ setup_file() {
     # Init + full sync once
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init
     echo "node_modules/" > .gitignore
+
+    # Tests assert sync output for these tools — enable explicitly.
+    # init defaults all tools to disabled; users opt in per project.
+    enable_tools claude cursor copilot windsurf gemini codex
+
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
 }
 
