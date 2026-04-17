@@ -16,6 +16,9 @@ targets:
   subagents:
     dest: ".cursor/agents"
 
+  commands:
+    dest: ".cursor/commands"
+
   mcp:
     source: ".ai/src/mcp/cursor.json"
     dest: ".cursor/mcp.json"
