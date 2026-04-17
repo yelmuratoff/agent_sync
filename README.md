@@ -18,7 +18,7 @@
 
 Every AI coding tool expects instructions in its own format and directory — `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`... Managing them separately leads to drift, inconsistency, and wasted time when you use more than one tool (or your team does).
 
-AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for **17 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Amp, Cline, Devin, Augment Code, Amazon Q, Tabnine, Zed, Continue, Aider, and more.
+AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Cline, Augment Code, Amazon Q, Zed, Continue, Aider, Google Antigravity, and more.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
@@ -68,7 +68,7 @@ agentsync sync                      # 3. Distribute to all tools
 
 **What each step does:**
 
-1. **`agentsync init`** — Creates the `.ai/src/` directory with starter templates: `AGENTS.md` (agent identity), sample rules, skills, commands, agent personas, and tool YAML configs for all 17 supported tools. Safe to run only once — if `.ai/src/` already exists, it skips to avoid overwriting your content.
+1. **`agentsync init`** — Creates the `.ai/src/` directory with starter templates: `AGENTS.md` (agent identity), sample rules, skills, commands, agent personas, and tool YAML configs for all 14 supported tools. Safe to run only once — if `.ai/src/` already exists, it skips to avoid overwriting your content.
 
 2. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
 
@@ -89,7 +89,7 @@ After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github
 ├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
 ├── .junie/rules/testing.md
 ├── .amazonq/rules/testing.md
-├── AGENTS.md                             # inlined rule reference (Codex, Amp, Devin)
+├── AGENTS.md                             # inlined rule reference (Codex)
 └── CONVENTIONS.md                        # merged into single file (Aider)
 ```
 
@@ -276,8 +276,8 @@ targets:
 | `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                                            |
 | `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                                                                                |
 | `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                                                                             |
-| `inline_into_agents` (rules)  | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Amp, Devin, Gemini)                                        |
-| `inline_into_agents` (skills) | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue) |
+| `inline_into_agents` (rules)  | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini)                                                    |
+| `inline_into_agents` (skills) | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue)          |
 | `prepend_agents`              | Prepend AGENTS.md content before merged rules (Aider, Zed, Continue)                                                                  |
 | `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                                                                                  |
 | `source` (settings/mcp/hooks) | Required — per-tool source file path                                                                                                  |
@@ -293,13 +293,10 @@ targets:
 | **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                                           |
 | **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
 | **JetBrains Junie** | `junie.yaml`    | guidelines.md, rules/, +inlined skills index                                                               |
-| **Amp**             | `amp.yaml`      | AGENTS.md (+inlined rules), skills                                                                         |
 | **Aider**           | `aider.yaml`    | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                                   |
 | **Cline**           | `cline.yaml`    | 00-context.md, .clinerules/, +inlined skills index                                                         |
 | **Amazon Q**        | `amazonq.yaml`  | 00-context.md, .amazonq/rules/, +inlined skills index                                                      |
 | **Augment Code**    | `augment.yaml`  | 00-context.md, .augment/rules/, +inlined skills index                                                      |
-| **Devin**           | `devin.yaml`    | AGENTS.md (+inlined rules), skills                                                                         |
-| **Tabnine**         | `tabnine.yaml`  | 00-context.md, .tabnine/guidelines/, +inlined skills index                                                 |
 | **Zed**             | `zed.yaml`      | .rules (prepend AGENTS.md + merged rules), +inlined skills index                                           |
 | **Continue**        | `continue.yaml` | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                                   |
 
@@ -313,10 +310,10 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                                                        |
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                                                       |
 | Rules `.md`    | Single merged file                               | Aider, Zed, Continue                                           |
-| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Amp, Devin, Gemini                                      |
-| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Amp, Devin, Gemini                                      |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Tabnine, Aider, Zed, Continue |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment, Tabnine                              |
+| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini                                                  |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini                                                  |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue          |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment                                       |
 | AGENTS.md      | Prepended before merged rules                    | Aider, Zed, Continue                                           |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                                                     |
 | Commands `.md` | `.prompt.md`                                     | Copilot                                                        |

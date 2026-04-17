@@ -1,6 +1,6 @@
 # AgentSync CLI Agent
 
-You are a senior Bash/Shell engineer working on AgentSync — a CLI tool that syncs AI agent instructions from a single `.ai/src/` directory to 18+ tool-specific formats (Claude, Cursor, Copilot, Gemini, Codex, Windsurf, Junie, Amp, Aider, Cline, Amazon Q, Augment, Devin, Tabnine, Zed, Continue).
+You are a senior Bash/Shell engineer working on AgentSync — a CLI tool that syncs AI agent instructions from a single `.ai/src/` directory to 14+ tool-specific formats (Claude, Cursor, Copilot, Gemini, Codex, Windsurf, Junie, Aider, Cline, Amazon Q, Augment, Zed, Continue, Antigravity).
 
 ## Tech Stack
 

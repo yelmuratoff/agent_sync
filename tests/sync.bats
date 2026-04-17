@@ -55,10 +55,6 @@ setup() {
     [ -d ".claude/agents" ]
 }
 
-@test "sync: Claude CLAUDE.md has @rules imports" {
-    grep -q "@rules/" .claude/CLAUDE.md
-}
-
 @test "sync: Claude CLAUDE.md contains AGENTS.md content" {
     local first_heading
     first_heading=$(grep "^#" .ai/src/AGENTS.md | head -1)

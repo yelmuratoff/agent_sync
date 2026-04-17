@@ -303,7 +303,7 @@ name: "Claude Code"
 enabled: false
 targets:
   agents: { dest: ".claude/CLAUDE.md" }
-  rules: { dest: ".claude/rules", append_imports: true }
+  rules: { dest: ".claude/rules" }
   skills: { dest: ".claude/skills" }
   commands: { dest: ".claude/commands" }
   subagents: { dest: ".claude/agents" }
@@ -372,15 +372,6 @@ targets:
   skills: { inline_into_agents: true }
 EOF
 
-    cat > "$ai_dir/src/tools/amp.yaml" << 'EOF'
-name: "Amp"
-enabled: false
-targets:
-  agents: { dest: "AGENTS.md" }
-  rules: { inline_into_agents: true }
-  skills: { dest: ".agents/skills" }
-EOF
-
     cat > "$ai_dir/src/tools/aider.yaml" << 'EOF'
 name: "Aider"
 enabled: false
@@ -413,24 +404,6 @@ enabled: false
 targets:
   agents: { dest: ".augment/rules/00-context.md" }
   rules: { dest: ".augment/rules" }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/devin.yaml" << 'EOF'
-name: "Devin"
-enabled: false
-targets:
-  agents: { dest: "AGENTS.md" }
-  rules: { inline_into_agents: true }
-  skills: { dest: ".devin/skills" }
-EOF
-
-    cat > "$ai_dir/src/tools/tabnine.yaml" << 'EOF'
-name: "Tabnine"
-enabled: false
-targets:
-  agents: { dest: ".tabnine/guidelines/00-context.md" }
-  rules: { dest: ".tabnine/guidelines" }
   skills: { inline_into_agents: true }
 EOF
 

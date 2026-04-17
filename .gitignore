@@ -13,13 +13,11 @@ example/.clinerules/
 example/.codex/
 example/.continuerules
 example/.cursor/
-example/.devin/
 example/.gemini/
 example/.github/
 example/.gitignore
 example/.junie/
 example/.rules
-example/.tabnine/
 example/.windsurf/
 example/AGENTS.md
 example/CONVENTIONS.md

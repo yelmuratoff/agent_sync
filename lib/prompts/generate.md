@@ -1,6 +1,6 @@
 I need you to generate AI agent configuration files for my project using the AgentSync format.
 
-AgentSync keeps all AI instructions in `.ai/src/` and distributes them to tool-specific directories (Claude, Cursor, Copilot, Gemini, Codex, Windsurf, Junie, Amp, Aider, Cline, Amazon Q, Augment, Devin, Tabnine, Zed, Continue) via `agentsync sync`. Your job is to study my project and produce tailored, specific configuration.
+AgentSync keeps all AI instructions in `.ai/src/` and distributes them to tool-specific directories (Claude, Cursor, Copilot, Gemini, Codex, Windsurf, Junie, Aider, Cline, Amazon Q, Augment, Zed, Continue, Antigravity) via `agentsync sync`. Your job is to study my project and produce tailored, specific configuration.
 
 ## How to start
 

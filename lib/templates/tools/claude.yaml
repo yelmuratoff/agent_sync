@@ -7,7 +7,6 @@ targets:
 
   rules:
     dest: ".claude/rules"
-    append_imports: true
 
   skills:
     dest: ".claude/skills"
