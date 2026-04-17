@@ -1,10 +1,9 @@
-# Google Antigravity Configuration
 name: "Google Antigravity"
 enabled: false
 
 targets:
   agents:
-    dest: ".agent/AGENTS.md"
+    dest: "GEMINI.md"
 
   rules:
     dest: ".agent/rules"
@@ -12,3 +11,6 @@ targets:
 
   skills:
     dest: ".agent/skills"
+
+  commands:
+    dest: ".agent/workflows"
