@@ -1,4 +1,3 @@
-# Cursor Configuration
 name: "Cursor"
 enabled: false
 
@@ -8,9 +7,7 @@ targets:
 
   rules:
     dest: ".cursor/rules"
-    # Rename .md to .mdc for Cursor
     extension: ".mdc"
-    # Add Cursor-specific glob header
     header: "---\nglobs: '**/*'\nalwaysApply: true\n---"
 
   skills:

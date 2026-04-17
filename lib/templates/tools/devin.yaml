@@ -1,6 +1,3 @@
-# Devin Configuration
-# Devin reads AGENTS.md from project root
-# Rules are inlined into AGENTS.md (Devin has no separate rules directory)
 name: "Devin"
 enabled: false
 
