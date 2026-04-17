@@ -25,6 +25,80 @@ add_header() {
     mv "$temp_file" "$file"
 }
 
+# Apply a tool-default frontmatter header to a file.
+# - If the file has no frontmatter: prepend header as a new frontmatter block.
+# - If the file already has frontmatter: merge — source keys win, header only
+#   contributes keys absent from the source. Lets users override per-rule
+#   (custom globs/triggers/applyTo) while still inheriting tool defaults.
+# Usage: merge_or_prepend_header "file" "header_text"
+merge_or_prepend_header() {
+    local file="$1"
+    local header="$2"
+
+    if [[ ! -f "$file" ]]; then
+        log_warning "File not found for header: $file"
+        return 1
+    fi
+
+    local first_line=""
+    IFS= read -r first_line < "$file" || true
+
+    if [[ "$first_line" != "---" ]]; then
+        add_header "$file" "$header"
+        return
+    fi
+
+    local existing_keys="|"
+    local in_fm=false
+    local saw_close=false
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$saw_close" == "true" ]]; then
+            break
+        fi
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_fm" == "false" ]]; then
+                in_fm=true
+            else
+                saw_close=true
+            fi
+            continue
+        fi
+        if [[ "$in_fm" == "true" ]] && [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_-]*): ]]; then
+            existing_keys="${existing_keys}${BASH_REMATCH[1]}|"
+        fi
+    done < "$file"
+
+    local additions=""
+    local hline
+    while IFS= read -r hline || [[ -n "$hline" ]]; do
+        [[ "$hline" == "---" ]] && continue
+        [[ -z "$hline" ]] && continue
+        if [[ "$hline" =~ ^([A-Za-z_][A-Za-z0-9_-]*): ]]; then
+            local key="${BASH_REMATCH[1]}"
+            if [[ "$existing_keys" != *"|${key}|"* ]]; then
+                additions+="${hline}"$'\n'
+            fi
+        fi
+    done < <(printf '%b' "$header")
+
+    [[ -z "$additions" ]] && return 0
+
+    local temp_file="${file}.tmp"
+    local fm_count=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "---" ]]; then
+            fm_count=$((fm_count + 1))
+            if [[ "$fm_count" -eq 2 ]]; then
+                printf '%s' "$additions"
+            fi
+        fi
+        printf '%s\n' "$line"
+    done < "$file" > "$temp_file"
+
+    mv "$temp_file" "$file"
+}
+
 # Append @rules/<filename> import lines into an agents file.
 # Usage: append_imports "agents_file" "rules_dir"
 append_imports() {
@@ -167,7 +241,7 @@ copy_rules() {
         cp "$src_file" "$dest_file"
 
         if [[ -n "$header" ]]; then
-            add_header "$dest_file" "$header"
+            merge_or_prepend_header "$dest_file" "$header"
         fi
 
         count=$((count + 1))
@@ -225,7 +299,7 @@ sync_rules() {
                 local dest_path="$dest_dir/$dest_name"
                 cp "$src_file" "$dest_path"
                 if [[ -n "$header" ]]; then
-                    add_header "$dest_path" "$header"
+                    merge_or_prepend_header "$dest_path" "$header"
                 fi
                 count_copy=$((count_copy + 1))
             fi

@@ -121,6 +121,29 @@ Edit `.ai/src/mcp/claude.json` — synced to `.claude/.mcp.json`. Three transpor
 
 Use `${VAR}` for env-var expansion. Never inline secrets — keep them in shell env or a secret manager.
 
+## Per-Rule Frontmatter Override
+
+A rule file in `.ai/src/rules/<name>.md` may carry its own YAML frontmatter — sync **merges** it with the tool's default header (declared via `targets.rules.header` in the tool YAML). Source keys win on conflict; the tool header only fills in keys you didn't set.
+
+This unblocks per-rule control:
+
+- **Cursor**: override `globs` / `alwaysApply` / `description` per rule.
+- **Copilot**: scope a rule with `applyTo: "**/*.ts"`.
+- **Windsurf**: switch `trigger: model_decision` (or `glob` / `manual`) for specific rules.
+
+Example — `.ai/src/rules/typescript.md`:
+
+```markdown
+---
+globs: "**/*.ts"
+description: "TypeScript-only conventions"
+---
+# TypeScript Rules
+...
+```
+
+After sync to Cursor, the destination keeps `globs: "**/*.ts"` and `description`, plus inherits `alwaysApply: true` from the tool default.
+
 ## Gotchas
 
 - Always edit in `.ai/src/`, never in output directories — they're overwritten by sync.

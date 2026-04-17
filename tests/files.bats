@@ -112,6 +112,60 @@ teardown() {
     [ "$header_line" -lt "$body_line" ]
 }
 
+# ── merge_or_prepend_header ──────────────────────────────────────────────────
+
+@test "merge_or_prepend_header: prepends when source has no frontmatter" {
+    echo "body" > "$TEST_PROJECT/file.md"
+    merge_or_prepend_header "$TEST_PROJECT/file.md" "---\nglobs: '**/*'\n---"
+    [ "$(head -n1 "$TEST_PROJECT/file.md")" = "---" ]
+    grep -q "globs: '\*\*/\*'" "$TEST_PROJECT/file.md"
+    grep -q "body" "$TEST_PROJECT/file.md"
+}
+
+@test "merge_or_prepend_header: adds missing keys to existing frontmatter" {
+    cat > "$TEST_PROJECT/file.md" <<'EOF'
+---
+description: Custom description
+---
+body
+EOF
+    merge_or_prepend_header "$TEST_PROJECT/file.md" "---\nglobs: '**/*'\nalwaysApply: true\n---"
+    grep -q "description: Custom description" "$TEST_PROJECT/file.md"
+    grep -q "globs: '\*\*/\*'" "$TEST_PROJECT/file.md"
+    grep -q "alwaysApply: true" "$TEST_PROJECT/file.md"
+    # Single frontmatter block — exactly two `---` markers
+    [ "$(grep -c '^---$' "$TEST_PROJECT/file.md")" -eq 2 ]
+}
+
+@test "merge_or_prepend_header: source value wins on conflict" {
+    cat > "$TEST_PROJECT/file.md" <<'EOF'
+---
+globs: "**/*.ts"
+---
+body
+EOF
+    merge_or_prepend_header "$TEST_PROJECT/file.md" "---\nglobs: '**/*'\nalwaysApply: true\n---"
+    # Source's globs preserved; tool default discarded
+    grep -q 'globs: "\*\*/\*\.ts"' "$TEST_PROJECT/file.md"
+    ! grep -q "globs: '\*\*/\*'" "$TEST_PROJECT/file.md"
+    # Non-conflicting key from header still added
+    grep -q "alwaysApply: true" "$TEST_PROJECT/file.md"
+}
+
+@test "merge_or_prepend_header: no-op when all keys already present" {
+    cat > "$TEST_PROJECT/file.md" <<'EOF'
+---
+globs: "**/*.ts"
+alwaysApply: false
+---
+body
+EOF
+    local before
+    before=$(cat "$TEST_PROJECT/file.md")
+    merge_or_prepend_header "$TEST_PROJECT/file.md" "---\nglobs: '**/*'\nalwaysApply: true\n---"
+    [ "$(cat "$TEST_PROJECT/file.md")" = "$before" ]
+}
+
 # ── merge_rules_to_file ─────────────────────────────────────────────────────
 
 @test "merge_rules_to_file merges all rules" {
