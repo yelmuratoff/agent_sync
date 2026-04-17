@@ -2,10 +2,10 @@ name: "Continue"
 enabled: false
 
 targets:
+  agents:
+    dest: ".continue/rules/00-context.md"
   rules:
-    dest: ".continuerules"
-    merge_to_file: true
-    prepend_agents: true
+    dest: ".continue/rules"
   skills:
     inline_into_agents: true
 
