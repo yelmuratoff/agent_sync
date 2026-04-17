@@ -179,9 +179,9 @@ setup() {
 
 # ── Tool-specific assertions for less-common tools ───────────────────────────
 
-@test "sync: Junie guidelines.md exists and contains inlined rules" {
-    [ -f ".junie/guidelines.md" ]
-    # rules were inlined (not in a separate directory)
+@test "sync: Junie AGENTS.md exists and rules are inlined" {
+    [ -f ".junie/AGENTS.md" ]
+    # rules were inlined — no unsupported .junie/rules/ subdirectory
     [ ! -d ".junie/rules" ]
 }
 
