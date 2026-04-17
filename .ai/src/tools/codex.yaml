@@ -18,3 +18,7 @@ targets:
   hooks:
     source: ".ai/src/hooks/codex.json"
     dest: ".codex/hooks.json"
+
+  settings:
+    source: ".ai/src/settings/codex.toml"
+    dest: ".codex/config.toml"
