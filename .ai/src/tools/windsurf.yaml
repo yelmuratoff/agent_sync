@@ -16,3 +16,7 @@ targets:
   mcp:
     source: ".ai/src/mcp/windsurf.json"
     dest: ".windsurf/mcp_config.json"
+
+  hooks:
+    source: ".ai/src/hooks/windsurf.json"
+    dest: ".windsurf/hooks.json"

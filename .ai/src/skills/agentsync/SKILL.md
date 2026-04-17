@@ -60,7 +60,21 @@ Edit `.ai/src/settings/claude.json` — synced to `.claude/settings.json`. Top-l
 - `outputStyle` — name of an output style (`engineer`, `explanatory`, `learning`, or a custom one in `.claude/output-styles/`).
 - `hooks` — event handlers (see below).
 
-### Hooks (Claude Code lives inside settings.json)
+### Hooks across tools
+
+Four tools have native hooks APIs. AgentSync syncs each to its canonical location:
+
+| Tool           | Source in `.ai/src/`                         | Destination                | Event naming                                                                                                          |
+| -------------- | -------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Claude Code    | `settings/claude.json` (under `"hooks"` key) | `.claude/settings.json`    | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `SubagentStop`, `Notification`, `PreCompact` |
+| Cursor         | `hooks/cursor.json`                          | `.cursor/hooks.json`       | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `afterFileEdit`, `beforeSubmitPrompt`, `stop`         |
+| GitHub Copilot | `hooks/copilot.json`                         | `.github/hooks/hooks.json` | `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse`, `postToolUse`, `errorOccurred`                     |
+| OpenAI Codex   | `hooks/codex.json`                           | `.codex/hooks.json`        | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `agent-turn-complete`                                        |
+| Windsurf       | `hooks/windsurf.json`                        | `.windsurf/hooks.json`     | Cascade lifecycle events (see [docs](https://docs.windsurf.com/windsurf/cascade/hooks))                               |
+
+Each tool's JSON schema is subtly different — AgentSync pass-through copies the file, it doesn't translate. Write the file per the target tool's spec.
+
+### Claude Code hooks (inside settings.json)
 
 ```json
 {
@@ -68,13 +82,14 @@ Edit `.ai/src/settings/claude.json` — synced to `.claude/settings.json`. Top-l
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/pre-bash.sh" }
-        ]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/pre-bash.sh" }]
       }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": ".claude/hooks/format.sh" }] }
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": ".claude/hooks/format.sh" }]
+      }
     ]
   }
 }

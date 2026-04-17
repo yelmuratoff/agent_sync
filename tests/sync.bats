@@ -129,6 +129,24 @@ setup() {
     [ -f "AGENTS.md" ]
 }
 
+# ── Hooks (per-tool) ─────────────────────────────────────────────────────────
+
+@test "sync: Cursor hooks.json exists" {
+    [ -f ".cursor/hooks.json" ]
+}
+
+@test "sync: Codex hooks.json exists" {
+    [ -f ".codex/hooks.json" ]
+}
+
+@test "sync: Copilot hooks.json exists" {
+    [ -f ".github/hooks/hooks.json" ]
+}
+
+@test "sync: Windsurf hooks.json exists" {
+    [ -f ".windsurf/hooks.json" ]
+}
+
 # ── Gitignore ────────────────────────────────────────────────────────────────
 
 @test "sync: .gitignore has sync markers" {
