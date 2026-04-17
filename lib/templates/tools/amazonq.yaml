@@ -12,3 +12,7 @@ targets:
   mcp:
     source: ".ai/src/mcp/amazonq.json"
     dest: ".amazonq/mcp.json"
+
+  subagents:
+    dest: ".amazonq/cli-agents"
+    format: amazonq_json

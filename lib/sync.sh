@@ -513,11 +513,17 @@ sync_tool() {
         local src_subagents_abs
         src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $tool_name")
         if [[ -d "$src_subagents_abs" ]]; then
-            if [[ "$dest_sa_format" == "toml" ]]; then
-                sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
-            else
-                sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" ""
-            fi
+            case "$dest_sa_format" in
+                toml)
+                    sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
+                    ;;
+                amazonq_json)
+                    sync_agents_as_amazonq_json "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
+                    ;;
+                *)
+                    sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" ""
+                    ;;
+            esac
         fi
     fi
 
