@@ -97,6 +97,19 @@ Each tool's JSON schema is subtly different — AgentSync pass-through copies th
 
 Events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `SubagentStop`, `Notification`, `PreCompact`. Matchers are regex on tool names. Hooks return non-zero to block the action.
 
+## MCP across tools
+
+Each tool has its own canonical MCP location. AgentSync pass-through copies — the schema matches the target tool's spec.
+
+| Tool | Source | Destination | Schema |
+|---|---|---|---|
+| Claude Code | `mcp/claude.json` | `.claude/.mcp.json` | `{ mcpServers: { ... } }` |
+| Cursor | `mcp/cursor.json` | `.cursor/mcp.json` | `{ mcpServers: { ... } }` |
+| Windsurf | `mcp/windsurf.json` | `.windsurf/mcp_config.json` | `{ mcpServers: { ... } }` |
+| Amazon Q | `mcp/amazonq.json` | `.amazonq/mcp.json` | `{ mcpServers: { ... } }` |
+| Gemini CLI | `settings/gemini.json` (put `mcpServers` inside) | `.gemini/settings.json` | combined with settings |
+| Zed | `settings/zed.json` (put `context_servers` inside) | `.zed/settings.json` | combined with settings |
+
 ## Claude Code: .mcp.json Reference
 
 Edit `.ai/src/mcp/claude.json` — synced to `.claude/.mcp.json`. Three transport types: `stdio`, `sse`, `http`.

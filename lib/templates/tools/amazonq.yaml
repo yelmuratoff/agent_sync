@@ -8,3 +8,7 @@ targets:
     dest: ".amazonq/rules"
   skills:
     inline_into_agents: true
+
+  mcp:
+    source: ".ai/src/mcp/amazonq.json"
+    dest: ".amazonq/mcp.json"
