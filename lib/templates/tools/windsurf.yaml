@@ -3,7 +3,7 @@ enabled: false
 
 targets:
   agents:
-    dest: ".windsurf/AGENTS.md"
+    dest: "AGENTS.md"
 
   rules:
     dest: ".windsurf/rules"

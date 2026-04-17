@@ -63,8 +63,8 @@ setup() {
 
 # ── Cursor ───────────────────────────────────────────────────────────────────
 
-@test "sync: Cursor AGENTS.md exists" {
-    [ -f ".cursor/AGENTS.md" ]
+@test "sync: Cursor AGENTS.md exists at root" {
+    [ -f "AGENTS.md" ]
 }
 
 @test "sync: Cursor .mdc rules exist" {
@@ -99,8 +99,8 @@ setup() {
 
 # ── Windsurf ─────────────────────────────────────────────────────────────────
 
-@test "sync: Windsurf AGENTS.md exists" {
-    [ -f ".windsurf/AGENTS.md" ]
+@test "sync: Windsurf AGENTS.md exists at root" {
+    [ -f "AGENTS.md" ]
 }
 
 @test "sync: Windsurf rules have trigger frontmatter" {

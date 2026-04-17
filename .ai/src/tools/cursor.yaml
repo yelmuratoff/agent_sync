@@ -3,7 +3,7 @@ enabled: false
 
 targets:
   agents:
-    dest: ".cursor/AGENTS.md"
+    dest: "AGENTS.md"
 
   rules:
     dest: ".cursor/rules"
