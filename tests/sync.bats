@@ -111,12 +111,12 @@ setup() {
 
 # ── Gemini ───────────────────────────────────────────────────────────────────
 
-@test "sync: Gemini GEMINI.md exists" {
-    [ -f ".gemini/GEMINI.md" ]
+@test "sync: Gemini GEMINI.md exists at root" {
+    [ -f "GEMINI.md" ]
 }
 
 @test "sync: Gemini inlines rules into GEMINI.md" {
-    grep -q "Rules" .gemini/GEMINI.md
+    grep -q "Rules" GEMINI.md
 }
 
 # ── Codex ────────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ enabled: false
 
 targets:
   agents:
-    dest: ".gemini/GEMINI.md"
+    dest: "GEMINI.md"
 
   rules:
     inline_into_agents: true
