@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4
+
+### Changed
+
+- **Update check:** runs in the background on every command instead of blocking once every 24 hours. The notification appears on the next invocation after a newer version is detected — zero latency on any command.
+
 ## 0.5.3
 
 ### Fixed
