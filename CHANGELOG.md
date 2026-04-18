@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+
+- **Upstream drift detection on `agentsync update`:** before pulling a new release, the CLI snapshots the install-dir tool catalog and compares it against the new base catalog field-by-field. When an upstream change lands on a field you have overridden in `.ai/src/tools/<tool>.yaml`, the update prints a grouped warning — `<tool>: <field> — base changed from X to Y, your override is Z` — so silent upstream improvements can't be masked by a stale override.
+- **`.ai/.pending-resolutions.yaml` queue:** conflicts surfaced by an update are persisted to this file (schema 1, with `from_version`, `to_version`, and the full before/after/override triple per conflict). Acts as an actionable to-do list between an update and your next resolve pass.
+- **`agentsync resolve` reads the pending queue:** flags each conflicted field with `⚡` (vs. the default `◆`) and prints a banner listing how many fields were queued by the last update. Walking every override clears the queue automatically.
+- **`agentsync update --strict`:** non-zero exit when any upstream change collides with a user override. Intended for CI — blocks a merge until someone reviews the drift.
+
 ## 0.7.0
 
 ### Added
