@@ -4,7 +4,7 @@ enabled: true
 
 targets:
   agents:
-    dest: ".claude/CLAUDE.md"
+    dest: "CLAUDE.md"
 
   rules:
     dest: ".claude/rules"

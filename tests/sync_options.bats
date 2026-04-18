@@ -12,7 +12,7 @@ load test_helper
     enable_tools claude cursor
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
-    [ -f ".claude/CLAUDE.md" ]
+    [ -f "CLAUDE.md" ]
     [ ! -f ".cursor/AGENTS.md" ]
     teardown_test_project
 }
@@ -23,8 +23,8 @@ load test_helper
     enable_tools claude cursor
     run run_agentsync sync --skip claude
     [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
-    [ -f ".cursor/AGENTS.md" ]
+    [ ! -f "CLAUDE.md" ]
+    [ -f "AGENTS.md" ]
     teardown_test_project
 }
 
@@ -34,8 +34,8 @@ load test_helper
     enable_tools claude cursor copilot
     run run_agentsync sync --only claude,cursor
     [ "$status" -eq 0 ]
-    [ -f ".claude/CLAUDE.md" ]
-    [ -f ".cursor/AGENTS.md" ]
+    [ -f "CLAUDE.md" ]
+    [ -f "AGENTS.md" ]
     [ ! -f ".github/copilot-instructions.md" ]
     teardown_test_project
 }
@@ -46,7 +46,7 @@ load test_helper
     enable_tools claude
     run run_agentsync sync --dry-run
     [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
+    [ ! -f "CLAUDE.md" ]
     [[ "$output" == *"dry-run"* ]]
     teardown_test_project
 }
@@ -57,7 +57,7 @@ load test_helper
     # Claude is disabled by default after init — no need to flip.
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
+    [ ! -f "CLAUDE.md" ]
     teardown_test_project
 }
 
@@ -66,11 +66,11 @@ load test_helper
     run_agentsync init
     enable_tools claude
     run_agentsync sync --only claude
-    [ -f ".claude/CLAUDE.md" ]
+    [ -f "CLAUDE.md" ]
     sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
-    [ ! -f ".claude/CLAUDE.md" ]
+    [ ! -f "CLAUDE.md" ]
     teardown_test_project
 }
 

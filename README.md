@@ -196,10 +196,9 @@ enabled: true
 
 targets:
   agents:
-    dest: ".claude/CLAUDE.md"
+    dest: "CLAUDE.md"
   rules:
     dest: ".claude/rules"
-    append_imports: true
   skills:
     dest: ".claude/skills"
   commands:

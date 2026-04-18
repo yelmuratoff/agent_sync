@@ -302,7 +302,7 @@ _init_fallback_tools() {
 name: "Claude Code"
 enabled: false
 targets:
-  agents: { dest: ".claude/CLAUDE.md" }
+  agents: { dest: "CLAUDE.md" }
   rules: { dest: ".claude/rules" }
   skills: { dest: ".claude/skills" }
   commands: { dest: ".claude/commands" }
