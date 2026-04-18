@@ -27,13 +27,9 @@ run_agentsync() {
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" "$@"
 }
 
-# Flip the given tool yamls to enabled: true. Call after `init`.
+# Enable tools via agentsync CLI (writes to tools.enabled in agent_sync.yaml).
+# Call after `init`.
 # Usage: enable_tools claude cursor copilot
 enable_tools() {
-    local tool f tmp
-    for tool in "$@"; do
-        f=".ai/src/tools/${tool}.yaml"
-        tmp="${f}.tmp"
-        sed 's/^enabled: false$/enabled: true/' "$f" > "$tmp" && mv "$tmp" "$f"
-    done
+    run_agentsync enable "$@" >/dev/null
 }

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # agentsync init — scaffolds the .ai/ directory in a project.
+#
+# Model (new):
+#   - Tool configs are NOT copied to .ai/src/tools/. They live in the install-dir
+#     base and are referenced via tools.enabled list in agent_sync.yaml. Users
+#     create per-tool override files only when they want to customize.
+#   - init auto-detects common tool markers in the repo and pre-fills tools.enabled.
+#   - Source content (AGENTS.md, rules, skills, commands, agents) is still scaffolded.
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -12,7 +19,7 @@ _init_create_directories() {
     mkdir -p "$ai_dir/src/settings"
     mkdir -p "$ai_dir/src/mcp"
     mkdir -p "$ai_dir/src/hooks"
-    mkdir -p "$ai_dir/src/tools"
+    # tools/ is intentionally NOT created — created on demand by `customize`.
 }
 
 _init_copy_source_templates() {
@@ -70,7 +77,6 @@ _init_copy_source_templates() {
             done
         fi
     else
-        # Fallback: minimal inline templates when engine is unavailable
         cat > "$ai_dir/src/AGENTS.md" << 'AGENTS_EOF'
 # Project Agent
 
@@ -102,78 +108,109 @@ RULE_EOF
     fi
 }
 
+# Detect which tools are already used in the current project by looking
+# for well-known filesystem markers. Prints one tool name per line.
+_init_detect_enabled_tools() {
+    local root="$1"
+
+    # Each entry: "tool_name|check1|check2|..."
+    # Presence of ANY listed marker triggers detection.
+    local -a detectors=(
+        "claude|$root/.claude|$root/CLAUDE.md"
+        "cursor|$root/.cursor|$root/.cursorrules"
+        "copilot|$root/.github/copilot-instructions.md|$root/.github/instructions|$root/.github/prompts"
+        "gemini|$root/.gemini|$root/GEMINI.md"
+        "codex|$root/.codex|$root/AGENTS.md"
+        "windsurf|$root/.windsurf|$root/.windsurfrules"
+        "junie|$root/.junie"
+        "aider|$root/CONVENTIONS.md|$root/.aider.conf.yml"
+        "cline|$root/.clinerules"
+        "amazonq|$root/.amazonq"
+        "augment|$root/.augment"
+        "zed|$root/.zed|$root/.rules"
+        "continue|$root/.continue|$root/.continuerules"
+        "antigravity|$root/.antigravity"
+    )
+
+    local entry tool marker IFS_BAK="$IFS"
+    for entry in "${detectors[@]}"; do
+        IFS='|' read -ra parts <<< "$entry"
+        tool="${parts[0]}"
+        local i=1
+        while [[ $i -lt ${#parts[@]} ]]; do
+            marker="${parts[$i]}"
+            if [[ -e "$marker" ]]; then
+                echo "$tool"
+                break
+            fi
+            i=$((i + 1))
+        done
+    done
+    IFS="$IFS_BAK"
+}
+
 _init_create_project_config() {
     local target_dir="$1"
+    local enabled_list="$2"  # newline-separated tool names (may be empty)
     local config_file="$target_dir/.ai/agent_sync.yaml"
 
-    # Skip if already exists (either new or legacy location)
     if [[ -f "$config_file" ]] || [[ -f "$target_dir/agent_sync.yaml" ]]; then
         return 0
     fi
 
-    cat > "$config_file" << 'EOF'
+    {
+        cat << 'HEAD'
 # AgentSync — Project Configuration
 # All keys are optional — remove any that you leave at the default.
 
-# Source paths (override if you use a custom layout)
-source:
-  agents: ".ai/src/AGENTS.md"   # agent identity file
-  rules: ".ai/src/rules"        # directory with *.md rule files
-  skills: ".ai/src/skills"      # directory with skill subdirectories
-  commands: ".ai/src/commands"  # directory with slash-command *.md files
-  subagents: ".ai/src/agents"   # directory with sub-agent *.md files
-  tools: ".ai/src/tools"        # directory with tool *.yaml configs
-
-# mcp, hooks, and settings sources are configured per-tool
-# inside each .ai/src/tools/<tool>.yaml under targets.mcp.source,
-# targets.hooks.source, and targets.settings.source.
-
-# Global defaults applied to all tools
-defaults:
-  enabled: false   # default enabled state for tools that omit the 'enabled' key
-  cleanup: true   # remove generated files when a tool is disabled
-
-# Post-sync hook execution (also controllable via env vars)
-# AGENTSYNC_ALLOW_POST_SYNC and AGENTSYNC_SKIP_POST_SYNC take precedence.
-post_sync:
-  allow: false    # set to true to allow post-sync hooks defined in tool configs
-  skip: false     # set to true to skip post-sync hooks even when allow is true
-
-# .gitignore management
-gitignore:
-  update: true    # set to false to disable automatic .gitignore updates
-EOF
-}
-
-_init_copy_tool_configs() {
-    local ai_dir="$1"
-    local templates_dir="$2"
-
-    local copied=false
-    if [[ -n "$templates_dir" ]] && [[ -d "$templates_dir/tools" ]]; then
-        for tool_file in "$templates_dir/tools/"*.yaml; do
-            [[ -f "$tool_file" ]] || continue
-            local basename
-            basename=$(basename "$tool_file")
-            [[ "$basename" == _* ]] && continue
-            cp "$tool_file" "$ai_dir/src/tools/$basename"
-        done
-        if [[ -f "$templates_dir/tools/_TEMPLATE.yaml" ]]; then
-            cp "$templates_dir/tools/_TEMPLATE.yaml" "$ai_dir/src/tools/_TEMPLATE.yaml"
+# Tools: which ones to sync for this project.
+# Each name must match a base tool (see `agentsync list`) or a custom override
+# file under .ai/src/tools/<name>.yaml.
+tools:
+HEAD
+        if [[ -z "$enabled_list" ]]; then
+            echo "  enabled: []"
+        else
+            echo "  enabled:"
+            while IFS= read -r t; do
+                [[ -z "$t" ]] && continue
+                echo "    - $t"
+            done <<< "$enabled_list"
         fi
-        copied=true
-    fi
+        cat << 'TAIL'
 
-    if [[ "$copied" != "true" ]]; then
-        _init_fallback_tools "$ai_dir"
-    fi
+# Source paths (override if you use a custom layout).
+source:
+  agents: ".ai/src/AGENTS.md"
+  rules: ".ai/src/rules"
+  skills: ".ai/src/skills"
+  commands: ".ai/src/commands"
+  subagents: ".ai/src/agents"
+  tools: ".ai/src/tools"
+
+# Global defaults applied to all tools.
+defaults:
+  enabled: false
+  cleanup: true
+
+# Post-sync hook execution (also controllable via env vars).
+post_sync:
+  allow: false
+  skip: false
+
+# .gitignore management.
+gitignore:
+  update: true
+TAIL
+    } > "$config_file"
 }
 
 _init_print_summary() {
     local ai_dir="$1"
+    local enabled_list="$2"
 
     echo ""
-    echo "   Created $(_cyan ".ai/agent_sync.yaml")     — project config (source paths)"
+    echo "   Created $(_cyan ".ai/agent_sync.yaml")     — project config"
     echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
 
     local rule_count=0
@@ -196,61 +233,29 @@ _init_print_summary() {
         echo "   Created $(_cyan ".ai/src/agents/")         — $agent_count agent(s)"
     fi
 
-    local tool_count=0
-    for f in "$ai_dir/src/tools/"*.yaml; do
-        [[ -f "$f" ]] || continue
-        [[ "$(basename "$f")" == _* ]] && continue
-        tool_count=$((tool_count + 1))
-    done
-    echo "   Created $(_cyan ".ai/src/tools/")          — $tool_count tool(s)"
-
-    local enabled_tools=""
-    local enabled_count=0
-    for f in "$ai_dir/src/tools/"*.yaml; do
-        [[ -f "$f" ]] || continue
-        [[ "$(basename "$f")" == _* ]] && continue
-
-        local tool_enabled=""
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^enabled:[[:space:]]*(true|false) ]]; then
-                tool_enabled="${BASH_REMATCH[1]}"
-                break
-            fi
-        done < "$f"
-
-        if [[ "$tool_enabled" == "true" ]]; then
-            local tool_label=""
-            while IFS= read -r line; do
-                if [[ "$line" =~ ^name:[[:space:]]*[\"\']?([^\"\']+)[\"\']? ]]; then
-                    tool_label="${BASH_REMATCH[1]}"
-                    break
-                fi
-            done < "$f"
-            [[ -z "$tool_label" ]] && tool_label="$(basename "$f" .yaml)"
-            if [[ -n "$enabled_tools" ]]; then
-                enabled_tools="$enabled_tools, $tool_label"
-            else
-                enabled_tools="$tool_label"
-            fi
-            enabled_count=$((enabled_count + 1))
-        fi
-    done
+    echo ""
+    if [[ -n "$enabled_list" ]]; then
+        local count
+        count=$(echo "$enabled_list" | grep -c .)
+        local joined
+        joined=$(echo "$enabled_list" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
+        echo "   $(_green "Auto-detected $count tool(s):") $joined"
+    else
+        echo "   $(_dim "No tools auto-detected.")"
+    fi
 
     echo ""
     echo "$(_green "Done!")"
-    if [[ $enabled_count -gt 0 ]]; then
-        echo ""
-        echo "   Enabled tools ($enabled_count): $(_cyan "$enabled_tools")"
-    fi
-    echo ""
-    echo "   $(_dim "Enable tools in .ai/src/tools/<name>.yaml → enabled: true")"
     echo ""
     echo "Next steps:"
     echo "  1. Edit $(_cyan ".ai/src/AGENTS.md") — customize your agent's identity"
-    echo "  2. Edit rules in $(_cyan ".ai/src/rules/") — add project-specific constraints"
-    echo "  3. Run $(_cyan "agentsync generate | pbcopy") — generate project-specific config via AI"
-    echo "  4. Run $(_cyan "agentsync sync") — distribute to all enabled tools"
-    echo "  5. Run $(_cyan "agentsync help") — see all available commands"
+    echo "  2. Run $(_cyan "agentsync list")        — browse all available tools"
+    if [[ -z "$enabled_list" ]]; then
+        echo "  3. Run $(_cyan "agentsync enable <tool>") — opt in to tools you use"
+    else
+        echo "  3. Run $(_cyan "agentsync enable <tool>") — add more tools"
+    fi
+    echo "  4. Run $(_cyan "agentsync sync")        — distribute to enabled tools"
     echo ""
 }
 
@@ -278,7 +283,6 @@ cmd_init() {
     echo ""
 
     _init_create_directories "$ai_dir"
-    _init_create_project_config "$target_dir"
 
     local templates_dir=""
     local system_dir=""
@@ -288,138 +292,10 @@ cmd_init() {
     fi
 
     _init_copy_source_templates "$ai_dir" "$templates_dir"
-    _init_copy_tool_configs "$ai_dir" "$templates_dir"
-    _init_print_summary "$ai_dir"
-}
 
-# ── Fallback tool configs ─────────────────────────────────────────────────────
+    local detected
+    detected=$(_init_detect_enabled_tools "$target_dir")
 
-# Fallback tool configs when engine templates are unavailable
-_init_fallback_tools() {
-    local ai_dir="$1"
-
-    cat > "$ai_dir/src/tools/claude.yaml" << 'EOF'
-name: "Claude Code"
-enabled: false
-targets:
-  agents: { dest: "CLAUDE.md" }
-  rules: { dest: ".claude/rules" }
-  skills: { dest: ".claude/skills" }
-  commands: { dest: ".claude/commands" }
-  subagents: { dest: ".claude/agents" }
-EOF
-
-    cat > "$ai_dir/src/tools/copilot.yaml" << 'EOF'
-name: "GitHub Copilot"
-enabled: false
-targets:
-  agents: { dest: ".github/copilot-instructions.md" }
-  rules: { dest: ".github/instructions", extension: ".instructions.md", header: "---\napplyTo: '**'\n---" }
-  skills: { dest: ".github/skills" }
-  commands: { dest: ".github/prompts", extension: ".prompt.md" }
-  subagents: { dest: ".github/agents", extension: ".agent.md" }
-EOF
-
-    cat > "$ai_dir/src/tools/cursor.yaml" << 'EOF'
-name: "Cursor"
-enabled: false
-targets:
-  agents: { dest: ".cursor/AGENTS.md" }
-  rules: { dest: ".cursor/rules", extension: ".mdc", header: "---\nglobs: '**/*'\nalwaysApply: true\n---" }
-  skills: { dest: ".cursor/skills" }
-  subagents: { dest: ".cursor/agents" }
-  mcp: { source: ".ai/src/mcp/cursor.json", dest: ".cursor/mcp.json" }
-  hooks: { source: ".ai/src/hooks/cursor.json", dest: ".cursor/hooks.json" }
-EOF
-
-    cat > "$ai_dir/src/tools/gemini.yaml" << 'EOF'
-name: "Gemini CLI"
-enabled: false
-targets:
-  agents: { dest: ".gemini/GEMINI.md" }
-  rules: { inline_into_agents: true }
-  skills: { dest: ".gemini/skills" }
-  commands: { dest: ".gemini/commands", format: toml }
-  subagents: { dest: ".gemini/agents" }
-EOF
-
-    cat > "$ai_dir/src/tools/codex.yaml" << 'EOF'
-name: "OpenAI Codex"
-enabled: false
-targets:
-  agents: { dest: "AGENTS.md" }
-  rules: { inline_into_agents: true }
-  skills: { dest: ".agents/skills" }
-  subagents: { dest: ".codex/agents", format: toml }
-  hooks: { source: ".ai/src/hooks/codex.json", dest: ".codex/hooks.json" }
-EOF
-
-    cat > "$ai_dir/src/tools/windsurf.yaml" << 'EOF'
-name: "Windsurf"
-enabled: false
-targets:
-  agents: { dest: ".windsurf/AGENTS.md" }
-  rules: { dest: ".windsurf/rules", header: "---\ntrigger: always_on\n---" }
-  skills: { dest: ".windsurf/skills" }
-EOF
-
-    cat > "$ai_dir/src/tools/junie.yaml" << 'EOF'
-name: "JetBrains Junie"
-enabled: false
-targets:
-  agents: { dest: ".junie/guidelines.md" }
-  rules: { dest: ".junie/guidelines" }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/aider.yaml" << 'EOF'
-name: "Aider"
-enabled: false
-targets:
-  rules: { dest: "CONVENTIONS.md", merge_to_file: true, prepend_agents: true }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/cline.yaml" << 'EOF'
-name: "Cline"
-enabled: false
-targets:
-  agents: { dest: ".clinerules/00-context.md" }
-  rules: { dest: ".clinerules" }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/amazonq.yaml" << 'EOF'
-name: "Amazon Q Developer"
-enabled: false
-targets:
-  agents: { dest: ".amazonq/rules/00-context.md" }
-  rules: { dest: ".amazonq/rules" }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/augment.yaml" << 'EOF'
-name: "Augment Code"
-enabled: false
-targets:
-  agents: { dest: ".augment/rules/00-context.md" }
-  rules: { dest: ".augment/rules" }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/zed.yaml" << 'EOF'
-name: "Zed"
-enabled: false
-targets:
-  rules: { dest: ".rules", merge_to_file: true, prepend_agents: true }
-  skills: { inline_into_agents: true }
-EOF
-
-    cat > "$ai_dir/src/tools/continue.yaml" << 'EOF'
-name: "Continue"
-enabled: false
-targets:
-  rules: { dest: ".continuerules", merge_to_file: true, prepend_agents: true }
-  skills: { inline_into_agents: true }
-EOF
+    _init_create_project_config "$target_dir" "$detected"
+    _init_print_summary "$ai_dir" "$detected"
 }

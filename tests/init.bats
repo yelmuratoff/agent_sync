@@ -23,7 +23,8 @@ teardown() {
     [ -d ".ai/src/settings" ]
     [ -d ".ai/src/mcp" ]
     [ -d ".ai/src/hooks" ]
-    [ -d ".ai/src/tools" ]
+    # tools/ dir is NOT created by init — created on demand by `customize`.
+    [ ! -d ".ai/src/tools" ]
 }
 
 @test "init creates starter rules" {
@@ -35,13 +36,13 @@ teardown() {
     [ "$rule_count" -ge 1 ]
 }
 
-@test "init creates tool configs" {
+@test "init creates agent_sync.yaml with tools.enabled list" {
     run run_agentsync init
     [ "$status" -eq 0 ]
 
-    [ -f ".ai/src/tools/claude.yaml" ]
-    [ -f ".ai/src/tools/cursor.yaml" ]
-    [ -f ".ai/src/tools/copilot.yaml" ]
+    [ -f ".ai/agent_sync.yaml" ]
+    grep -q "^tools:" ".ai/agent_sync.yaml"
+    grep -q "enabled:" ".ai/agent_sync.yaml"
 }
 
 @test "init creates skills" {
@@ -81,10 +82,10 @@ teardown() {
     [[ "$output" == *"already exists"* ]]
 }
 
-@test "init prompts user to enable tools" {
+@test "init output mentions enable command" {
     run run_agentsync init
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Enable tools"* ]]
+    [[ "$output" == *"agentsync enable"* ]]
 }
 
 @test "init to custom directory" {
@@ -110,23 +111,21 @@ teardown() {
     [[ "$first_line" == "#"* ]]
 }
 
-@test "init tool configs have enabled field" {
+@test "init with empty project enables no tools by default" {
     run run_agentsync init
     [ "$status" -eq 0 ]
 
-    for f in .ai/src/tools/*.yaml; do
-        [[ "$(basename "$f")" == _* ]] && continue
-        grep -q "^enabled:" "$f"
-    done
+    # Empty project has no markers → tools.enabled is [].
+    grep -q "enabled: \[\]" ".ai/agent_sync.yaml"
 }
 
-@test "init default enabled tools are correct" {
+@test "init auto-detects existing tool markers" {
+    mkdir -p .claude
+    mkdir -p .cursor
     run run_agentsync init
     [ "$status" -eq 0 ]
 
-    # All tools default to disabled — users opt in explicitly per project.
-    for f in .ai/src/tools/*.yaml; do
-        [[ "$(basename "$f")" == _* ]] && continue
-        grep -q "^enabled: false" "$f"
-    done
+    # Both detected tools should appear under tools.enabled.
+    grep -q "^    - claude$" ".ai/agent_sync.yaml"
+    grep -q "^    - cursor$" ".ai/agent_sync.yaml"
 }

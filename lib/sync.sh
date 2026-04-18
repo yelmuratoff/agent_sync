@@ -7,7 +7,7 @@ set -euo pipefail
 
 # Script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="${AGENTSYNC_REPO_ROOT:-$DEFAULT_REPO_ROOT}"
 
 if [[ ! -d "$REPO_ROOT" ]]; then
@@ -17,7 +17,7 @@ fi
 
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 REPO_ROOT_CANONICAL="$(cd -P "$REPO_ROOT" && pwd)"
-export REPO_ROOT_CANONICAL
+export REPO_ROOT_CANONICAL DEFAULT_REPO_ROOT
 
 # Source helper libraries
 # shellcheck source=helpers/logging.sh
@@ -36,6 +36,8 @@ source "$SCRIPT_DIR/helpers/rule_operations.sh"
 source "$SCRIPT_DIR/helpers/format_conversion.sh"
 # shellcheck source=helpers/gitignore.sh
 source "$SCRIPT_DIR/helpers/gitignore.sh"
+# shellcheck source=helpers/tool_resolver.sh
+source "$SCRIPT_DIR/helpers/tool_resolver.sh"
 
 # Global variables
 DRY_RUN="false"
@@ -50,14 +52,21 @@ PROJECT_CONFIG_PATH=""
 SOURCE_AGENTS=""
 SOURCE_RULES=""
 SOURCE_SKILLS=""
+# SOURCE_TOOLS is retained for backward compatibility with config.yaml; tool
+# YAMLs now resolve via tool_resolver.sh (base + .ai/src/tools overrides).
+# shellcheck disable=SC2034
 SOURCE_TOOLS=""
+SOURCE_COMMANDS=""
+SOURCE_SUBAGENTS=""
+# DEFAULT_ENABLED is kept for legacy config compatibility; tool enablement is now
+# driven by tools.enabled in agent_sync.yaml (see tool_resolver.sh).
+# shellcheck disable=SC2034
 DEFAULT_ENABLED="false"
 DEFAULT_CLEANUP="true"
 UPDATE_GITIGNORE="true"
 
 # Paths claimed by enabled tools — cleanup must not delete these
 declare -a ENABLED_DEST_PATHS=()
-
 
 # Usage information
 usage() {
@@ -68,25 +77,13 @@ Usage: $(basename "$0") [OPTIONS]
 
 Options:
   --only <tools>    Sync only specified tools (comma-separated)
-                    Example: --only copilot,cursor
   --skip <tools>    Skip specified tools (comma-separated)
-                    Example: --skip gemini,codex
   --dry-run         Show what would be copied without making changes
   --help            Show this help message
-
-Examples:
-  $(basename "$0")                       # Sync all enabled tools
-  $(basename "$0") --only copilot,cursor # Sync only Copilot and Cursor
-  $(basename "$0") --skip gemini         # Sync all except Gemini
-  $(basename "$0") --dry-run             # Preview changes without applying
 EOF
 }
 
 # Resolve project config path
-# Priority:
-# 1) AGENTSYNC_CONFIG_PATH env var (absolute or relative to REPO_ROOT)
-# 2) REPO_ROOT/.ai/agent_sync.yaml
-# 3) REPO_ROOT/agent_sync.yaml
 resolve_project_config_path() {
     local config_env="${AGENTSYNC_CONFIG_PATH:-}"
     if [[ -n "$config_env" ]]; then
@@ -99,7 +96,6 @@ resolve_project_config_path() {
             PROJECT_CONFIG_PATH="$env_path"
             return 0
         fi
-
         log_warning "AGENTSYNC_CONFIG_PATH is set but file not found: $env_path"
     fi
 
@@ -109,19 +105,15 @@ resolve_project_config_path() {
         return 0
     fi
 
-    # Legacy fallback: root-level config
     local legacy_config="$REPO_ROOT/agent_sync.yaml"
     if [[ -f "$legacy_config" ]]; then
         PROJECT_CONFIG_PATH="$legacy_config"
     fi
 }
 
-
-
 # Resolve source path from project config (supports both root keys and source.* keys)
 resolve_source_override() {
     local key="$1"
-
     if [[ -z "$PROJECT_CONFIG_PATH" ]]; then
         echo ""
         return 0
@@ -138,7 +130,6 @@ resolve_source_override() {
     echo "$direct"
 }
 
-# Parse command line arguments
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -177,53 +168,19 @@ parse_args() {
     done
 }
 
-# Check if tool should be synced based on CLI filters
 should_sync_tool() {
     local tool_name="$1"
-    
-    # Check --only filter
     if [[ -n "$ONLY_TOOLS" ]]; then
         if [[ ! ",$ONLY_TOOLS," == *",$tool_name,"* ]]; then
             return 1
         fi
     fi
-    
-    # Check --skip filter
     if [[ -n "$SKIP_TOOLS" ]]; then
         if [[ ",$SKIP_TOOLS," == *",$tool_name,"* ]]; then
             return 1
         fi
     fi
-    
     return 0
-}
-
-read_tool_enabled_flag() {
-    local tool_config="$1"
-    local tool_name="$2"
-
-    local enabled_value=""
-    enabled_value=$(parse_yaml_bool_strict "$tool_config" "enabled")
-    local parse_status=$?
-    if [[ $parse_status -ne 0 ]]; then
-        case "$parse_status" in
-            2)
-                echo "$DEFAULT_ENABLED"
-                return 0
-                ;;
-            3)
-                local raw_value
-                raw_value=$(parse_yaml_value "$tool_config" "enabled")
-                log_error "Invalid boolean for 'enabled' in $tool_config ($tool_name): '$raw_value'"
-                ;;
-            *)
-                log_error "Failed to parse 'enabled' from $tool_config ($tool_name)"
-                ;;
-        esac
-        return 1
-    fi
-
-    echo "$enabled_value"
 }
 
 run_post_sync_hook() {
@@ -245,7 +202,6 @@ run_post_sync_hook() {
     fi
 
     log_info "Running post-sync hook: $post_sync_cmd"
-    # Execute once through bash without eval to avoid re-parsing command input.
     if ! (cd "$REPO_ROOT" && bash -lc "$post_sync_cmd"); then
         log_warning "Post-sync hook failed"
         return 1
@@ -254,7 +210,6 @@ run_post_sync_hook() {
     return 0
 }
 
-# Check if a path is claimed by an enabled tool (should not be cleaned up)
 is_path_protected() {
     local path="$1"
     [[ ${#ENABLED_DEST_PATHS[@]} -eq 0 ]] && return 1
@@ -265,127 +220,93 @@ is_path_protected() {
     return 1
 }
 
-# Sync a single tool based on its YAML config
+# Resolve every dest path for a tool (effective values via tool_resolver).
+# Sets the given named variables in the caller's scope.
+# Usage: _resolve_tool_dests <tool_name> <out_prefix>
+# Produces: <prefix>_agents, <prefix>_rules, ..., each as absolute path or empty.
+_resolve_tool_dests() {
+    local tool_name="$1"
+    local prefix="$2"
+    local display
+    display=$(tool_display_name "$tool_name")
+
+    local raw abs
+    local key
+    for key in agents rules skills commands subagents settings mcp hooks; do
+        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+        abs=""
+        if [[ -n "$raw" ]]; then
+            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display")
+        fi
+        printf -v "${prefix}_${key}" '%s' "$abs"
+    done
+}
+
+# Sync a single tool. Assumes the tool is enabled and tool_resolver globals are ready.
 sync_tool() {
-    local tool_config="$1"
-    local tool_basename
-    tool_basename=$(basename "$tool_config" .yaml)
-    
-    # Read tool configuration
-    local tool_name
-    tool_name=$(parse_yaml_value "$tool_config" "name")
-    [[ -z "$tool_name" ]] && tool_name="$tool_basename"
+    local tool_name="$1"
+    local display
+    display=$(tool_display_name "$tool_name")
 
-    # Check enabled early — skip dest resolution for disabled tools when cleanup is off
-    local enabled_value
-    enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_name") || return 1
-
-    if [[ "$enabled_value" == "false" ]]; then
-        local cleaned=false
-        if [[ "$DEFAULT_CLEANUP" == "true" ]]; then
-            # Read target destinations only when cleanup is needed
-            local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp dest_hooks
-            dest_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
-            dest_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
-            dest_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
-            dest_commands=$(parse_yaml_value "$tool_config" "targets.commands.dest")
-            dest_subagents=$(parse_yaml_value "$tool_config" "targets.subagents.dest")
-            dest_settings=$(parse_yaml_value "$tool_config" "targets.settings.dest")
-            dest_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.dest")
-            dest_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
-            local dest_agents_abs="" dest_rules_abs="" dest_skills_abs="" dest_commands_abs="" dest_subagents_abs="" dest_settings_abs="" dest_mcp_abs="" dest_hooks_abs=""
-            [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_dest_path "$dest_agents" "targets.agents.dest for $tool_name")
-            [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_dest_path "$dest_rules" "targets.rules.dest for $tool_name")
-            [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_dest_path "$dest_skills" "targets.skills.dest for $tool_name")
-            [[ -n "$dest_commands" ]] && dest_commands_abs=$(resolve_dest_path "$dest_commands" "targets.commands.dest for $tool_name")
-            [[ -n "$dest_subagents" ]] && dest_subagents_abs=$(resolve_dest_path "$dest_subagents" "targets.subagents.dest for $tool_name")
-            [[ -n "$dest_settings" ]] && dest_settings_abs=$(resolve_dest_path "$dest_settings" "targets.settings.dest for $tool_name")
-            [[ -n "$dest_mcp" ]] && dest_mcp_abs=$(resolve_dest_path "$dest_mcp" "targets.mcp.dest for $tool_name")
-            [[ -n "$dest_hooks" ]] && dest_hooks_abs=$(resolve_dest_path "$dest_hooks" "targets.hooks.dest for $tool_name")
-            [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
-        fi
-
-        if [[ "$cleaned" == "true" ]]; then
-            log_info "Cleaned up $tool_name (disabled)"
-        else
-            log_info "Skipping $tool_name (disabled in config)"
-        fi
+    if ! should_sync_tool "$tool_name"; then
+        log_info "Skipping $display (filtered by CLI)"
         ((SKIPPED_COUNT++)) || true
         return 0
     fi
 
-    # Read target destinations (once, reused for sync)
-    local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp dest_hooks
-    dest_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
-    dest_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
-    dest_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
-    dest_commands=$(parse_yaml_value "$tool_config" "targets.commands.dest")
-    dest_subagents=$(parse_yaml_value "$tool_config" "targets.subagents.dest")
-    dest_settings=$(parse_yaml_value "$tool_config" "targets.settings.dest")
-    dest_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.dest")
-    dest_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
+    local dest_agents dest_rules dest_skills dest_commands
+    local dest_subagents dest_settings dest_mcp dest_hooks
+    _resolve_tool_dests "$tool_name" "dest"
+    # Shellcheck: these are populated via `printf -v` inside _resolve_tool_dests.
+    # shellcheck disable=SC2154
+    local dest_agents_abs="$dest_agents"
+    # shellcheck disable=SC2154
+    local dest_rules_abs="$dest_rules"
+    # shellcheck disable=SC2154
+    local dest_skills_abs="$dest_skills"
+    # shellcheck disable=SC2154
+    local dest_commands_abs="$dest_commands"
+    # shellcheck disable=SC2154
+    local dest_subagents_abs="$dest_subagents"
+    # shellcheck disable=SC2154
+    local dest_settings_abs="$dest_settings"
+    # shellcheck disable=SC2154
+    local dest_mcp_abs="$dest_mcp"
+    # shellcheck disable=SC2154
+    local dest_hooks_abs="$dest_hooks"
 
-    local dest_agents_abs="" dest_rules_abs="" dest_skills_abs="" dest_commands_abs="" dest_subagents_abs="" dest_settings_abs="" dest_mcp_abs="" dest_hooks_abs=""
-    [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_dest_path "$dest_agents" "targets.agents.dest for $tool_name")
-    [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_dest_path "$dest_rules" "targets.rules.dest for $tool_name")
-    [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_dest_path "$dest_skills" "targets.skills.dest for $tool_name")
-    [[ -n "$dest_commands" ]] && dest_commands_abs=$(resolve_dest_path "$dest_commands" "targets.commands.dest for $tool_name")
-    [[ -n "$dest_subagents" ]] && dest_subagents_abs=$(resolve_dest_path "$dest_subagents" "targets.subagents.dest for $tool_name")
-    [[ -n "$dest_settings" ]] && dest_settings_abs=$(resolve_dest_path "$dest_settings" "targets.settings.dest for $tool_name")
-    [[ -n "$dest_mcp" ]] && dest_mcp_abs=$(resolve_dest_path "$dest_mcp" "targets.mcp.dest for $tool_name")
-    [[ -n "$dest_hooks" ]] && dest_hooks_abs=$(resolve_dest_path "$dest_hooks" "targets.hooks.dest for $tool_name")
-    
-    # Check CLI filters
-    if ! should_sync_tool "$tool_basename"; then
-        log_info "Skipping $tool_name (filtered by CLI)"
-        ((SKIPPED_COUNT++)) || true
-        return 0
-    fi
-    
-    log_info "Syncing $tool_name..."
-    
+    log_info "Syncing $display..."
+
     # 1. AGENTS
-    # Check for override
     local override_agents src_agents
-    override_agents=$(parse_yaml_value "$tool_config" "targets.agents.source")
+    override_agents=$(get_tool_value "$tool_name" "targets.agents.source")
     src_agents="${override_agents:-$SOURCE_AGENTS}"
     local src_agents_abs
-    src_agents_abs=$(resolve_source_path "$src_agents" "targets.agents.source for $tool_name")
-    
-    # Sync AGENTS.md
+    src_agents_abs=$(resolve_source_path "$src_agents" "targets.agents.source for $display")
+
     if [[ -n "$dest_agents_abs" ]]; then
         copy_file "$src_agents_abs" "$dest_agents_abs" "$DRY_RUN"
     fi
-    
+
     # 2. RULES
-    # Check for override
     local override_rules src_rules
-    override_rules=$(parse_yaml_value "$tool_config" "targets.rules.source")
+    override_rules=$(get_tool_value "$tool_name" "targets.rules.source")
     src_rules="${override_rules:-$SOURCE_RULES}"
     local src_rules_abs
-    src_rules_abs=$(resolve_source_path "$src_rules" "targets.rules.source for $tool_name")
-    
-    # Read optional rule transformations and filters
-    local rule_ext rule_header append_imports rule_include rule_exclude
-    rule_ext=$(parse_yaml_value "$tool_config" "targets.rules.extension") || true
-    rule_header=$(parse_yaml_value "$tool_config" "targets.rules.header") || true
-    append_imports=$(parse_yaml_value "$tool_config" "targets.rules.append_imports") || true
-    rule_include=$(parse_yaml_value "$tool_config" "targets.rules.include") || true
-    rule_exclude=$(parse_yaml_value "$tool_config" "targets.rules.exclude") || true
-    local merge_to_file inline_into_agents
-    merge_to_file=$(parse_yaml_value "$tool_config" "targets.rules.merge_to_file") || true
-    inline_into_agents=$(parse_yaml_value "$tool_config" "targets.rules.inline_into_agents") || true
+    src_rules_abs=$(resolve_source_path "$src_rules" "targets.rules.source for $display")
 
-    # Sync rules
+    local rule_ext rule_header append_imports_flag rule_include rule_exclude
+    rule_ext=$(get_tool_value "$tool_name" "targets.rules.extension")
+    rule_header=$(get_tool_value "$tool_name" "targets.rules.header")
+    append_imports_flag=$(get_tool_value "$tool_name" "targets.rules.append_imports")
+    rule_include=$(get_tool_value "$tool_name" "targets.rules.include")
+    rule_exclude=$(get_tool_value "$tool_name" "targets.rules.exclude")
+
+    local merge_to_file inline_into_agents
+    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
+    inline_into_agents=$(get_tool_value "$tool_name" "targets.rules.inline_into_agents")
+
     if [[ "$inline_into_agents" == "true" ]] && [[ -n "$dest_agents_abs" ]]; then
-        # Append rule file references into the agents file (lightweight, saves context tokens)
         if [[ -d "$src_rules_abs" ]] && [[ "$DRY_RUN" != "true" ]]; then
             {
                 echo ""
@@ -405,38 +326,33 @@ sync_tool() {
                 echo ""
                 echo "Find all rules in \`.ai/src/rules/\`."
             } >> "$dest_agents_abs"
-            log_step "Appended rule references to $dest_agents"
+            log_step "Appended rule references to $(basename "$dest_agents_abs")"
         elif [[ "$DRY_RUN" == "true" ]]; then
-            log_step "Would append rule references to $dest_agents (dry-run)"
+            log_step "Would append rule references to $(basename "$dest_agents_abs") (dry-run)"
         fi
     elif [[ -n "$dest_rules_abs" ]]; then
-      if [[ "$merge_to_file" == "true" ]]; then
-        # Merge all rules into a single file (e.g., Aider's CONVENTIONS.md)
-        local prepend_agents
-        prepend_agents=$(parse_yaml_value "$tool_config" "targets.rules.prepend_agents") || true
-        local agents_for_prepend=""
-        if [[ "$prepend_agents" == "true" ]] && [[ -f "$src_agents_abs" ]]; then
-            agents_for_prepend="$src_agents_abs"
-        fi
-        merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude" "$agents_for_prepend"
-      else
-        sync_rules "$src_rules_abs" "$dest_rules_abs" "$rule_ext" "$rule_header" "$DRY_RUN" "$rule_include" "$rule_exclude"
-        
-        # Handle Claude's import appending
-        if [[ "$append_imports" == "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
-            if [[ -n "$dest_agents_abs" ]]; then
-                # Note: Imports should technically only include filtered rules, but append_imports scans the DEST dir
-                # so it naturally picks up only what was copied. Correct.
-                append_imports "$dest_agents_abs" "$dest_rules_abs"
-                log_step "Appended @rules imports to $dest_agents"
-            else
-                log_warning "Skipping append_imports for $tool_name because targets.agents.dest is missing"
+        if [[ "$merge_to_file" == "true" ]]; then
+            local prepend_agents_flag
+            prepend_agents_flag=$(get_tool_value "$tool_name" "targets.rules.prepend_agents")
+            local agents_for_prepend=""
+            if [[ "$prepend_agents_flag" == "true" ]] && [[ -f "$src_agents_abs" ]]; then
+                agents_for_prepend="$src_agents_abs"
+            fi
+            merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude" "$agents_for_prepend"
+        else
+            sync_rules "$src_rules_abs" "$dest_rules_abs" "$rule_ext" "$rule_header" "$DRY_RUN" "$rule_include" "$rule_exclude"
+
+            if [[ "$append_imports_flag" == "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
+                if [[ -n "$dest_agents_abs" ]]; then
+                    append_imports "$dest_agents_abs" "$dest_rules_abs"
+                    log_step "Appended @rules imports to $(basename "$dest_agents_abs")"
+                else
+                    log_warning "Skipping append_imports for $display because targets.agents.dest is missing"
+                fi
             fi
         fi
-      fi
     fi
 
-    # Re-copy agents if its dest is inside the rules dest (sync_rules cleanup may have removed it)
     if [[ -n "$dest_agents_abs" ]] && [[ -n "$dest_rules_abs" ]] && [[ "$dest_agents_abs" == "$dest_rules_abs"/* ]]; then
         if [[ "$DRY_RUN" != "true" ]]; then
             copy_file "$src_agents_abs" "$dest_agents_abs" "false" 2>/dev/null || true
@@ -444,28 +360,23 @@ sync_tool() {
     fi
 
     # 3. SKILLS
-    # Check for override
     local override_skills src_skills
-    override_skills=$(parse_yaml_value "$tool_config" "targets.skills.source")
+    override_skills=$(get_tool_value "$tool_name" "targets.skills.source")
     src_skills="${override_skills:-$SOURCE_SKILLS}"
     local src_skills_abs
-    src_skills_abs=$(resolve_source_path "$src_skills" "targets.skills.source for $tool_name")
-    
-    # Read skill filters
+    src_skills_abs=$(resolve_source_path "$src_skills" "targets.skills.source for $display")
+
     local skills_include skills_exclude
-    skills_include=$(parse_yaml_value "$tool_config" "targets.skills.include") || true
-    skills_exclude=$(parse_yaml_value "$tool_config" "targets.skills.exclude") || true
-    
-    # Sync skills directory
+    skills_include=$(get_tool_value "$tool_name" "targets.skills.include")
+    skills_exclude=$(get_tool_value "$tool_name" "targets.skills.exclude")
+
     local inline_skills
-    inline_skills=$(parse_yaml_value "$tool_config" "targets.skills.inline_into_agents") || true
+    inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
 
     if [[ -n "$dest_skills_abs" ]]; then
         sync_dir "$src_skills_abs" "$dest_skills_abs" "$DRY_RUN" "$skills_include" "$skills_exclude"
     elif [[ "$inline_skills" == "true" ]] && [[ -d "$src_skills_abs" ]]; then
-        # Append skill index into agents file or merged rules file
         local skills_target_file="$dest_agents_abs"
-        # For merged files without separate agents dest, append to the merged rules file
         if [[ -z "$skills_target_file" ]] && [[ "$merge_to_file" == "true" ]] && [[ -f "$dest_rules_abs" ]]; then
             skills_target_file="$dest_rules_abs"
         fi
@@ -506,14 +417,14 @@ sync_tool() {
             log_step "Would append skill index (dry-run)"
         fi
     fi
-    
+
     # 4. COMMANDS
     local dest_cmd_ext dest_cmd_format
-    dest_cmd_ext=$(parse_yaml_value "$tool_config" "targets.commands.extension") || true
-    dest_cmd_format=$(parse_yaml_value "$tool_config" "targets.commands.format") || true
+    dest_cmd_ext=$(get_tool_value "$tool_name" "targets.commands.extension")
+    dest_cmd_format=$(get_tool_value "$tool_name" "targets.commands.format")
     if [[ -n "$dest_commands_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
         local src_commands_abs
-        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $tool_name")
+        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
         if [[ -d "$src_commands_abs" ]]; then
             if [[ "$dest_cmd_format" == "toml" ]]; then
                 sync_commands_as_toml "$src_commands_abs" "$dest_commands_abs" "$DRY_RUN"
@@ -525,11 +436,11 @@ sync_tool() {
 
     # 5. SUBAGENTS
     local dest_sa_ext dest_sa_format
-    dest_sa_ext=$(parse_yaml_value "$tool_config" "targets.subagents.extension") || true
-    dest_sa_format=$(parse_yaml_value "$tool_config" "targets.subagents.format") || true
+    dest_sa_ext=$(get_tool_value "$tool_name" "targets.subagents.extension")
+    dest_sa_format=$(get_tool_value "$tool_name" "targets.subagents.format")
     if [[ -n "$dest_subagents_abs" ]] && [[ -n "${SOURCE_SUBAGENTS:-}" ]]; then
         local src_subagents_abs
-        src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $tool_name")
+        src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $display")
         if [[ -d "$src_subagents_abs" ]]; then
             case "$dest_sa_format" in
                 toml)
@@ -545,39 +456,39 @@ sync_tool() {
         fi
     fi
 
-    # 6. SETTINGS (file copy — source is per-tool)
+    # 6. SETTINGS
     if [[ -n "$dest_settings_abs" ]]; then
         local src_settings
-        src_settings=$(parse_yaml_value "$tool_config" "targets.settings.source")
+        src_settings=$(get_tool_value "$tool_name" "targets.settings.source")
         if [[ -n "$src_settings" ]]; then
             local src_settings_abs
-            src_settings_abs=$(resolve_source_path "$src_settings" "targets.settings.source for $tool_name")
+            src_settings_abs=$(resolve_source_path "$src_settings" "targets.settings.source for $display")
             if [[ -f "$src_settings_abs" ]]; then
                 copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
             fi
         fi
     fi
 
-    # 7. MCP (file copy — source is per-tool)
+    # 7. MCP
     if [[ -n "$dest_mcp_abs" ]]; then
         local src_mcp
-        src_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.source")
+        src_mcp=$(get_tool_value "$tool_name" "targets.mcp.source")
         if [[ -n "$src_mcp" ]]; then
             local src_mcp_abs
-            src_mcp_abs=$(resolve_source_path "$src_mcp" "targets.mcp.source for $tool_name")
+            src_mcp_abs=$(resolve_source_path "$src_mcp" "targets.mcp.source for $display")
             if [[ -f "$src_mcp_abs" ]]; then
                 copy_file "$src_mcp_abs" "$dest_mcp_abs" "$DRY_RUN"
             fi
         fi
     fi
 
-    # 8. HOOKS (file copy — source is per-tool)
+    # 8. HOOKS
     if [[ -n "$dest_hooks_abs" ]]; then
         local src_hooks
-        src_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.source")
+        src_hooks=$(get_tool_value "$tool_name" "targets.hooks.source")
         if [[ -n "$src_hooks" ]]; then
             local src_hooks_abs
-            src_hooks_abs=$(resolve_source_path "$src_hooks" "targets.hooks.source for $tool_name")
+            src_hooks_abs=$(resolve_source_path "$src_hooks" "targets.hooks.source for $display")
             if [[ -f "$src_hooks_abs" ]]; then
                 copy_file "$src_hooks_abs" "$dest_hooks_abs" "$DRY_RUN"
             fi
@@ -586,23 +497,57 @@ sync_tool() {
 
     # 9. POST_SYNC
     local post_sync_cmd
-    post_sync_cmd=$(parse_yaml_value "$tool_config" "post_sync") || true
-    
+    post_sync_cmd=$(get_tool_value "$tool_name" "post_sync")
+
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! run_post_sync_hook "$tool_name" "$post_sync_cmd"; then
-            log_error "Sync failed because post-sync hook failed for $tool_name"
+        if ! run_post_sync_hook "$display" "$post_sync_cmd"; then
+            log_error "Sync failed because post-sync hook failed for $display"
             return 1
         fi
     fi
-     
-    log_success "$tool_name complete"
+
+    log_success "$display complete"
     ((SYNCED_COUNT++)) || true
+}
+
+# Cleanup outputs of a tool that is not enabled (when DEFAULT_CLEANUP=true).
+cleanup_tool() {
+    local tool_name="$1"
+    local display
+    display=$(tool_display_name "$tool_name")
+
+    [[ "$DEFAULT_CLEANUP" != "true" ]] && {
+        log_info "Skipping $display (disabled, cleanup off)"
+        ((SKIPPED_COUNT++)) || true
+        return 0
+    }
+
+    local cleaned=false
+    local key raw abs
+    for key in agents rules skills commands subagents settings mcp hooks; do
+        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+        [[ -z "$raw" ]] && continue
+        abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || continue
+        [[ -z "$abs" ]] && continue
+        if ! is_path_protected "$abs"; then
+            if cleanup_path "$abs" "$DRY_RUN"; then
+                cleaned=true
+            fi
+        fi
+    done
+
+    if [[ "$cleaned" == "true" ]]; then
+        log_info "Cleaned up $display (disabled)"
+    else
+        log_info "Skipping $display (disabled)"
+    fi
+    ((SKIPPED_COUNT++)) || true
 }
 
 # Main entry point
 main() {
     parse_args "$@"
-    
+
     log_separator
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "Starting AgentSync Config Sync (DRY RUN)..."
@@ -611,18 +556,15 @@ main() {
     fi
     log_separator
     echo ""
-    
-    # Verify base config exists
+
     local global_config="$SCRIPT_DIR/config.yaml"
     if [[ ! -f "$global_config" ]]; then
         log_error "Global config not found: $global_config"
         exit 1
     fi
 
-    # Resolve project config and detect source layout
     resolve_project_config_path
 
-    # Load project-level defaults and post_sync settings from agent_sync.yaml
     if [[ -n "$PROJECT_CONFIG_PATH" ]]; then
         local cfg_default_enabled cfg_default_cleanup cfg_allow_post_sync cfg_skip_post_sync
         cfg_default_enabled=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.enabled")
@@ -630,10 +572,10 @@ main() {
         cfg_allow_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.allow")
         cfg_skip_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.skip")
 
+        # shellcheck disable=SC2034
         [[ -n "$cfg_default_enabled" ]] && DEFAULT_ENABLED="$cfg_default_enabled"
         [[ -n "$cfg_default_cleanup" ]] && DEFAULT_CLEANUP="$cfg_default_cleanup"
 
-        # Env vars take precedence: only apply config value if env var was not explicitly set
         if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$cfg_allow_post_sync" == "true" ]]; then
             ALLOW_POST_SYNC="true"
         fi
@@ -648,13 +590,13 @@ main() {
         fi
     fi
 
-    # 1. Load global defaults
+    # 1. Global defaults
     SOURCE_AGENTS=$(parse_yaml_value "$global_config" "source.agents")
     SOURCE_RULES=$(parse_yaml_value "$global_config" "source.rules")
     SOURCE_SKILLS=$(parse_yaml_value "$global_config" "source.skills")
     SOURCE_TOOLS=$(parse_yaml_value "$global_config" "source.tools")
 
-    # 2. Auto-detect local custom directories (legacy or flat layout)
+    # 2. Auto-detect local directories
     if [[ -f "$REPO_ROOT/.ai/src/AGENTS.md" ]]; then
         SOURCE_AGENTS=".ai/src/AGENTS.md"
     elif [[ -f "$REPO_ROOT/.ai/AGENTS.md" ]]; then
@@ -693,7 +635,6 @@ main() {
         SOURCE_SUBAGENTS=".ai/agents"
     fi
 
-    # Apply optional project-level overrides from agent_sync.yaml
     local override_agents override_rules override_skills override_tools override_commands override_subagents
     override_agents=$(resolve_source_override "agents")
     override_rules=$(resolve_source_override "rules")
@@ -705,127 +646,68 @@ main() {
     [[ -n "$override_agents" ]] && SOURCE_AGENTS="$override_agents"
     [[ -n "$override_rules" ]] && SOURCE_RULES="$override_rules"
     [[ -n "$override_skills" ]] && SOURCE_SKILLS="$override_skills"
+    # shellcheck disable=SC2034
     [[ -n "$override_tools" ]] && SOURCE_TOOLS="$override_tools"
     [[ -n "$override_commands" ]] && SOURCE_COMMANDS="$override_commands"
     [[ -n "$override_subagents" ]] && SOURCE_SUBAGENTS="$override_subagents"
 
-    if [[ -z "$SOURCE_TOOLS" ]]; then
-        SOURCE_TOOLS="lib/tools"
-        log_warning "source.tools is not set, falling back to $SOURCE_TOOLS"
-    fi
-
-    local source_agents_abs source_tools_abs
+    local source_agents_abs
     source_agents_abs=$(resolve_source_path "$SOURCE_AGENTS" "source.agents")
-    source_tools_abs=$(resolve_source_path "$SOURCE_TOOLS" "source.tools")
-
     if [[ ! -f "$source_agents_abs" ]]; then
         log_error "Source agents file not found: $source_agents_abs"
-        log_error "Expected either .ai/src layout, .ai layout, or agent_sync.yaml overrides"
+        log_error "Run 'agentsync init' or set source.agents in agent_sync.yaml"
         exit 1
     fi
 
-    local tools_dir_abs="$source_tools_abs"
-    if [[ ! -d "$tools_dir_abs" ]]; then
-        log_error "Tool config directory not found: $source_tools_abs"
-        log_error "Set source.tools in agent_sync.yaml if your layout is custom"
+    # Build catalog of tools to process: union of base + any user override files.
+    local -a all_tools=()
+    local t
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        all_tools+=("$t")
+    done < <(list_all_tools)
+
+    if [[ ${#all_tools[@]} -eq 0 ]]; then
+        log_error "No tools found in base catalog ($(tool_resolver_base_dir))"
+        log_error "AgentSync installation may be corrupted — try 'agentsync update'"
         exit 1
     fi
 
-    # Process each tool config
+    # First pass: collect paths from enabled tools (for gitignore + cleanup safety).
     local -a generated_paths=()
-    for tool_config in "$tools_dir_abs"/*.yaml; do
-        [[ -f "$tool_config" ]] || continue
-        local tool_file_basename
-        tool_file_basename=$(basename "$tool_config")
-        if [[ "$tool_file_basename" == _* ]]; then
+    for t in "${all_tools[@]}"; do
+        if ! is_tool_enabled "$t"; then
             continue
         fi
+        local key raw abs rel
+        for key in agents rules skills commands subagents settings mcp hooks; do
+            raw=$(get_tool_value "$t" "targets.$key.dest")
+            [[ -z "$raw" ]] && continue
+            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $t") || continue
+            ENABLED_DEST_PATHS+=("$abs")
+            rel=$(to_repo_relative_path "$abs")
+            case "$key" in
+                rules|skills|commands|subagents)
+                    generated_paths+=("$rel/")
+                    ;;
+                *)
+                    generated_paths+=("$rel")
+                    ;;
+            esac
+        done
+    done
+
+    # Second pass: sync enabled tools, cleanup disabled ones.
+    for t in "${all_tools[@]}"; do
         ((TOTAL_COUNT++)) || true
-        
-        # Check enabled status for gitignore collection even if skipping sync (for dry-run accuracy we might need to think, 
-        # but here we follow config truth)
-        local enabled_value
-        enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_file_basename") || exit 1
-        if [[ "$enabled_value" == "true" ]]; then
-             # Collect paths for gitignore
-             local d_agents d_rules d_skills d_agents_abs d_rules_abs d_skills_abs
-             local d_agents_rel d_rules_rel d_skills_rel
-             d_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
-             d_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
-             d_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
-
-             if [[ -n "$d_agents" ]]; then
-                 d_agents_abs=$(resolve_dest_path "$d_agents" "targets.agents.dest in $tool_file_basename")
-                 d_agents_rel=$(to_repo_relative_path "$d_agents_abs")
-                 generated_paths+=("$d_agents_rel")
-                 ENABLED_DEST_PATHS+=("$d_agents_abs")
-             fi
-             if [[ -n "$d_rules" ]]; then
-                 d_rules_abs=$(resolve_dest_path "$d_rules" "targets.rules.dest in $tool_file_basename")
-                 d_rules_rel=$(to_repo_relative_path "$d_rules_abs")
-                 generated_paths+=("$d_rules_rel/")
-                 ENABLED_DEST_PATHS+=("$d_rules_abs")
-             fi
-             if [[ -n "$d_skills" ]]; then
-                 d_skills_abs=$(resolve_dest_path "$d_skills" "targets.skills.dest in $tool_file_basename")
-                 d_skills_rel=$(to_repo_relative_path "$d_skills_abs")
-                 generated_paths+=("$d_skills_rel/")
-                 ENABLED_DEST_PATHS+=("$d_skills_abs")
-             fi
-
-             local d_commands d_subagents
-             d_commands=$(parse_yaml_value "$tool_config" "targets.commands.dest")
-             d_subagents=$(parse_yaml_value "$tool_config" "targets.subagents.dest")
-             if [[ -n "$d_commands" ]]; then
-                 local d_commands_abs d_commands_rel
-                 d_commands_abs=$(resolve_dest_path "$d_commands" "targets.commands.dest in $tool_file_basename")
-                 d_commands_rel=$(to_repo_relative_path "$d_commands_abs")
-                 generated_paths+=("$d_commands_rel/")
-                 ENABLED_DEST_PATHS+=("$d_commands_abs")
-             fi
-             if [[ -n "$d_subagents" ]]; then
-                 local d_subagents_abs d_subagents_rel
-                 d_subagents_abs=$(resolve_dest_path "$d_subagents" "targets.subagents.dest in $tool_file_basename")
-                 d_subagents_rel=$(to_repo_relative_path "$d_subagents_abs")
-                 generated_paths+=("$d_subagents_rel/")
-                 ENABLED_DEST_PATHS+=("$d_subagents_abs")
-             fi
-
-             # Settings are generated but typically committed (not gitignored)
-             # MCP configs are generated and gitignored (may contain local paths)
-             local d_settings d_mcp
-             d_settings=$(parse_yaml_value "$tool_config" "targets.settings.dest")
-             d_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.dest")
-             if [[ -n "$d_settings" ]]; then
-                 local d_settings_abs d_settings_rel
-                 d_settings_abs=$(resolve_dest_path "$d_settings" "targets.settings.dest in $tool_file_basename")
-                 d_settings_rel=$(to_repo_relative_path "$d_settings_abs")
-                 generated_paths+=("$d_settings_rel")
-                 ENABLED_DEST_PATHS+=("$d_settings_abs")
-             fi
-             if [[ -n "$d_mcp" ]]; then
-                 local d_mcp_abs d_mcp_rel
-                 d_mcp_abs=$(resolve_dest_path "$d_mcp" "targets.mcp.dest in $tool_file_basename")
-                 d_mcp_rel=$(to_repo_relative_path "$d_mcp_abs")
-                 generated_paths+=("$d_mcp_rel")
-                 ENABLED_DEST_PATHS+=("$d_mcp_abs")
-             fi
-             local d_hooks
-             d_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
-             if [[ -n "$d_hooks" ]]; then
-                 local d_hooks_abs d_hooks_rel
-                 d_hooks_abs=$(resolve_dest_path "$d_hooks" "targets.hooks.dest in $tool_file_basename")
-                 d_hooks_rel=$(to_repo_relative_path "$d_hooks_abs")
-                 generated_paths+=("$d_hooks_rel")
-                 ENABLED_DEST_PATHS+=("$d_hooks_abs")
-             fi
+        if is_tool_enabled "$t"; then
+            sync_tool "$t"
+        else
+            cleanup_tool "$t"
         fi
-
-        sync_tool "$tool_config"
         echo ""
     done
-    
-    # Update .gitignore if not dry-run and not disabled
+
     if [[ "$DRY_RUN" != "true" ]] && [[ "$UPDATE_GITIGNORE" == "true" ]]; then
         log_separator
         log_info "Updating .gitignore..."
@@ -835,8 +717,7 @@ main() {
         fi
         update_gitignore "$REPO_ROOT/.gitignore" "$generated_paths_payload"
     fi
-    
-    # Print summary
+
     log_separator
     local summary="Synced $SYNCED_COUNT/$TOTAL_COUNT tools"
     if [[ $SKIPPED_COUNT -gt 0 ]]; then

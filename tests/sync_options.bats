@@ -67,7 +67,7 @@ load test_helper
     enable_tools claude
     run_agentsync sync --only claude
     [ -f "CLAUDE.md" ]
-    sed -i.bak 's/^enabled: true$/enabled: false/' .ai/src/tools/claude.yaml
+    run_agentsync disable claude >/dev/null
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]

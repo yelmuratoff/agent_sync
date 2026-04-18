@@ -53,10 +53,16 @@ _load_lib() {
 
     source "$lib_dir/cli_colors.sh"
     source "$lib_dir/resolve.sh"
+    source "$lib_dir/yaml.sh"
+    source "$lib_dir/yaml_edit.sh"
+    source "$lib_dir/tool_resolver.sh"
     source "$lib_dir/init.sh"
     source "$lib_dir/list.sh"
+    source "$lib_dir/enable.sh"
+    source "$lib_dir/customize.sh"
+    source "$lib_dir/doctor.sh"
+    source "$lib_dir/resolve_cmd.sh"
     source "$lib_dir/generate.sh"
-    source "$lib_dir/yaml.sh"
     source "$lib_dir/update.sh"
     source "$lib_dir/release.sh"
     source "$lib_dir/export.sh"
@@ -77,9 +83,16 @@ print_usage() {
     echo "    $(_cyan "init")           Create .ai/ structure in current project"
     echo "    $(_cyan "sync")           Sync instructions to all enabled tools"
     echo "    $(_cyan "check")          Verify outputs are in sync with source"
+    echo "    $(_cyan "list")           Show available tools and their status"
+    echo "    $(_cyan "enable")         Opt in to one or more tools"
+    echo "    $(_cyan "disable")        Opt out of one or more tools"
+    echo "    $(_cyan "customize")      Create a per-field override for a tool"
+    echo "    $(_cyan "show")           Show effective config for a tool"
+    echo "    $(_cyan "diff")           Show user overrides vs base defaults"
+    echo "    $(_cyan "resolve")        Interactively reconcile overrides with base values"
+    echo "    $(_cyan "doctor")         Validate setup and surface warnings"
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
-    echo "    $(_cyan "list")           Show available tools and their status"
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
     echo "    $(_cyan "import")         Import config from GitHub, archive, or directory"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
@@ -94,6 +107,13 @@ print_usage() {
     echo ""
     echo "  $(_green "EXAMPLES")"
     echo "    agentsync init"
+    echo "    agentsync list"
+    echo "    agentsync enable claude cursor"
+    echo "    agentsync customize cursor"
+    echo "    agentsync show cursor"
+    echo "    agentsync diff"
+    echo "    agentsync doctor"
+    echo "    agentsync resolve"
     echo "    agentsync sync"
     echo "    agentsync sync --only claude,cursor"
     echo "    agentsync sync --dry-run"
@@ -102,8 +122,6 @@ print_usage() {
     echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
     echo "    agentsync export"
     echo "    agentsync import https://github.com/user/repo"
-    echo "    agentsync import agentsync-bundle.tar.gz"
-    echo "    agentsync generate | pbcopy"
     echo ""
     echo "  $(_green "DOCS")"
     _dim  "    https://github.com/yelmuratoff/agent"; echo ""
@@ -145,7 +163,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|customize|show|diff|resolve|doctor|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -158,6 +176,13 @@ main() {
         generate|gen)  shift; cmd_generate "$*" ;;
         export)        shift; cmd_export "$@" ;;
         import)        shift; cmd_import "$@" ;;
+        enable)        shift; cmd_enable "$@" ;;
+        disable)       shift; cmd_disable "$@" ;;
+        customize)     shift; cmd_customize "$@" ;;
+        show)          shift; cmd_show "$@" ;;
+        diff)          shift; cmd_diff "$@" ;;
+        resolve)       shift; cmd_resolve "$@" ;;
+        doctor)        cmd_doctor ;;
         update)        cmd_update ;;
         release)       shift; cmd_release "$@" ;;
         list|ls)       cmd_list ;;

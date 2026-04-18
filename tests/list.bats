@@ -12,29 +12,29 @@ teardown() {
     teardown_test_project
 }
 
-@test "list shows tools" {
+@test "list shows tools header" {
     run run_agentsync list
     [ "$status" -eq 0 ]
     [[ "$output" == *"AgentSync Tools"* ]]
 }
 
-@test "list shows enabled tools with green dot" {
+@test "list shows base tools from catalog" {
     run run_agentsync list
     [ "$status" -eq 0 ]
     [[ "$output" == *"Claude Code"* ]]
     [[ "$output" == *"Cursor"* ]]
 }
 
-@test "list shows disabled tools" {
+@test "list shows available for unenabled tools" {
     run run_agentsync list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"disabled"* ]]
+    [[ "$output" == *"available"* ]]
 }
 
-@test "list shows tool count" {
+@test "list reports enabled tool count" {
     run run_agentsync list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"tool(s) configured"* ]]
+    [[ "$output" == *"enabled"* ]]
 }
 
 @test "list alias ls works" {
@@ -43,9 +43,16 @@ teardown() {
     [[ "$output" == *"AgentSync Tools"* ]]
 }
 
-@test "list fails without .ai/src/tools" {
+@test "list works even without .ai directory (uses base catalog)" {
     rm -rf .ai
     run run_agentsync list
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"No tools directory"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AgentSync Tools"* ]]
+}
+
+@test "list shows enabled marker after enable" {
+    run_agentsync enable claude
+    run run_agentsync list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"enabled"* ]]
 }

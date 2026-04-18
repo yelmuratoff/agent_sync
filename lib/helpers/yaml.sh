@@ -107,6 +107,113 @@ parse_yaml_value() {
     return 0
 }
 
+# Parse a YAML list under a key path.
+# Usage: parse_yaml_list "file.yaml" "tools.enabled"
+# Prints each list item on its own line.
+# Supports both inline `key: [a, b, c]` and block style:
+#   key:
+#     - a
+#     - b
+parse_yaml_list() {
+    local file="$1"
+    local key_path="$2"
+
+    if [[ ! -f "$file" ]]; then
+        return 0
+    fi
+
+    # Try inline style first
+    local inline_value
+    inline_value=$(parse_yaml_value "$file" "$key_path")
+    if [[ "$inline_value" =~ ^\[(.*)\]$ ]]; then
+        local items="${BASH_REMATCH[1]}"
+        local IFS=','
+        local item
+        for item in $items; do
+            item=$(_yaml_normalize_scalar "$item")
+            [[ -n "$item" ]] && echo "$item"
+        done
+        return 0
+    fi
+
+    # Block style: walk the file and locate the key, then read dash-items under it.
+    local -a keys
+    IFS='.' read -ra keys <<< "$key_path"
+    local depth=${#keys[@]}
+    local in_section=false
+    local section_indent=0
+    local looking_for="${keys[0]}"
+    local next_key_index=1
+    local collecting=false
+    local collect_min_indent=-1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Always skip blanks/comments
+        if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        local stripped="${line#"${line%%[![:space:]]*}"}"
+        local indent=$(( ${#line} - ${#stripped} ))
+
+        if [[ "$collecting" == "true" ]]; then
+            # First dash-line defines the list's expected indent.
+            if [[ "$stripped" =~ ^-[[:space:]]*(.*)$ ]]; then
+                if [[ $collect_min_indent -lt 0 ]]; then
+                    collect_min_indent=$indent
+                fi
+                if [[ $indent -eq $collect_min_indent ]]; then
+                    local item="${BASH_REMATCH[1]}"
+                    item=$(_yaml_normalize_scalar "$item")
+                    [[ -n "$item" ]] && echo "$item"
+                    continue
+                fi
+            fi
+            # Anything else at same-or-less indent ends the list.
+            if [[ $collect_min_indent -ge 0 ]] && [[ $indent -lt $collect_min_indent ]]; then
+                return 0
+            fi
+            # Nested content we don't care about
+            continue
+        fi
+
+        local line_key
+        if [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):[[:space:]]*(.*) ]]; then
+            line_key="${BASH_REMATCH[1]}"
+        elif [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):$ ]]; then
+            line_key="${BASH_REMATCH[1]}"
+        else
+            continue
+        fi
+
+        if [[ "$in_section" == false ]]; then
+            if [[ $indent -eq 0 ]] && [[ "$line_key" == "$looking_for" ]]; then
+                if [[ $next_key_index -eq $depth ]]; then
+                    collecting=true
+                    continue
+                fi
+                in_section=true
+                section_indent=$indent
+                looking_for="${keys[$next_key_index]}"
+                ((next_key_index++))
+            fi
+        else
+            if [[ $indent -le $section_indent ]]; then
+                return 0
+            fi
+            if [[ "$line_key" == "$looking_for" ]]; then
+                if [[ $next_key_index -eq $depth ]]; then
+                    collecting=true
+                    continue
+                fi
+                section_indent=$indent
+                looking_for="${keys[$next_key_index]}"
+                ((next_key_index++))
+            fi
+        fi
+    done < "$file"
+}
+
 # Parse boolean value from YAML file
 # Usage: parse_yaml_bool "file.yaml" "key.subkey"
 # Returns: 0 if true, 1 if false or not found
