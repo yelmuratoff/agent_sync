@@ -2,7 +2,6 @@
 # agentsync update — self-update and update-check logic.
 
 readonly AGENTSYNC_REPO="yelmuratoff/agent"
-readonly UPDATE_CHECK_INTERVAL=86400  # 24 hours
 
 cmd_update() {
     local install_dir
@@ -34,7 +33,6 @@ cmd_update() {
     if [[ "$local_head" == "$remote_head" ]]; then
         echo "  $(_green "Already up to date!") (v${VERSION})"
         echo ""
-        _update_check_timestamp "$install_dir"
         return 0
     fi
 
@@ -61,7 +59,8 @@ cmd_update() {
         read -r new_version < "$install_dir/VERSION"
     fi
 
-    _update_check_timestamp "$install_dir"
+    # Clear the update cache — version is now current
+    rm -f "$install_dir/.update_cache" 2>/dev/null || true
 
     echo ""
     if [[ "$old_version" != "$new_version" ]]; then
@@ -153,9 +152,15 @@ _show_changelog_sections() {
     done <<< "$sorted_versions"
 }
 
-_update_check_timestamp() {
-    local install_dir="$1"
-    date +%s > "$install_dir/.last_update_check" 2>/dev/null || true
+# Fetch latest version from GitHub in background and write to cache file.
+# Called as a fire-and-forget subshell — never blocks the main process.
+_bg_fetch_latest_version() {
+    local cache_file="$1"
+    local latest_tag
+    latest_tag=$(curl -sf --max-time 5 \
+        "https://api.github.com/repos/$AGENTSYNC_REPO/tags?per_page=1" \
+        2>/dev/null | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1) || return 0
+    [[ -n "$latest_tag" ]] && printf '%s\n' "$latest_tag" > "$cache_file" 2>/dev/null || true
 }
 
 check_for_updates() {
@@ -166,61 +171,25 @@ check_for_updates() {
     install_dir=$(resolve_install_dir 2>/dev/null) || return 0
     [[ -d "$install_dir/.git" ]] || return 0
 
-    local ts_file="$install_dir/.last_update_check"
-    local now
-    now=$(date +%s)
+    local cache_file="$install_dir/.update_cache"
 
-    if [[ -f "$ts_file" ]]; then
-        local last_check
-        read -r last_check < "$ts_file" 2>/dev/null || last_check=0
-        local elapsed=$(( now - last_check ))
-        if (( elapsed < UPDATE_CHECK_INTERVAL )); then
-            return 0
+    # Show banner from cache (written by previous background fetch)
+    if [[ -f "$cache_file" ]]; then
+        local latest_tag
+        read -r latest_tag < "$cache_file" 2>/dev/null || latest_tag=""
+        if [[ -n "$latest_tag" ]] \
+            && [[ "$latest_tag" != "$VERSION" ]] \
+            && [[ "$(printf '%s\n%s' "$VERSION" "$latest_tag" | sort -V | tail -1)" == "$latest_tag" ]]; then
+            echo ""
+            echo "  ╭──────────────────────────────────────────────────────╮"
+            echo "  │  $(_yellow "Update available"): $(_dim "v${VERSION}") → $(_green "v${latest_tag}")              "
+            echo "  │  Run: $(_cyan "agentsync update")                                "
+            echo "  ╰──────────────────────────────────────────────────────╯"
+            echo ""
         fi
     fi
 
-    local latest_tag
-    latest_tag=$(curl -sf --max-time 3 \
-        "https://api.github.com/repos/$AGENTSYNC_REPO/tags?per_page=1" \
-        2>/dev/null | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1) || true
-
-    _update_check_timestamp "$install_dir"
-
-    if [[ -z "$latest_tag" ]]; then
-        return 0
-    fi
-
-    if [[ "$latest_tag" != "$VERSION" ]] && [[ "$(printf '%s\n%s' "$VERSION" "$latest_tag" | sort -V | tail -1)" == "$latest_tag" ]]; then
-        # Fetch changelog summary for the latest version
-        local changelog_hint=""
-        local remote_changelog
-        remote_changelog=$(curl -sf --max-time 3 \
-            "https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/CHANGELOG.md" 2>/dev/null) || true
-
-        if [[ -n "$remote_changelog" ]]; then
-            # Count entries in the target version section
-            local count=0
-            local in_section=false
-            while IFS= read -r line; do
-                if [[ "$line" == "## $latest_tag"* ]]; then
-                    in_section=true
-                    continue
-                fi
-                if [[ "$in_section" == "true" ]]; then
-                    [[ "$line" == "## "* ]] && break
-                    [[ "$line" == "- "* ]] && count=$((count + 1))
-                fi
-            done <<< "$remote_changelog"
-            if [[ $count -gt 0 ]]; then
-                changelog_hint=" ($count changes)"
-            fi
-        fi
-
-        echo ""
-        echo "  ╭──────────────────────────────────────────────────────╮"
-        echo "  │  $(_yellow "Update available"): $(_dim "v${VERSION}") → $(_green "v${latest_tag}")${changelog_hint}              "
-        echo "  │  Run: $(_cyan "agentsync update")                                "
-        echo "  ╰──────────────────────────────────────────────────────╯"
-        echo ""
-    fi
+    # Kick off background fetch for next run (fire-and-forget)
+    ( _bg_fetch_latest_version "$cache_file" ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
 }
