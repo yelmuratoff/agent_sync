@@ -4,6 +4,25 @@
 readonly AGENTSYNC_REPO="yelmuratoff/agent"
 
 cmd_update() {
+    local strict=false
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --strict) strict=true ;;
+            --help|-h)
+                echo "Usage: agentsync update [--strict]"
+                echo ""
+                echo "  --strict    Exit non-zero if upstream changed a field you have overridden."
+                return 0
+                ;;
+            *)
+                echo "$(_red "Error"): Unknown flag: $arg" >&2
+                echo "Usage: agentsync update [--strict]" >&2
+                exit 2
+                ;;
+        esac
+    done
+
     local install_dir
     install_dir=$(resolve_install_dir 2>/dev/null) || {
         echo "$(_red "Error"): AgentSync installation not found." >&2
@@ -11,6 +30,10 @@ cmd_update() {
         echo "  curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2
         exit 1
     }
+
+    # Project dir for pending-resolutions — capture before we cd away.
+    local project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
+    project_dir="$(cd "$project_dir" && pwd)"
 
     echo ""
     _bold "  AgentSync Update"; echo ""
@@ -35,6 +58,14 @@ cmd_update() {
         echo ""
         return 0
     fi
+
+    # Snapshot the tool catalog BEFORE the swap. Conflict detection compares
+    # this against the newly-pulled catalog. Clean up on any exit path.
+    local snapshot_dir="$install_dir/.snapshot"
+    rm -rf "$snapshot_dir"
+    snapshot_save "$install_dir" "$snapshot_dir" || true
+    # shellcheck disable=SC2064
+    trap "rm -rf '$snapshot_dir'" EXIT
 
     echo "  Updating..."
     if ! git pull --quiet origin main 2>/dev/null; then
@@ -72,6 +103,59 @@ cmd_update() {
     # Show what's new from CHANGELOG.md (all versions between old and new)
     _show_changelog_range "$install_dir" "$old_version" "$new_version"
 
+    # Conflict detection: does upstream change any field the project overrides?
+    local had_conflicts=false
+    if [[ -d "$snapshot_dir/tools" ]]; then
+        local conflicts
+        conflicts=$(snapshot_diff "$snapshot_dir" "$install_dir" \
+            | snapshot_find_conflicts "$project_dir")
+        if [[ -n "$conflicts" ]]; then
+            had_conflicts=true
+            _show_update_conflicts "$conflicts"
+            if [[ -d "$project_dir/.ai" ]]; then
+                printf '%s\n' "$conflicts" \
+                    | snapshot_write_pending_resolutions \
+                        "$project_dir" "$old_version" "$new_version"
+                echo "  $(_dim "Queued in") $(_cyan ".ai/.pending-resolutions.yaml")$(_dim " — run") $(_cyan "agentsync resolve")$(_dim " to walk them.")"
+                echo ""
+            fi
+        fi
+    fi
+
+    echo ""
+
+    if [[ "$strict" == "true" ]] && [[ "$had_conflicts" == "true" ]]; then
+        exit 1
+    fi
+}
+
+# Pretty-print conflicts grouped by tool. Input: TSV lines on stdin via arg-1.
+# Line format: tool<TAB>field<TAB>base_before<TAB>base_after<TAB>your_override
+_show_update_conflicts() {
+    local conflicts="$1"
+    echo ""
+    echo "  $(_yellow "Upstream touched fields you have overridden:")"
+    echo ""
+
+    local current=""
+    local line tool field base_before base_after your_override
+    # Sort by tool so grouping works without extra state.
+    while IFS=$'\t' read -r tool field base_before base_after your_override; do
+        [[ -z "$tool" ]] && continue
+        if [[ "$tool" != "$current" ]]; then
+            [[ -n "$current" ]] && echo ""
+            echo "    $(_bold "$tool")"
+            current="$tool"
+        fi
+        echo "      $(_yellow "◆") $field"
+        printf '          %s %s → %s\n' \
+            "$(_dim "base:")" \
+            "${base_before:-$(_dim "(unset)")}" \
+            "${base_after:-$(_dim "(unset)")}"
+        printf '          %s %s\n' \
+            "$(_dim "your override:")" \
+            "${your_override:-$(_dim "(unset)")}"
+    done < <(printf '%s\n' "$conflicts" | LC_ALL=C sort)
     echo ""
 }
 

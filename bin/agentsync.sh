@@ -64,6 +64,7 @@ _load_lib() {
     source "$lib_dir/doctor.sh"
     source "$lib_dir/resolve_cmd.sh"
     source "$lib_dir/generate.sh"
+    source "$lib_dir/snapshot.sh"
     source "$lib_dir/update.sh"
     source "$lib_dir/release.sh"
     source "$lib_dir/export.sh"
@@ -188,7 +189,7 @@ main() {
         diff)          shift; cmd_diff "$@" ;;
         resolve)       shift; cmd_resolve "$@" ;;
         doctor)        cmd_doctor ;;
-        update)        cmd_update ;;
+        update)        shift; cmd_update "$@" ;;
         release)       shift; cmd_release "$@" ;;
         list|ls)       cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;

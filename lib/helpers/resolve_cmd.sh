@@ -66,6 +66,17 @@ cmd_resolve() {
 
     _resolve_prepare_context
 
+    # Load pending-resolutions queue from the last `agentsync update`, if any.
+    # Populates the global `_RESOLVE_PENDING_PAIRS` (newline-separated "tool<TAB>field").
+    _RESOLVE_PENDING_PAIRS=""
+    local pending_count=0
+    if type snapshot_read_pending_pairs >/dev/null 2>&1; then
+        _RESOLVE_PENDING_PAIRS=$(snapshot_read_pending_pairs "$REPO_ROOT" || true)
+        if [[ -n "$_RESOLVE_PENDING_PAIRS" ]]; then
+            pending_count=$(printf '%s\n' "$_RESOLVE_PENDING_PAIRS" | sed '/^$/d' | wc -l | tr -d ' ')
+        fi
+    fi
+
     local overrides
     overrides=$(list_user_override_tools)
 
@@ -73,6 +84,9 @@ cmd_resolve() {
         echo ""
         echo "  $(_dim "No user overrides — nothing to resolve.")"
         echo ""
+        if [[ "$pending_count" -gt 0 ]] && type snapshot_clear_pending >/dev/null 2>&1; then
+            snapshot_clear_pending "$REPO_ROOT"
+        fi
         return 0
     fi
 
@@ -87,6 +101,13 @@ cmd_resolve() {
         echo "  Use $(_cyan "agentsync diff") for a full list."
         echo ""
         return 0
+    fi
+
+    if [[ "$pending_count" -gt 0 ]]; then
+        echo ""
+        echo "  $(_yellow "⚡ ${pending_count} field(s) flagged by the last") $(_cyan "agentsync update")"
+        echo "  $(_dim "Upstream changed base values while you had overrides. Flagged entries")"
+        echo "  $(_dim "are marked with") $(_yellow "⚡") $(_dim "below.")"
     fi
 
     local matched=false
@@ -105,10 +126,27 @@ cmd_resolve() {
         return 1
     fi
 
+    # Clear the pending queue — user has walked through every override.
+    if [[ "$pending_count" -gt 0 ]] && [[ -z "$tool_filter" ]] \
+        && type snapshot_clear_pending >/dev/null 2>&1; then
+        snapshot_clear_pending "$REPO_ROOT"
+    fi
+
     echo ""
     _green "Done."; echo ""
     echo "  Run $(_cyan "agentsync sync") to apply any changes."
     echo ""
+}
+
+# Return 0 if the "tool<TAB>field" pair is in the pending-resolutions queue.
+_resolve_is_pending() {
+    local tool="$1"
+    local field="$2"
+    [[ -n "${_RESOLVE_PENDING_PAIRS:-}" ]] || return 1
+    local tab
+    tab=$(printf '\t')
+    local needle="${tool}${tab}${field}"
+    printf '%s\n' "$_RESOLVE_PENDING_PAIRS" | grep -Fxq "$needle"
 }
 
 _resolve_one_tool() {
@@ -144,7 +182,13 @@ _resolve_one_tool() {
         fi
 
         any_diff=true
-        echo "    $(_yellow "◆") $key"
+        local marker
+        if _resolve_is_pending "$tool_name" "$key"; then
+            marker=$(_yellow "⚡")
+        else
+            marker=$(_yellow "◆")
+        fi
+        echo "    $marker $key"
         printf "        %s %s\n" "$(_dim "user:")" "$u"
         if [[ -n "$b" ]]; then
             printf "        %s %s\n" "$(_dim "base:")" "$b"

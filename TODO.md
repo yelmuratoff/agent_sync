@@ -59,17 +59,17 @@ Deferred work for future releases. Scoped out of the 0.6.0 layered-config releas
 
 **Checklist:**
 
-- [ ] Design snapshot file format (location: `$AGENTSYNC_HOME/.snapshot.yaml`?)
-- [ ] `lib/helpers/snapshot.sh` — `snapshot_write` / `snapshot_diff` helpers
-- [ ] Hook snapshot write into `cmd_update` pre-swap
-- [ ] Hook snapshot diff into `cmd_update` post-swap
-- [ ] Integrate per-project override check — read project `.ai/src/tools/*.yaml`
-- [ ] Write `.ai/.pending-resolutions.yaml` when conflicts found
-- [ ] Extend `cmd_resolve` to consume the pending-resolutions file (prioritize those fields)
-- [ ] `--strict` flag for CI: non-zero exit on any upstream-vs-override conflict
-- [ ] `tests/update_snapshot.bats` — fake old/new tarballs, verify detection
-- [ ] Document the `.pending-resolutions.yaml` file in the `agentsync` skill
-- [ ] ShellCheck pass
+- [x] Design snapshot file format (location: `$AGENTSYNC_HOME/.snapshot/tools/`)
+- [x] `lib/helpers/snapshot.sh` — `snapshot_save` / `snapshot_diff` / `snapshot_find_conflicts` / `snapshot_write_pending_resolutions` / `snapshot_read_pending_pairs` / `snapshot_clear_pending`
+- [x] Hook snapshot write into `cmd_update` pre-swap
+- [x] Hook snapshot diff into `cmd_update` post-swap
+- [x] Integrate per-project override check — read project `.ai/src/tools/*.yaml`
+- [x] Write `.ai/.pending-resolutions.yaml` when conflicts found
+- [x] Extend `cmd_resolve` to consume the pending-resolutions file (flag fields with ⚡, clear queue when walked)
+- [x] `--strict` flag for CI: non-zero exit on any upstream-vs-override conflict
+- [x] `tests/update_snapshot.bats` — fake old/new catalogs, verify detection
+- [x] Document the `.pending-resolutions.yaml` file in the `agentsync` skill
+- [x] ShellCheck pass
 
 ---
 

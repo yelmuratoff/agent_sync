@@ -222,6 +222,34 @@ For tools without separate rules/skills directories, use inline options:
 2. Set `name`, `enabled: true`, and configure `targets`.
 3. Run `agentsync sync --only <tool>` to test.
 
+## Updating and Resolving Upstream Drift
+
+When you run `agentsync update`, the CLI snapshots the install-dir tool catalog
+before pulling the new release, then compares it against the newly-pulled catalog
+field-by-field. For every upstream change to a field you have overridden, the update
+prints a warning and writes the list to `.ai/.pending-resolutions.yaml`:
+
+```yaml
+schema: 1
+from_version: "0.7.0"
+to_version: "0.8.0"
+conflicts:
+  - tool: "claude"
+    field: "targets.rules.dest"
+    base_before: ".claude/rules"
+    base_after: ".claude/rules-v2"
+    your_override: ".claude/my-rules"
+```
+
+- `agentsync resolve` reads this queue on startup and flags the affected fields
+  with `⚡`. Walking through every override (not a subset with `resolve <tool>`)
+  clears the queue automatically.
+- Pass `--strict` to `agentsync update` to exit non-zero on any conflict — useful
+  in CI to block a merge until someone reviews upstream changes.
+- The file is non-authoritative: delete it any time if you prefer to ignore the
+  warnings. Your overrides are untouched until you explicitly adopt a base value
+  via `agentsync resolve`.
+
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
