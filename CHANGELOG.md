@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3
+
+### Fixed
+
+- **Sync performance for disabled tools:** dest paths are no longer parsed or resolved for tools with `enabled: false` when cleanup is off. Previously, each skipped tool triggered ~9 `parse_yaml_value` calls and up to 8 path-resolution calls before the enabled check — causing noticeable lag with several disabled tools.
+
 ## 0.5.2
 
 ### Fixed

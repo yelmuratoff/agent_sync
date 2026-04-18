@@ -275,8 +275,53 @@ sync_tool() {
     local tool_name
     tool_name=$(parse_yaml_value "$tool_config" "name")
     [[ -z "$tool_name" ]] && tool_name="$tool_basename"
-    
-    # Read target destinations (once, reused for both cleanup and sync)
+
+    # Check enabled early — skip dest resolution for disabled tools when cleanup is off
+    local enabled_value
+    enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_name") || return 1
+
+    if [[ "$enabled_value" == "false" ]]; then
+        local cleaned=false
+        if [[ "$DEFAULT_CLEANUP" == "true" ]]; then
+            # Read target destinations only when cleanup is needed
+            local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp dest_hooks
+            dest_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
+            dest_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
+            dest_skills=$(parse_yaml_value "$tool_config" "targets.skills.dest")
+            dest_commands=$(parse_yaml_value "$tool_config" "targets.commands.dest")
+            dest_subagents=$(parse_yaml_value "$tool_config" "targets.subagents.dest")
+            dest_settings=$(parse_yaml_value "$tool_config" "targets.settings.dest")
+            dest_mcp=$(parse_yaml_value "$tool_config" "targets.mcp.dest")
+            dest_hooks=$(parse_yaml_value "$tool_config" "targets.hooks.dest")
+            local dest_agents_abs="" dest_rules_abs="" dest_skills_abs="" dest_commands_abs="" dest_subagents_abs="" dest_settings_abs="" dest_mcp_abs="" dest_hooks_abs=""
+            [[ -n "$dest_agents" ]] && dest_agents_abs=$(resolve_dest_path "$dest_agents" "targets.agents.dest for $tool_name")
+            [[ -n "$dest_rules" ]] && dest_rules_abs=$(resolve_dest_path "$dest_rules" "targets.rules.dest for $tool_name")
+            [[ -n "$dest_skills" ]] && dest_skills_abs=$(resolve_dest_path "$dest_skills" "targets.skills.dest for $tool_name")
+            [[ -n "$dest_commands" ]] && dest_commands_abs=$(resolve_dest_path "$dest_commands" "targets.commands.dest for $tool_name")
+            [[ -n "$dest_subagents" ]] && dest_subagents_abs=$(resolve_dest_path "$dest_subagents" "targets.subagents.dest for $tool_name")
+            [[ -n "$dest_settings" ]] && dest_settings_abs=$(resolve_dest_path "$dest_settings" "targets.settings.dest for $tool_name")
+            [[ -n "$dest_mcp" ]] && dest_mcp_abs=$(resolve_dest_path "$dest_mcp" "targets.mcp.dest for $tool_name")
+            [[ -n "$dest_hooks" ]] && dest_hooks_abs=$(resolve_dest_path "$dest_hooks" "targets.hooks.dest for $tool_name")
+            [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
+            [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
+        fi
+
+        if [[ "$cleaned" == "true" ]]; then
+            log_info "Cleaned up $tool_name (disabled)"
+        else
+            log_info "Skipping $tool_name (disabled in config)"
+        fi
+        ((SKIPPED_COUNT++)) || true
+        return 0
+    fi
+
+    # Read target destinations (once, reused for sync)
     local dest_agents dest_rules dest_skills dest_commands dest_subagents dest_settings dest_mcp dest_hooks
     dest_agents=$(parse_yaml_value "$tool_config" "targets.agents.dest")
     dest_rules=$(parse_yaml_value "$tool_config" "targets.rules.dest")
@@ -296,33 +341,6 @@ sync_tool() {
     [[ -n "$dest_settings" ]] && dest_settings_abs=$(resolve_dest_path "$dest_settings" "targets.settings.dest for $tool_name")
     [[ -n "$dest_mcp" ]] && dest_mcp_abs=$(resolve_dest_path "$dest_mcp" "targets.mcp.dest for $tool_name")
     [[ -n "$dest_hooks" ]] && dest_hooks_abs=$(resolve_dest_path "$dest_hooks" "targets.hooks.dest for $tool_name")
-
-    local enabled_value
-    enabled_value=$(read_tool_enabled_flag "$tool_config" "$tool_name") || return 1
-
-    # Check if tool is enabled in config
-    if [[ "$enabled_value" == "false" ]]; then
-        # Cleanup disabled tool directories (skip paths claimed by enabled tools)
-        local cleaned=false
-        if [[ "$DEFAULT_CLEANUP" == "true" ]]; then
-            [[ -n "$dest_agents_abs" ]] && ! is_path_protected "$dest_agents_abs" && cleanup_path "$dest_agents_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_rules_abs" ]] && ! is_path_protected "$dest_rules_abs" && cleanup_path "$dest_rules_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_skills_abs" ]] && ! is_path_protected "$dest_skills_abs" && cleanup_path "$dest_skills_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_commands_abs" ]] && ! is_path_protected "$dest_commands_abs" && cleanup_path "$dest_commands_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_subagents_abs" ]] && ! is_path_protected "$dest_subagents_abs" && cleanup_path "$dest_subagents_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_settings_abs" ]] && ! is_path_protected "$dest_settings_abs" && cleanup_path "$dest_settings_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_mcp_abs" ]] && ! is_path_protected "$dest_mcp_abs" && cleanup_path "$dest_mcp_abs" "$DRY_RUN" && cleaned=true
-            [[ -n "$dest_hooks_abs" ]] && ! is_path_protected "$dest_hooks_abs" && cleanup_path "$dest_hooks_abs" "$DRY_RUN" && cleaned=true
-        fi
-
-        if [[ "$cleaned" == "true" ]]; then
-            log_info "Cleaned up $tool_name (disabled)"
-        else
-            log_info "Skipping $tool_name (disabled in config)"
-        fi
-        ((SKIPPED_COUNT++)) || true
-        return 0
-    fi
     
     # Check CLI filters
     if ! should_sync_tool "$tool_basename"; then
