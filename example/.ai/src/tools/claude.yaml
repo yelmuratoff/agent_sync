@@ -26,4 +26,4 @@ targets:
 
   mcp:
     source: ".ai/src/mcp/claude.json"
-    dest: ".claude/.mcp.json"
+    dest: ".mcp.json"

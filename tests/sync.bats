@@ -146,7 +146,7 @@ setup() {
 # ── MCP / settings (per-tool) ────────────────────────────────────────────────
 
 @test "sync: Claude .mcp.json exists" {
-    [ -f ".claude/.mcp.json" ]
+    [ -f ".mcp.json" ]
 }
 
 @test "sync: Cursor mcp.json exists" {

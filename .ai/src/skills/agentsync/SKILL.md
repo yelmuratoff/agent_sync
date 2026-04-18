@@ -101,18 +101,18 @@ Events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`,
 
 Each tool has its own canonical MCP location. AgentSync pass-through copies — the schema matches the target tool's spec.
 
-| Tool | Source | Destination | Schema |
-|---|---|---|---|
-| Claude Code | `mcp/claude.json` | `.claude/.mcp.json` | `{ mcpServers: { ... } }` |
-| Cursor | `mcp/cursor.json` | `.cursor/mcp.json` | `{ mcpServers: { ... } }` |
-| Windsurf | `mcp/windsurf.json` | `.windsurf/mcp_config.json` | `{ mcpServers: { ... } }` |
-| Amazon Q | `mcp/amazonq.json` | `.amazonq/mcp.json` | `{ mcpServers: { ... } }` |
-| Gemini CLI | `settings/gemini.json` (put `mcpServers` inside) | `.gemini/settings.json` | combined with settings |
-| Zed | `settings/zed.json` (put `context_servers` inside) | `.zed/settings.json` | combined with settings |
+| Tool        | Source                                             | Destination                 | Schema                    |
+| ----------- | -------------------------------------------------- | --------------------------- | ------------------------- |
+| Claude Code | `mcp/claude.json`                                  | `.mcp.json` (project root)  | `{ mcpServers: { ... } }` |
+| Cursor      | `mcp/cursor.json`                                  | `.cursor/mcp.json`          | `{ mcpServers: { ... } }` |
+| Windsurf    | `mcp/windsurf.json`                                | `.windsurf/mcp_config.json` | `{ mcpServers: { ... } }` |
+| Amazon Q    | `mcp/amazonq.json`                                 | `.amazonq/mcp.json`         | `{ mcpServers: { ... } }` |
+| Gemini CLI  | `settings/gemini.json` (put `mcpServers` inside)   | `.gemini/settings.json`     | combined with settings    |
+| Zed         | `settings/zed.json` (put `context_servers` inside) | `.zed/settings.json`        | combined with settings    |
 
 ## Claude Code: .mcp.json Reference
 
-Edit `.ai/src/mcp/claude.json` — synced to `.claude/.mcp.json`. Three transport types: `stdio`, `sse`, `http`.
+Edit `.ai/src/mcp/claude.json` — synced to `.mcp.json` at project root (Claude Code's canonical project-scope location). Three transport types: `stdio`, `sse`, `http`.
 
 ```json
 {
@@ -151,7 +151,9 @@ Example — `.ai/src/rules/typescript.md`:
 globs: "**/*.ts"
 description: "TypeScript-only conventions"
 ---
+
 # TypeScript Rules
+
 ...
 ```
 

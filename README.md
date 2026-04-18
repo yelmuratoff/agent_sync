@@ -211,7 +211,7 @@ targets:
     dest: ".claude/settings.json"
   mcp:
     source: ".ai/src/mcp/claude.json"
-    dest: ".claude/.mcp.json"
+    dest: ".mcp.json"
 ```
 
 ## Tool YAML Schema
@@ -270,17 +270,17 @@ targets:
 
 ### Key Fields
 
-| Field                         | Purpose                                                                                                                               |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `extension`                   | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`)                                                         |
-| `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                                            |
-| `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                                                                                |
-| `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                                                                             |
-| `inline_into_agents` (rules)  | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini)                                                    |
-| `inline_into_agents` (skills) | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue)          |
-| `prepend_agents`              | Prepend AGENTS.md content before merged rules (Aider, Zed, Continue)                                                                  |
-| `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                                                                                  |
-| `source` (settings/mcp/hooks) | Required — per-tool source file path                                                                                                  |
+| Field                         | Purpose                                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `extension`                   | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`)                                                |
+| `header`                      | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                                   |
+| `append_imports`              | Append `@rules/*` import lines to AGENTS file (Claude)                                                                       |
+| `merge_to_file`               | Merge all rules into a single file (Aider, Zed, Continue)                                                                    |
+| `inline_into_agents` (rules)  | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini)                                           |
+| `inline_into_agents` (skills) | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue) |
+| `prepend_agents`              | Prepend AGENTS.md content before merged rules (Aider, Zed, Continue)                                                         |
+| `format: "toml"`              | Auto-convert MD→TOML (Gemini commands, Codex agents)                                                                         |
+| `source` (settings/mcp/hooks) | Required — per-tool source file path                                                                                         |
 
 ## Supported Tools
 
@@ -304,21 +304,21 @@ targets:
 
 AgentSync auto-converts between formats during sync:
 
-| Source format  | Target format                                    | Used by                                                        |
-| -------------- | ------------------------------------------------ | -------------------------------------------------------------- |
-| Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor                                                         |
-| Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                                                        |
-| Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                                                       |
-| Rules `.md`    | Single merged file                               | Aider, Zed, Continue                                           |
-| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini                                                  |
-| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini                                                  |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue          |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment                                       |
-| AGENTS.md      | Prepended before merged rules                    | Aider, Zed, Continue                                           |
-| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                                                     |
-| Commands `.md` | `.prompt.md`                                     | Copilot                                                        |
-| Agents `.md`   | `.agent.md`                                      | Copilot                                                        |
-| Agents `.md`   | `.toml` (developer_instructions field)           | Codex                                                          |
+| Source format  | Target format                                    | Used by                                               |
+| -------------- | ------------------------------------------------ | ----------------------------------------------------- |
+| Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor                                                |
+| Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                                               |
+| Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                                              |
+| Rules `.md`    | Single merged file                               | Aider, Zed, Continue                                  |
+| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini                                         |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini                                         |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment                              |
+| AGENTS.md      | Prepended before merged rules                    | Aider, Zed, Continue                                  |
+| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                                            |
+| Commands `.md` | `.prompt.md`                                     | Copilot                                               |
+| Agents `.md`   | `.agent.md`                                      | Copilot                                               |
+| Agents `.md`   | `.toml` (developer_instructions field)           | Codex                                                 |
 
 You write everything in Markdown. AgentSync handles the rest.
 
@@ -412,7 +412,7 @@ If you already have tool-specific configs (`.claude/rules/`, `.cursor/rules/`, c
 
    ```bash
    mv .claude/settings.json .ai/src/settings/claude.json
-   mv .claude/.mcp.json .ai/src/mcp/claude.json
+   mv .mcp.json .ai/src/mcp/claude.json
    mv .cursor/mcp.json .ai/src/mcp/cursor.json
    ```
 
