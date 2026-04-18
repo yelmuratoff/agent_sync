@@ -21,14 +21,14 @@ teardown() {
 }
 
 @test "check fails when generated file is modified" {
-    echo "modified" >> .claude/CLAUDE.md
+    echo "modified" >> CLAUDE.md
     run run_agentsync check
     [ "$status" -eq 1 ]
     [[ "$output" == *"out of sync"* ]]
 }
 
 @test "check fails when generated file is missing" {
-    rm -f .claude/CLAUDE.md
+    rm -f CLAUDE.md
     run run_agentsync check
     [ "$status" -eq 1 ]
 }

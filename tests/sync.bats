@@ -33,7 +33,7 @@ setup() {
 # ── Claude Code ──────────────────────────────────────────────────────────────
 
 @test "sync: Claude CLAUDE.md exists" {
-    [ -f ".claude/CLAUDE.md" ]
+    [ -f "CLAUDE.md" ]
 }
 
 @test "sync: Claude rules exist" {
@@ -58,7 +58,7 @@ setup() {
 @test "sync: Claude CLAUDE.md contains AGENTS.md content" {
     local first_heading
     first_heading=$(grep "^#" .ai/src/AGENTS.md | head -1)
-    grep -qF "$first_heading" .claude/CLAUDE.md
+    grep -qF "$first_heading" CLAUDE.md
 }
 
 # ── Cursor ───────────────────────────────────────────────────────────────────

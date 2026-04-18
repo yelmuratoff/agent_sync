@@ -13,7 +13,7 @@ load test_helper
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ -f "CLAUDE.md" ]
-    [ ! -f ".cursor/AGENTS.md" ]
+    [ ! -f "AGENTS.md" ]
     teardown_test_project
 }
 

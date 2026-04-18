@@ -1,6 +1,8 @@
 <div align="center">
   <img src="https://github.com/yelmuratoff/agent/blob/main/assets/agent_sync.png?raw=true" width="400">
 
+  <h3>One source → 14 AI tools. Stop copy-pasting rules.</h3>
+
   <p>
     <a href="https://github.com/yelmuratoff/agent">
       <img src="https://img.shields.io/badge/shell-bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white" alt="Built with Bash">
@@ -14,15 +16,40 @@
   </p>
 </div>
 
-## What is AgentSync
+## The problem
 
-Every AI coding tool expects instructions in its own format and directory — `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`... Managing them separately leads to drift, inconsistency, and wasted time when you use more than one tool (or your team does).
+Every AI coding tool wants instructions in its own format and directory: `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`...
 
-AgentSync is a CLI tool that synchronizes AI agent instructions from a single source (`.ai/src/`) into tool-specific formats for **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Cline, Augment Code, Amazon Q, Zed, Continue, Aider, Google Antigravity, and more.
+Use more than one tool — or work on a team where different people use different tools? You end up maintaining the same rules in 5+ formats. They drift. They go stale. You copy-paste forever.
+
+## The solution
+
+AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Windsurf, JetBrains Junie, Aider, Cline, Augment Code, Amazon Q, Zed, Continue, Google Antigravity.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
-## Table of Contents
+```
+.ai/src/rules/testing.md
+    ↓ agentsync sync
+├── .claude/rules/testing.md              # + @rules/testing.md import in CLAUDE.md
+├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
+├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
+├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
+├── .junie/rules/testing.md
+├── .amazonq/rules/testing.md
+├── AGENTS.md                             # inlined rule reference (Codex)
+└── CONVENTIONS.md                        # merged into single file (Aider)
+```
+
+## Why not just...?
+
+- **...symlink the files?** Tools demand different extensions (`.mdc`, `.instructions.md`), different frontmatter, different nesting. Symlinks can't transform content — AgentSync does.
+- **...a shell script per tool?** You'd be writing the same copy / rename / header-injection logic 14 times. AgentSync is that script, declarative (YAML), already tested on macOS, Linux, and Windows (Git Bash).
+- **...stick to the one tool I use today?** Teammates pick different ones. Your future self might too. A single source file future-proofs you.
+- **Zero runtime dependencies.** Pure Bash. No Node, Python, `yq`, or `jq`. Install with one `curl | bash`.
+
+<details>
+<summary><strong>Table of contents</strong></summary>
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -40,6 +67,8 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 - [Path Overrides](#path-overrides)
 - [Migrating Existing Configurations](#migrating-existing-configurations)
 - [Uninstall](#uninstall)
+
+</details>
 
 ## Installation
 
@@ -77,21 +106,6 @@ agentsync sync                      # 3. Distribute to all tools
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
 
 > **Important:** `agentsync sync` **overwrites** generated tool directories entirely. If you already have custom rules, skills, commands, settings, or MCP configs in `.claude/`, `.cursor/`, `.github/`, etc., move them into `.ai/src/` first. See [Migrating Existing Configurations](#migrating-existing-configurations).
-
-**Example: one rule → every tool:**
-
-```
-.ai/src/rules/testing.md
-    ↓ agentsync sync
-├── .claude/rules/testing.md              # + @rules/testing.md import in CLAUDE.md
-├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
-├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
-├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
-├── .junie/rules/testing.md
-├── .amazonq/rules/testing.md
-├── AGENTS.md                             # inlined rule reference (Codex)
-└── CONVENTIONS.md                        # merged into single file (Aider)
-```
 
 ## Project Structure
 
@@ -283,21 +297,22 @@ targets:
 
 ## Supported Tools
 
-| Tool                | Config          | Syncs                                                                                                      |
-| ------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Claude Code**     | `claude.yaml`   | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                                       |
-| **GitHub Copilot**  | `copilot.yaml`  | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents, hooks.json |
-| **Cursor**          | `cursor.yaml`   | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                                |
-| **Gemini CLI**      | `gemini.yaml`   | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                             |
-| **OpenAI Codex**    | `codex.yaml`    | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                                           |
-| **Windsurf**        | `windsurf.yaml` | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
-| **JetBrains Junie** | `junie.yaml`    | guidelines.md, rules/, +inlined skills index                                                               |
-| **Aider**           | `aider.yaml`    | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                                   |
-| **Cline**           | `cline.yaml`    | 00-context.md, .clinerules/, +inlined skills index                                                         |
-| **Amazon Q**        | `amazonq.yaml`  | 00-context.md, .amazonq/rules/, +inlined skills index                                                      |
-| **Augment Code**    | `augment.yaml`  | 00-context.md, .augment/rules/, +inlined skills index                                                      |
-| **Zed**             | `zed.yaml`      | .rules (prepend AGENTS.md + merged rules), +inlined skills index                                           |
-| **Continue**        | `continue.yaml` | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                                   |
+| Tool                   | Config             | Syncs                                                                                                      |
+| ---------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **Claude Code**        | `claude.yaml`      | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                                       |
+| **GitHub Copilot**     | `copilot.yaml`     | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents, hooks.json |
+| **Cursor**             | `cursor.yaml`      | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                                |
+| **Gemini CLI**         | `gemini.yaml`      | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                             |
+| **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                                           |
+| **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
+| **JetBrains Junie**    | `junie.yaml`       | guidelines.md, rules/, +inlined skills index                                                               |
+| **Aider**              | `aider.yaml`       | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                                   |
+| **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, +inlined skills index                                                         |
+| **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index                                                      |
+| **Augment Code**       | `augment.yaml`     | 00-context.md, .augment/rules/, +inlined skills index                                                      |
+| **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index                                           |
+| **Continue**           | `continue.yaml`    | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                                   |
+| **Google Antigravity** | `antigravity.yaml` | GEMINI.md, rules (trigger frontmatter), skills, workflows (commands)                                       |
 
 ## Format Conversions
 
@@ -459,10 +474,16 @@ rm -rf .ai/
 # Remove AI SYNC GENERATED block from .gitignore
 ```
 
----
+<!-- ---
+
+## Star history
+
+<a href="https://star-history.com/#yelmuratoff/agent&Date">
+  <img src="https://api.star-history.com/svg?repos=yelmuratoff/agent&type=Date" alt="Star History Chart">
+</a>
 
 <div align="center">
   <a href="https://github.com/yelmuratoff/agent/graphs/contributors">
     <img src="https://contrib.rocks/image?repo=yelmuratoff/agent" />
   </a>
-</div>
+</div> -->
