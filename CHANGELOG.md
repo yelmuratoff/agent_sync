@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+
+- **Update check for help commands:** `help`, `--help`, and `-h` now trigger the update check alongside other interactive commands, so users see version notices when asking for help.
+
+### Changed
+
+- **`.gitignore`:** moved `.mcp.json` and `CLAUDE.md` exclusions outside of the `.claude/` directory scope to match their new root-level destinations (introduced in 0.5.1).
+
 ## 0.5.1
 
 ### Changed
