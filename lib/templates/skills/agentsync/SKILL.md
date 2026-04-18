@@ -37,6 +37,17 @@ Create and maintain AI agent instructions in the AgentSync format.
 
 After editing, run `agentsync sync` to distribute to all tools.
 
+## Scaffolding new content
+
+Use `agentsync add <kind> <name>` to create a new file with the correct frontmatter and placement:
+
+- `agentsync add rule <name>` — creates `.ai/src/rules/<name>.md`
+- `agentsync add skill <name>` — creates `.ai/src/skills/<name>/SKILL.md`
+- `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
+- `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
+
+The command refuses to overwrite existing files; pass `--force` (or `-f`) to replace them. Names must contain only letters, digits, hyphens, and underscores — no path separators, no `..`, no leading `.` or `-`.
+
 ## Writing AGENTS.md
 
 The agent's identity. Every sentence should change behavior.

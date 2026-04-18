@@ -60,6 +60,7 @@ _load_lib() {
     source "$lib_dir/list.sh"
     source "$lib_dir/enable.sh"
     source "$lib_dir/customize.sh"
+    source "$lib_dir/add.sh"
     source "$lib_dir/doctor.sh"
     source "$lib_dir/resolve_cmd.sh"
     source "$lib_dir/generate.sh"
@@ -86,6 +87,7 @@ print_usage() {
     echo "    $(_cyan "list")           Show available tools and their status"
     echo "    $(_cyan "enable")         Opt in to one or more tools"
     echo "    $(_cyan "disable")        Opt out of one or more tools"
+    echo "    $(_cyan "add")            Scaffold a rule, skill, command, or subagent"
     echo "    $(_cyan "customize")      Create a per-field override for a tool"
     echo "    $(_cyan "show")           Show effective config for a tool"
     echo "    $(_cyan "diff")           Show user overrides vs base defaults"
@@ -109,6 +111,8 @@ print_usage() {
     echo "    agentsync init"
     echo "    agentsync list"
     echo "    agentsync enable claude cursor"
+    echo "    agentsync add rule testing"
+    echo "    agentsync add skill deploy"
     echo "    agentsync customize cursor"
     echo "    agentsync show cursor"
     echo "    agentsync diff"
@@ -163,7 +167,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|customize|show|diff|resolve|doctor|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|customize|show|diff|resolve|doctor|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -178,6 +182,7 @@ main() {
         import)        shift; cmd_import "$@" ;;
         enable)        shift; cmd_enable "$@" ;;
         disable)       shift; cmd_disable "$@" ;;
+        add)           shift; cmd_add "$@" ;;
         customize)     shift; cmd_customize "$@" ;;
         show)          shift; cmd_show "$@" ;;
         diff)          shift; cmd_diff "$@" ;;

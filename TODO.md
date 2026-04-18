@@ -25,16 +25,16 @@ Deferred work for future releases. Scoped out of the 0.6.0 layered-config releas
 
 **Checklist:**
 
-- [ ] `lib/templates/content/rule.md` — default frontmatter + stub body
-- [ ] `lib/templates/content/skill.md`
-- [ ] `lib/templates/content/command.md`
-- [ ] `lib/templates/content/subagent.md`
-- [ ] `lib/helpers/add.sh` — `cmd_add <kind> <name> [--force]` dispatcher
-- [ ] Name validation (no `/`, no `..`, no empty)
-- [ ] Wire `cmd_add` into `bin/agentsync.sh` (source, help, examples, dispatch, update-check allowlist)
-- [ ] `tests/add.bats` — create each kind, refuse existing, refuse bad names, `--force` overwrite
-- [ ] Update `agentsync` skill docs with the new command
-- [ ] ShellCheck pass on `add.sh`
+- [x] `lib/templates/content/rule.md` — default frontmatter + stub body
+- [x] `lib/templates/content/skill.md`
+- [x] `lib/templates/content/command.md`
+- [x] `lib/templates/content/subagent.md`
+- [x] `lib/helpers/add.sh` — `cmd_add <kind> <name> [--force]` dispatcher
+- [x] Name validation (no `/`, no `..`, no empty)
+- [x] Wire `cmd_add` into `bin/agentsync.sh` (source, help, examples, dispatch, update-check allowlist)
+- [x] `tests/add.bats` — create each kind, refuse existing, refuse bad names, `--force` overwrite
+- [x] Update `agentsync` skill docs with the new command
+- [x] ShellCheck pass on `add.sh`
 
 ---
 
