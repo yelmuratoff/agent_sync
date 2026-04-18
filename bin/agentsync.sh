@@ -145,7 +145,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import)
+        sync|init|check|list|ls|setup-hooks|export|import|help|--help|-h)
             check_for_updates
             ;;
     esac
