@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+### Added
+
+- **`agentsync simplify [<tool>] [--apply] [-y]`:** walks every user override in `.ai/src/tools/` and drops fields whose value already matches the current base template. Trims the side effect of `customize --full` over time — redundant fields silently pin stale values and block upstream improvements, and `simplify` clears them out in one pass.
+- **Dry-run by default:** prints a grouped preview — `Redundant (match base)`, `Kept (diverge from base)`, `Kept (no base value)` — so nothing is written until you pass `--apply`. When all fields match base, the preview reports the override file would be deleted outright.
+- **`--apply -y` deletes emptied override files:** after `--apply` removes every redundant field, if the file has no real `key: value` content left, it's deleted automatically with `-y`. Without `-y`, an interactive shell prompts `[y/N]`; in non-TTY contexts (CI) the empty file is kept untouched.
+- **Idempotent:** re-running `simplify --apply` on an already-minimized override is a no-op. Safe to add to pre-commit or CI hygiene checks.
+
 ## 0.8.0
 
 ### Added
