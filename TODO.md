@@ -92,16 +92,16 @@ Deferred work for future releases. Scoped out of the 0.6.0 layered-config releas
 
 **Checklist:**
 
-- [ ] `lib/helpers/simplify.sh` — `cmd_simplify [tool] [--apply] [-y]`
-- [ ] Field-by-field equality check using existing `tool_resolver.sh` / `yaml.sh` helpers
-- [ ] Dry-run output format: unified-diff-ish preview
-- [ ] `--apply` mutation via `yaml_edit.sh` (`yaml_remove_key` per redundant field)
-- [ ] Auto-delete empty override files (`-y` to skip prompt)
-- [ ] Preserve comments — investigate feasibility, document limitation if deferred
-- [ ] Wire into `bin/agentsync.sh` (source, help, examples, dispatch, update-check allowlist)
-- [ ] `tests/simplify.bats` — redundant-field removal, empty-file deletion, idempotency, `--apply` gating
-- [ ] Update `agentsync` skill docs
-- [ ] ShellCheck pass
+- [x] `lib/helpers/simplify.sh` — `cmd_simplify [tool] [--apply] [-y]`
+- [x] Field-by-field equality check using existing `tool_resolver.sh` / `yaml.sh` helpers
+- [x] Dry-run output format: unified-diff-ish preview
+- [x] `--apply` mutation via `yaml_edit.sh` (`yaml_remove_key` per redundant field)
+- [x] Auto-delete empty override files (`-y` to skip prompt)
+- [x] Preserve comments — investigate feasibility, document limitation if deferred
+- [x] Wire into `bin/agentsync.sh` (source, help, examples, dispatch, update-check allowlist)
+- [x] `tests/simplify.bats` — redundant-field removal, empty-file deletion, idempotency, `--apply` gating
+- [x] Update `agentsync` skill docs
+- [x] ShellCheck pass
 
 ---
 

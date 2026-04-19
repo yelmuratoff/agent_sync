@@ -250,6 +250,34 @@ conflicts:
   warnings. Your overrides are untouched until you explicitly adopt a base value
   via `agentsync resolve`.
 
+## Simplifying Redundant Overrides
+
+After `agentsync customize <tool> --full`, an override carries the entire base
+template verbatim. Over time those redundant fields pin stale values and silently
+block upstream updates — if base moves forward, the redundant override wins and
+you stay on the old value.
+
+`agentsync simplify` walks every user override and drops fields that already
+match the current base, leaving only the ones that actually diverge.
+
+```
+agentsync simplify              # dry-run every override
+agentsync simplify cursor       # dry-run just one tool
+agentsync simplify --apply      # persist changes
+agentsync simplify --apply -y   # persist + auto-delete emptied files
+```
+
+- Dry-run by default — prints a preview of fields that would be removed and
+  fields that would stay. Pass `--apply` to write.
+- If every overridden field matches base, the entire override file is
+  redundant. With `--apply -y` the file is deleted automatically; in an
+  interactive shell without `-y` you're prompted.
+- Idempotent: running with `--apply` twice in a row is a no-op the second time.
+- Comments inside a user override are not preserved when a nearby field is
+  removed — the line-level YAML mutator strips the key and any indented
+  comments below it. If you rely on inline documentation, keep a separate
+  note or use `agentsync show <tool>` to re-derive intent.
+
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
