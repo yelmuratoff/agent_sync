@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agentsync update — self-update and update-check logic.
 
-readonly AGENTSYNC_REPO="yelmuratoff/agent"
+readonly AGENTSYNC_REPO="yelmuratoff/agent_sync"
 
 cmd_update() {
     local strict=false
@@ -241,7 +241,7 @@ _show_changelog_sections() {
 _bg_fetch_latest_version() {
     local cache_file="$1"
     local latest_tag
-    latest_tag=$(curl -sf --max-time 5 \
+    latest_tag=$(curl -sfL --max-time 5 \
         "https://api.github.com/repos/$AGENTSYNC_REPO/tags?per_page=1" \
         2>/dev/null | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -1) || return 0
     [[ -n "$latest_tag" ]] && printf '%s\n' "$latest_tag" > "$cache_file" 2>/dev/null || true
