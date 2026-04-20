@@ -61,8 +61,17 @@ teardown() { teardown_test_project; }
     [ -f .ai/src/tools/claude/settings.json ]
     [[ "$output" == *"Edit settings:"* ]]
     [[ "$output" == *".ai/src/tools/claude/settings.json"* ]]
-    [[ "$output" == *"Edit MCP:"* ]]
+    # Shared MCP not configured yet → hint points at add mcp, not a phantom path.
+    [[ "$output" == *"agentsync add mcp"* ]]
+}
+
+@test "enable MCP line shows shared file once .ai/src/mcp.json exists" {
+    echo '{"mcpServers":{}}' > .ai/src/mcp.json
+    run run_agentsync enable claude
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Edit mcp:"* ]]
     [[ "$output" == *".ai/src/mcp.json"* ]]
+    [[ "$output" == *"(shared)"* ]]
 }
 
 @test "enable --no-scaffold skips per-tool dir but still prints hints" {

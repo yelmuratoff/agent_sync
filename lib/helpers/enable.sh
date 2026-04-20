@@ -101,52 +101,9 @@ _enable_scaffold_tool_dir() {
     done
 }
 
-# Print the "Edit paths" block for a newly-enabled tool. Shows existing override
-# files, a shared-MCP line for tools that ship MCP templates, and gentle hints
-# for payloads the user can still materialize via `customize`.
+# Thin wrapper: print the "Edit paths" block via the shared formatter.
 _enable_print_edit_block() {
-    local tool_name="$1"
-
-    local settings_base hooks_base mcp_base
-    settings_base=$(_find_base_payload settings "$tool_name")
-    hooks_base=$(_find_base_payload hooks "$tool_name")
-    mcp_base=$(_find_base_payload mcp "$tool_name")
-
-    if [[ -z "$settings_base$hooks_base$mcp_base" ]]; then
-        return 0
-    fi
-
-    local display
-    display=$(tool_display_name "$tool_name")
-
-    local settings_path hooks_path
-    settings_path=$(_payload_override_path "$tool_name" settings)
-    hooks_path=$(_payload_override_path "$tool_name" hooks)
-
-    echo ""
-    _bold "  $display"; echo ""
-
-    if [[ -n "$settings_base" ]]; then
-        if [[ -n "$settings_path" ]] && [[ -f "$settings_path" ]]; then
-            printf "    Edit settings:  %s\n" "${settings_path#"$REPO_ROOT/"}"
-        else
-            printf "    Settings:       %s\n" "$(_dim "agentsync customize $tool_name settings")"
-        fi
-    fi
-
-    if [[ -n "$hooks_base" ]]; then
-        if [[ -n "$hooks_path" ]] && [[ -f "$hooks_path" ]]; then
-            printf "    Edit hooks:     %s\n" "${hooks_path#"$REPO_ROOT/"}"
-        else
-            printf "    Hooks:          %s\n" "$(_dim "agentsync customize $tool_name hooks")"
-        fi
-    fi
-
-    if [[ -n "$mcp_base" ]]; then
-        printf "    Edit MCP:       %s  %s\n" \
-            ".ai/src/mcp.json" \
-            "$(_dim "(shared — agentsync add mcp to extend)")"
-    fi
+    print_tool_edit_paths_block "$1"
 }
 
 # Decide + execute scaffolding for a single tool, then print its edit block.

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.11.0
+
+### Added
+
+- **Per-tool override layout** (`.ai/src/tools/<tool>/<resource>.<ext>`): all tool-specific payloads (settings, hooks, per-tool MCP) live alongside their tool YAML under a single directory, so customizing a tool no longer scatters files across `.ai/src/{hooks,mcp,settings}/`. The resolver reads the new path first and falls back to the legacy flat layout for backward compatibility.
+- **Shared MCP source** (`.ai/src/mcp.json`): one file describes the MCP servers every enabled tool should receive. Sync propagates it as `.mcp.json` / `.cursor/mcp.json` / etc., matching each tool's destination. Per-tool overrides (`.ai/src/tools/<tool>/mcp.json`) still win for the rare cases that need a different map.
+- **`agentsync add mcp <server>`**: append (or create) an MCP server entry in the shared `.ai/src/mcp.json` without hand-editing JSON. Supports `--url`, `--command`, `--args`, `--env`, `--force`, and validates the merge with `python3`.
+- **`agentsync migrate`**: moves legacy flat-layout overrides to the canonical per-tool layout (`mv` per file, dry-run by default, `--apply` to persist). When every legacy `.ai/src/mcp/*.json` is byte-identical it offers to consolidate them into the shared `.ai/src/mcp.json` (accept in TTY with `Y`, in non-TTY with `--yes`).
+- **`enable <tool>` scaffolds editable copies**: after adding a tool to `tools.enabled`, `enable` copies the base settings / hooks templates into `.ai/src/tools/<tool>/` so the user has a concrete file to edit. MCP is deliberately not scaffolded — it resolves through the shared file. Pass `--no-scaffold` to opt out, `--scaffold` to force. TTY users get a single `Scaffold editable copies for <tool>?` confirm; non-TTY defaults to scaffold.
+- **`enable` edit-paths block**: after enabling, each tool now prints a short block pointing at exactly which file to edit (`.ai/src/tools/<tool>/settings.json`), where shared MCP lives, and which commands unlock the rest (`agentsync customize <tool> hooks`, `agentsync add mcp`).
+- **`doctor` Edit paths section**: lists each enabled tool with `✓` for existing overrides and `·` for payloads still inheriting from base, with the exact `customize` / `add mcp` command to materialize them.
+- **`update` migration banner**: after pulling a 0.11+ release into a project still on the flat layout, `update` prints a banner pointing at `agentsync migrate --apply` so nothing silently breaks on a future release.
+
+### Internal
+
+- **Shared edit-paths formatter** (`lib/helpers/edit_paths.sh`): `enable` and `doctor` both reach through a single `tool_edit_paths_rows` helper for "what can the user edit for this tool?" instead of each maintaining its own resolution logic. Two thin formatters (`_block` for enable, `_checklist` for doctor) hang off it. Side effect: the `enable` block no longer prints a phantom `.ai/src/mcp.json` path when the shared file doesn't exist yet — it points at `agentsync add mcp <server>` directly.
+
+### Changed
+
+- **`init` `Next steps` now advertises the customization surface** (`agentsync add mcp <server>` and `agentsync customize <tool> <resource>`) so new users discover shared MCP and per-tool overrides without digging into the README.
+- **`doctor` legacy-layout warning** now points at `agentsync migrate --apply` instead of suggesting re-running `customize` per file.
+- **`resolve_payload_source` resolution order** (canonical as of 0.11): `.ai/src/tools/<tool>/<resource>.<ext>` → explicit `targets.<resource>.source` in the tool YAML → `.ai/src/<resource>/<tool>.<ext>` (legacy, emits one-shot deprecation warning) → `.ai/src/mcp.json` (for MCP only) → shipped base template.
+
+### Migration
+
+- Legacy flat-layout overrides (`.ai/src/{hooks,mcp,settings}/<tool>.<ext>`) are still read; sync continues to work unchanged. A one-line warning prints per run when a legacy file is the effective source. `agentsync migrate --apply` moves every legacy file into the canonical per-tool layout and, when safe, consolidates identical MCP copies into `.ai/src/mcp.json`. Legacy paths will be removed in 0.12.
+- Projects wanting to opt out of the new `enable` scaffolding (e.g. CI provisioning scripts) should append `--no-scaffold` to their `agentsync enable` invocations.
+
 ## 0.10.2
 
 ### Fixed

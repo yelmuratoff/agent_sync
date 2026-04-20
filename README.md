@@ -64,6 +64,9 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 - [Git Hooks](#git-hooks)
 - [Gitignore](#gitignore)
 - [How Sync Works](#how-sync-works)
+- [Customization workflow](#customization-workflow)
+- [How Resources Resolve](#how-resources-resolve)
+- [Migrating from the 0.10 flat layout](#migrating-from-the-0-10-flat-layout)
 - [Path Overrides](#path-overrides)
 - [Migrating Existing Configurations](#migrating-existing-configurations)
 - [Uninstall](#uninstall)
@@ -90,18 +93,24 @@ Restart your terminal or run `source ~/.zshrc` after installation. Running the i
 
 ```bash
 cd your-project
-agentsync init                      # 1. Interactive wizard in a TTY; auto-detect elsewhere
-agentsync generate | pbcopy         # 2. (Optional) Generate project-specific config via AI
-agentsync sync                      # 3. Distribute to all enabled tools
+agentsync init                        # 1. Interactive wizard in a TTY; auto-detect elsewhere
+agentsync enable claude cursor        # 2. Turn on the tools you use (prints where to edit)
+agentsync add mcp github --command …  # 3. (Optional) wire up shared MCP servers
+agentsync generate | pbcopy           # 4. (Optional) AI-generate a project-specific config
+agentsync sync                        # 5. Distribute to all enabled tools
 ```
 
 **What each step does:**
 
 1. **`agentsync init`** — Scaffolds the `.ai/` directory. In a terminal it opens a short wizard to pick which tools and content sections you want; in scripts/CI it runs silently using auto-detection (`.claude/`, `.cursor/`, `CLAUDE.md`, ...) and sensible defaults. Only the payloads you opt into get scaffolded — other tools use shipped base templates at sync time. Useful flags: `--tools claude,cursor` (explicit list), `--content agents,rules` (narrow content), `--no-detect` (blank slate), `--yes` (accept defaults), `--dry-run` (preview). Safe to run twice — if `.ai/src/` already exists, it skips.
 
-2. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
+2. **`agentsync enable <tool>`** — Adds the tool to `tools.enabled` *and* scaffolds editable copies of its settings / hooks at `.ai/src/tools/<tool>/`, then prints the exact file path to edit plus the shared MCP path. Pass `--no-scaffold` to skip materializing files; pass `--yes` to accept the TTY confirm non-interactively.
 
-3. **`agentsync sync`** — Reads each enabled tool's config (user override + shipped base — see [How Resources Resolve](#how-resources-resolve)), then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also updates `.gitignore` to exclude generated files.
+3. **`agentsync add mcp <server>`** — Writes an MCP server entry into the shared `.ai/src/mcp.json`. On the next `sync`, every enabled tool gets the same server map — no copy-pasting across five JSON files. Use `agentsync customize <tool> mcp` only when a tool needs a divergent map.
+
+4. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
+
+5. **`agentsync sync`** — Reads each enabled tool's config (user override + shipped base — see [How Resources Resolve](#how-resources-resolve)), then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also updates `.gitignore` to exclude generated files.
 
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
 
@@ -125,13 +134,16 @@ AgentSync supports two source layouts:
     │   └── .../SKILL.md
     ├── commands/               # (optional) custom slash commands
     ├── agents/                 # (optional) subagent personas
-    ├── tools/                  # (optional) per-tool YAML overrides
-    ├── settings/               # (optional) per-tool settings overrides
-    ├── mcp/                    # (optional) per-tool MCP overrides
-    └── hooks/                  # (optional) per-tool hooks overrides
+    ├── mcp.json                # (optional) shared MCP servers, applied to every tool
+    └── tools/                  # (optional) per-tool overrides
+        ├── claude.yaml         #   tool YAML (same file as before 0.11)
+        └── claude/             #   per-tool payload dir (NEW in 0.11)
+            ├── settings.json   #     settings override
+            ├── hooks.json      #     hooks override
+            └── mcp.json        #     per-tool MCP override (shadows mcp.json above)
 ```
 
-> **Note:** `init` is minimal. `tools/`, `settings/`, `mcp/`, `hooks/` are *override* directories — files appear there only when you opt in (via `agentsync init --tools <list>`, auto-detection, or `agentsync customize <tool> <resource>`). Missing overrides fall back to shipped base templates automatically — see [How Resources Resolve](#how-resources-resolve).
+> **Note:** `init` is minimal. `mcp.json` and every file under `tools/<tool>/` are *overrides* — they appear only when you opt in via `agentsync enable`, `agentsync customize`, or `agentsync add mcp`. Missing overrides fall back to shipped base templates automatically — see [How Resources Resolve](#how-resources-resolve) and [Customization workflow](#customization-workflow).
 
 **Flat (auto-detected):** `.ai/AGENTS.md`, `.ai/rules/`, `.ai/skills/`, `.ai/tools/`
 
@@ -361,33 +373,78 @@ Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatic
 4. Updates `.gitignore`
 5. Disabled tools get their generated files cleaned up automatically.
 
+## Customization workflow
+
+Three commands cover every customization, each with a single responsibility.
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  agentsync enable <tool>                                                      │
+│    → adds tool to tools.enabled                                               │
+│    → scaffolds .ai/src/tools/<tool>/{settings,hooks}.<ext> from base          │
+│    → prints the exact file path to edit                                       │
+│                                                                               │
+│  agentsync add mcp <server> [--command|--url ...]                             │
+│    → creates / updates the shared .ai/src/mcp.json                            │
+│    → applied to every enabled tool on next sync                               │
+│                                                                               │
+│  agentsync customize <tool> <resource>                                        │
+│    → for the rare case you need a per-tool override that differs from         │
+│      the shared MCP map, or to materialize a payload enable --no-scaffold     │
+│      skipped (`customize cursor hooks`)                                       │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Mental model:**
+
+- `enable` is the entry point. One command turns a tool on *and* gives you the file to edit.
+- Shared MCP is the default. `add mcp` writes to `.ai/src/mcp.json` which every tool picks up — no per-tool duplication.
+- `customize` is the escape hatch. Use it only when you need a per-tool override that diverges from the shared source, or when `enable --no-scaffold` skipped materializing a file you later want.
+
+All three write to **`.ai/src/tools/<tool>/`** (per-tool) or **`.ai/src/mcp.json`** (shared). Nothing is scattered across `.ai/src/hooks/`, `.ai/src/mcp/`, `.ai/src/settings/` — the old flat layout is kept around for backward compatibility (see [migrate](#migrating-from-the-0-10-flat-layout)).
+
 ## How Resources Resolve
 
-Every resource that ships as a file — tool YAML, hooks, MCP config, settings — follows the same two-layer lookup. Nothing is cloned into every project by default; overrides are opt-in and merge on top of a shipped base.
+Every payload resource — tool YAML, hooks, MCP config, settings — follows the same layered lookup. Nothing is cloned into every project by default; overrides are opt-in and merge on top of a shipped base.
 
 ```
-┌─ Project override ───────┐    ┌─ Shipped base ──────────────────────────┐
-│ .ai/src/<resource>/      │    │ <install-dir>/lib/templates/<resource>/ │
-│   <tool>.<ext>           │ ►► │   <tool>.<ext>                          │
-└──────────────────────────┘    └─────────────────────────────────────────┘
+┌─ 1. Per-tool override ─────────┐   ┌─ 2. Shared MCP (mcp only) ──────┐   ┌─ 3. Shipped base ──────────────────────┐
+│ .ai/src/tools/<tool>/          │   │ .ai/src/mcp.json                │   │ <install-dir>/lib/templates/<resource>/│
+│   <resource>.<ext>             │►► │ (applies to every tool)         │►► │   <tool>.<ext>                         │
+└────────────────────────────────┘   └─────────────────────────────────┘   └────────────────────────────────────────┘
 
-         override ??= base     (override wins; falls back silently)
+     per-tool wins   →   shared fills in (for MCP)   →   base fills in otherwise
 ```
 
-| Resource    | Base path                                 | Override path                      |
-| ----------- | ----------------------------------------- | ---------------------------------- |
-| tool YAML   | `lib/templates/tools/<tool>.yaml`         | `.ai/src/tools/<tool>.yaml`        |
-| hooks       | `lib/templates/hooks/<tool>.json`         | `.ai/src/hooks/<tool>.json`        |
-| mcp         | `lib/templates/mcp/<tool>.json`           | `.ai/src/mcp/<tool>.json`          |
-| settings    | `lib/templates/settings/<tool>.<ext>`     | `.ai/src/settings/<tool>.<ext>`    |
+| Resource    | Base path                                 | Per-tool override                      | Shared override           |
+| ----------- | ----------------------------------------- | -------------------------------------- | ------------------------- |
+| tool YAML   | `lib/templates/tools/<tool>.yaml`         | `.ai/src/tools/<tool>.yaml`            | —                         |
+| hooks       | `lib/templates/hooks/<tool>.json`         | `.ai/src/tools/<tool>/hooks.json`      | —                         |
+| mcp         | `lib/templates/mcp/<tool>.json`           | `.ai/src/tools/<tool>/mcp.json`        | `.ai/src/mcp.json`        |
+| settings    | `lib/templates/settings/<tool>.<ext>`     | `.ai/src/tools/<tool>/settings.<ext>`  | —                         |
+
+The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --apply` to move them. Legacy paths will be removed in 0.12.
 
 **Why it matters:**
 
 - **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
 - **Updates flow through.** Because the base lives in the install dir, `agentsync update` improves every project that hasn't locked the file in as an override.
-- **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/hooks/cursor.json`. Delete the file later to resume inheriting from base.
+- **Shared MCP is shared.** One `.ai/src/mcp.json` reaches every enabled tool — no copy-pasting the same server map into five JSON files.
+- **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/tools/cursor/hooks.json`. Delete the file later to resume inheriting.
 - **Safe hooks.** `customize <tool> hooks` prints the base content first and requires `--yes` in non-interactive mode — you never scaffold executable intent silently.
 - **`simplify` prunes noise.** Scaffolded payloads that are still byte-identical to base are flagged by `agentsync simplify` and removed with `--apply`, so you don't accidentally pin yesterday's defaults forever.
+
+## Migrating from the 0.10 flat layout
+
+Projects upgraded from 0.10 keep working without intervention — the resolver still reads `.ai/src/{hooks,mcp,settings}/<tool>.<ext>`. When you are ready to move them into the canonical per-tool layout:
+
+```bash
+agentsync migrate             # dry-run; prints the planned moves
+agentsync migrate --apply     # performs the moves; consolidates identical MCP files
+agentsync migrate --apply -y  # non-interactive — accepts MCP consolidation by default
+```
+
+`migrate` moves each legacy file to `.ai/src/tools/<tool>/<resource>.<ext>`. When every `.ai/src/mcp/*.json` is byte-identical, it offers to collapse them into the shared `.ai/src/mcp.json`; if they differ, they migrate per-tool. Existing files at the target are never overwritten — such collisions are skipped with a warning so you resolve them by hand. Empty source directories are cleaned up on success.
 
 ## Path Overrides
 

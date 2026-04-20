@@ -88,6 +88,7 @@ print_usage() {
     echo "    $(_cyan "add")            Scaffold a rule, skill, command, or subagent"
     echo "    $(_cyan "customize")      Create a per-field override for a tool"
     echo "    $(_cyan "simplify")       Remove override fields that match the base"
+    echo "    $(_cyan "migrate")        Move legacy flat-layout overrides to per-tool dirs"
     echo "    $(_cyan "show")           Show effective config for a tool"
     echo "    $(_cyan "diff")           Show user overrides vs base defaults"
     echo "    $(_cyan "resolve")        Interactively reconcile overrides with base values"
@@ -169,7 +170,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|customize|simplify|show|diff|resolve|doctor|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -182,15 +183,16 @@ main() {
         generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
         export)        _need yaml export;                              shift; cmd_export "$@" ;;
         import)        _need import;                                   shift; cmd_import "$@" ;;
-        enable)        _need prompts yaml yaml_edit tool_resolver enable; shift; cmd_enable "$@" ;;
+        enable)        _need prompts yaml yaml_edit tool_resolver edit_paths enable; shift; cmd_enable "$@" ;;
         disable)       _need yaml yaml_edit tool_resolver enable;      shift; cmd_disable "$@" ;;
         add)           _need add;                                      shift; cmd_add "$@" ;;
         customize)     _need yaml yaml_edit tool_resolver customize;   shift; cmd_customize "$@" ;;
         simplify)      _need yaml yaml_edit tool_resolver customize simplify;   shift; cmd_simplify "$@" ;;
+        migrate)       _need prompts yaml tool_resolver migrate;     shift; cmd_migrate "$@" ;;
         show)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_show "$@" ;;
         diff)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_diff "$@" ;;
         resolve)       _need yaml yaml_edit tool_resolver snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
-        doctor)        _need yaml tool_resolver doctor;                cmd_doctor ;;
+        doctor)        _need yaml tool_resolver edit_paths doctor;     cmd_doctor ;;
         update)        _need yaml snapshot;                            shift; cmd_update "$@" ;;
         upgrade-config) _need prompts yaml tool_resolver init;         shift; cmd_upgrade_config "$@" ;;
         release)       _need release;                                  shift; cmd_release "$@" ;;

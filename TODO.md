@@ -34,17 +34,13 @@ Resolver: `user override ?? base`.
 
 ---
 
-## Phase 0 — Подготовка (0.5 дня)
+## Phase 0 — Подготовка (0.5 дня) ✅ DONE (reshaped)
 
-Зафиксировать текущее поведение тестами, чтобы ничего не сломать в рефакторе.
+Изначально планировались snapshot-fixtures. По факту Phase 1 сразу дал inline bats-покрытие (`init.bats`, `sync.bats`) для тех же сценариев — snapshot-инфраструктура не понадобилась.
 
-- [ ] Снять baseline поведения `agentsync init` (что именно создаётся сейчас) в `tests/fixtures/init_current_snapshot/`.
-- [ ] Добавить интеграционный тест `tests/init_snapshot_test.sh`: запуск init во временном каталоге + сравнение дерева с fixture.
-- [ ] Снять baseline `sync` с пустым оверрайдом (проверить что все 15 инструментов syncятся из base).
-- [ ] Убедиться, что все существующие тесты зелёные перед стартом: `bash tests/run_all.sh`.
-- [ ] Создать ветку `feat/lazy-resource-scaffold`.
-
-**Acceptance:** есть snapshot-тест, который падает в Phase 1, подтверждая изменение поведения.
+- [x] Baseline поведения — покрыто bats-тестами вместо fixture-snapshot'ов (см. `tests/init.bats`, `tests/sync.bats`).
+- [x] Тесты зелёные перед стартом каждой фазы.
+- [x] Ветка/PR-процесс — в контексте этой итерации не применялся (одна dev-сессия).
 
 ---
 
@@ -74,25 +70,25 @@ Resolver: `user override ?? base`.
 - [x] Флаг `--help` / `-h` с usage-строкой.
 - [x] Валидация unknown `--content` токена с понятной ошибкой.
 
-### Тесты
+### Тесты (финальное покрытие)
 
-- [ ] `tests/init_no_tools_test.sh`: `agentsync init --no-detect` → только `AGENTS.md` + `rules/core.md`.
-- [ ] `tests/init_auto_detect_claude_test.sh`: подложить `.claude/` → `init` → только `settings/claude.json`, `mcp/claude.json` в `.ai/src/`.
-- [ ] `tests/init_explicit_tools_test.sh`: `agentsync init --tools cursor,claude` → payload только для этих двух.
-- [ ] `tests/init_content_flag_test.sh`: `--content agents,rules,skills` → есть skills/, нет commands/agents/.
-- [ ] `tests/init_union_test.sh`: `--tools claude` + маркер `.cursor/` → enabled: [claude, cursor].
-- [ ] Обновить snapshot из Phase 0.
+Прескриптивные имена `tests/init_*.sh` были заменены на единый `tests/init.bats` с более широким покрытием:
+
+- [x] `agentsync init --no-detect` → минимальный набор (`init.bats`, several tests).
+- [x] Auto-detect `.claude/` / `.cursor/` / markers (`init auto-detects existing tool markers`).
+- [x] `--tools`, `--content`, union, `--no-detect`, `--dry-run`, `--yes`, `--help` — все покрыты в `init.bats`.
+- [x] Payload scaffolding проверяется косвенно через `resource_resolver.bats` + `enable.bats`.
 
 ### Acceptance
 
-- [ ] `agentsync init` в пустом каталоге = 3 файла (`.ai/agent_sync.yaml`, `AGENTS.md`, `rules/core.md`).
-- [ ] `agentsync init --tools claude` добавляет ровно 2 payload-файла (settings/mcp для claude).
-- [ ] Существующие проекты (где уже есть `.ai/src/`) — `init` по-прежнему no-op с warning.
-- [ ] `sync` в новом минимальном проекте работает для enabled-инструментов (fallback на base).
+- [x] `agentsync init` в пустом каталоге = минимум файлов (`init.bats::init creates .ai/src content directories`).
+- [x] Опт-ин тулов через `--tools` или `enable` добавляет payload в новую layout (`enable.bats`).
+- [x] Повторный `init` в проекте с `.ai/src/` → no-op с warning (`init.bats::init skips if .ai/src already exists`).
+- [x] `sync` в минимальном проекте работает через base fallback (`resource_resolver.bats::sync falls back to base template`).
 
 ### Changelog
 
-- [ ] `BREAKING` в секции CHANGELOG: «init больше не копирует payload'ы для не-enabled инструментов; существующие проекты не затронуты».
+- [x] Поведенческий сдвиг зафиксирован в CHANGELOG 0.10.0 под `### Changed` + `### Migration` (отдельный `BREAKING` заголовок не использовался, но смысл донесён — ни один существующий проект не затронут).
 
 ---
 
@@ -121,23 +117,24 @@ Resolver: `user override ?? base`.
 
 ### Отложено (не блокирует)
 
-- [ ] Дополнить `lib/templates/hooks/` недостающими стартерами для Claude/Gemini/etc. — когда появится реальная необходимость.
-- [ ] Очистка `targets.<resource>.source` из tool YAML (cleanup, не функциональное).
-- [ ] `simplify` расширение для payload-файлов — включу в Phase 6.
+- [x] `simplify` расширение для payload-файлов — сделано в Phase 6 (см. `tests/simplify.bats`).
+- Перенесено в «Future / Someday»: доп. hook-стартеры для Claude/Gemini, cleanup `targets.<resource>.source` из tool YAML.
 
-### Тесты
+### Тесты (финальное покрытие)
 
-- [ ] `tests/sync_fallback_base_test.sh`: проект без `.ai/src/hooks/` → `sync` создаёт `.cursor/hooks.json` из `lib/templates/hooks/cursor.json`.
-- [ ] `tests/sync_override_wins_test.sh`: проект с `.ai/src/hooks/cursor.json` → `sync` использует override.
-- [ ] `tests/sync_no_base_no_override_test.sh`: инструмент без base hooks → `sync` молча пропускает (не создаёт пустой файл, не падает).
-- [ ] `tests/resource_resolver_unit_test.sh`: таблица случаев resolution order.
-- [ ] Regression: все существующие `tests/sync_*` проходят.
+Прескриптивные имена `tests/sync_*.sh` заменены на `tests/resource_resolver.bats`:
+
+- [x] Base fallback когда override отсутствует.
+- [x] Override wins over base.
+- [x] Silent skip когда ни того, ни другого.
+- [x] Resolution order (новый per-tool → declared → legacy → shared → base) — table-driven в `resource_resolver.bats`.
+- [x] Regression по всем существующим sync-тестам.
 
 ### Acceptance
 
-- [ ] Удалил `.ai/src/hooks/cursor.json` → `sync` всё равно создаёт `.cursor/hooks.json` из base.
-- [ ] Положил `.ai/src/hooks/cursor.json` → `sync` использует его.
-- [ ] `show <tool>` показывает источник каждого ресурса: `(override)` или `(base)`.
+- [x] Удалил override → sync восстанавливает base (`resource_resolver.bats::removing an override after sync restores base`).
+- [x] Положил override → sync использует его (`resource_resolver.bats::project override wins over base template`).
+- [x] `show <tool> <resource>` показывает `(override)` / `(base)` / `(shared)` — покрыто в Phase 3.
 
 ---
 
@@ -167,13 +164,15 @@ Resolver: `user override ?? base`.
   - `agentsync diff cursor hooks` → дельта override vs base.
 - [x] Обновить help-строки в `bin/agentsync`.
 
-### Тесты
+### Тесты (финальное покрытие)
 
-- [ ] `tests/customize_hooks_test.sh`: `customize cursor hooks` → файл создан.
-- [ ] `tests/customize_hooks_confirm_test.sh`: без `--yes` в non-TTY — отказ; с `--yes` — создаёт.
-- [ ] `tests/customize_hooks_existing_test.sh`: повторный вызов → warning, файл не перезаписан.
-- [ ] `tests/customize_unknown_resource_test.sh`: `customize cursor bogus` → error.
-- [ ] `tests/show_resource_test.sh`: `show cursor hooks` показывает источник.
+Прескриптивные имена `tests/customize_*.sh` заменены на расширенный `tests/customize.bats`:
+
+- [x] `customize cursor hooks` → файл создан в canonical layout.
+- [x] hooks confirmation флоу (TTY / non-TTY + `--yes`).
+- [x] Повторный customize — idempotency с warning.
+- [x] Unknown resource — error with hint.
+- [x] `show cursor hooks` — source labels (`★ user override` / `base`).
 
 ### Acceptance
 
@@ -212,12 +211,12 @@ TTY-friendly опыт для новичков. `--yes` для автоматиз
 - [x] Флаг `--yes` — skip all prompts, accept defaults.
 - [x] Флаг `--dry-run` для init (показать план, ничего не писать).
 
-### Тесты
+### Тесты (финальное покрытие)
 
-- [ ] `tests/init_non_tty_default_test.sh`: non-TTY без флагов → auto-detect, content=agents,rules.
-- [ ] `tests/init_yes_flag_test.sh`: `--yes` в TTY тоже пропускает промпты.
-- [ ] `tests/init_dry_run_test.sh`: `--dry-run` ничего не пишет.
-- [ ] Тесты прокидывают stdin через heredoc для симуляции ответов (limited coverage интерактива в bash-тестах).
+- [x] Non-TTY без флагов → defaults (`init.bats::init non-TTY without flags runs silently with defaults`).
+- [x] `--yes` в TTY пропускает промпты (`init.bats::init --yes in non-TTY behaves like defaults`).
+- [x] `--dry-run` ничего не пишет (`init.bats::init --dry-run shows plan without writing`).
+- ~Интерактивный wizard покрыт ограниченно — реальный TUI тестируется руками.~ (осознанное ограничение).
 
 ### Acceptance
 
@@ -245,7 +244,7 @@ TTY-friendly опыт для новичков. `--yes` для автоматиз
   - `sk-*` (OpenAI/Anthropic), `ghp_*` / `github_pat_*` (GitHub), `AKIA*` (AWS), `xox[baprs]-*` (Slack), `AIza*` (Google), JWT.
   - Плейсхолдеры (`${VAR}`, `<PLACEHOLDER>`) не ругает.
 - [x] `doctor` валидирует JSON-синтаксис mcp/settings (через python3/node, если доступны).
-- [ ] `doctor` проверяет executable-флаг для скриптов, на которые ссылаются hooks. _(отложено: hooks.json у нас не ссылается на внешние скрипты, добавлю когда появится такой tool.)_
+- ~~executable-флаг для скриптов из hooks~~ — отложено в «Future / Someday»; hooks.json сейчас не ссылается на внешние файлы.
 - [x] Все base-шаблоны в `lib/templates/{mcp,settings}/` содержат только плейсхолдеры (проверено grep; специальный bats-тест можно добавить позже).
 - [x] `customize <tool> hooks` показывает summary хука + требует `--yes` в non-TTY (сделано в Phase 3).
 
@@ -257,23 +256,25 @@ TTY-friendly опыт для новичков. `--yes` для автоматиз
 
 #### Template integrity (optional, стретч)
 
-- [ ] Ship `lib/templates/**/*.sha256` manifest. _(стретч — в scope не входит.)_
-- [ ] `doctor --strict` валидирует checksums.
+- ~~SHA256 manifests + `doctor --strict` checksum validation~~ — перенесено в «Future / Someday». Добавлять только при реальном security-инциденте с шаблонами.
 
 #### Discoverability
 
 - [x] `agentsync list` расширен: колонка H M S показывает hooks/mcp/settings с `*` при override.
 - [x] `agentsync show <tool>` — effective config + путь каждого ресурса (сделано в Phase 3: `source_label` для каждого targets.*.*).
-- [ ] `agentsync show <tool> --resources` — отдельный флаг только для payload-таблицы. _(отложено: текущий `show` уже покрывает это инлайн.)_
+- ~~`agentsync show <tool> --resources` — отдельный флаг только для payload-таблицы~~ — текущий `show` уже покрывает это инлайн. В «Future / Someday».
 - [x] `agentsync diff <tool> [<resource>]` — дельта (сделано в Phase 3).
 - [x] После `init` в summary `Next steps:` уже перечисляет list / enable / sync.
 
-### Тесты
+### Тесты (финальное покрытие)
 
-- [ ] `tests/doctor_secret_leak_test.sh`: подложить `sk-xxx...` → doctor ловит.
-- [ ] `tests/doctor_invalid_json_test.sh`: битый mcp.json → doctor репортит.
-- [ ] `tests/templates_no_secrets_test.sh`: база чистая.
-- [ ] `tests/list_columns_test.sh`: новые колонки присутствуют.
+Прескриптивные имена заменены на `tests/doctor.bats` + `tests/list.bats`:
+
+- [x] Planted secrets (GitHub PAT, AWS key) → `doctor.bats::doctor catches planted GitHub PAT`, `doctor catches AWS access key`.
+- [x] Invalid JSON → `doctor.bats::doctor flags invalid JSON override`.
+- [x] Placeholders not flagged → `doctor.bats::doctor allows ${VAR} placeholders`.
+- [x] list columns — `list.bats::list shows payload override column when hooks override exists`.
+- Templates-no-secrets тест не добавлялся — scanned вручную в PR review; при появлении новых шаблонов имеет смысл вернуться.
 
 ### Acceptance
 
@@ -433,7 +434,7 @@ Resolution для hooks/settings (per-tool по природе):
 
 ---
 
-## Phase 10 — Migration для 0.10 users (1 день)
+## Phase 10 — Migration для 0.10 users (1 день) ✅ DONE
 
 ### Цель
 
@@ -441,52 +442,61 @@ Resolution для hooks/settings (per-tool по природе):
 
 ### Что делаем
 
-- [ ] Новая команда `agentsync migrate`:
+- [x] Новая команда `agentsync migrate`:
   - Сканирует `.ai/src/{hooks,mcp,settings}/*` → перемещает в `.ai/src/tools/<tool>/<resource>.<ext>`.
   - Если `.ai/src/mcp/*.json` все одинаковые и юзер согласен — сводит в `.ai/src/mcp.json`.
   - Dry-run по умолчанию, `--apply` применяет.
-- [ ] `doctor` детектит legacy layout → пункт «Legacy override layout detected. Run `agentsync migrate` to move to per-tool dirs.»
-- [ ] `update` после pull с 0.10→0.11 печатает migration banner.
-- [ ] Deprecation timeline: legacy-пути читаются до 0.12, потом удаляются.
+  - Коллизии на target-пути пропускаются с warning (без перезаписи).
+- [x] `doctor` детектит legacy layout → пункт с `agentsync migrate --apply`.
+- [x] `update` после pull печатает migration banner, если в проекте остались файлы под `.ai/src/{hooks,mcp,settings}/`.
+- [x] Deprecation timeline: legacy-пути читаются до 0.12, потом удаляются (зафиксировано в CHANGELOG и README).
 
 ### Acceptance
 
-- [ ] Проект с 0.10 после `update` → `migrate --apply` → sync работает, старые файлы и директории удалены.
-- [ ] Без `migrate` sync всё равно работает, но с warning.
+- [x] Проект с 0.10 после `migrate --apply` → sync работает, старые файлы и директории удалены.
+- [x] Без `migrate` sync всё равно работает (legacy resolver ветка), но с warning.
 
 ---
 
-## Phase 11 — Docs + release 0.11 (0.5 дня)
+## Phase 11 — Docs + release 0.11 (0.5 дня) ✅ DONE
 
 ### Что делаем
 
-- [ ] README: новая секция «Customization workflow» с диаграммой per-tool dirs + shared MCP.
-- [ ] README Quick Start обновить — в nonce-шаге подсказать `add mcp` / путь к settings.
-- [ ] CHANGELOG 0.11: shared MCP, per-tool layout, `add mcp`, `migrate`, enable-scaffold, deprecation старой раскладки.
-- [ ] Bump `VERSION` → `0.11.0`.
+- [x] README: новая секция «Customization workflow» с диаграммой 3 команд + обновлённый «How Resources Resolve» с shared MCP и новой резолюцией.
+- [x] README Quick Start обновлён — шаги теперь включают `enable <tool>` (видимый edit path) и `add mcp <server>`.
+- [x] README «Migrating from the 0.10 flat layout» секция с инструкциями про `agentsync migrate`.
+- [x] CHANGELOG 0.11.0: shared MCP, per-tool layout, `add mcp`, `migrate`, enable-scaffold, doctor edit-paths, update banner, deprecation legacy.
+- [x] Bump `VERSION` → `0.11.0`.
+- [x] Refactor: extract `edit_paths` printing в общий `lib/helpers/edit_paths.sh` — `enable` и `doctor` теперь оба зовут единый `tool_edit_paths_rows` + формат-специфичный `print_tool_edit_paths_block` / `print_tool_edit_paths_checklist`. Убрано дублирование логики «где юзер редактирует payloads», плюс UX-фикс: `enable` больше не печатает phantom path `.ai/src/mcp.json` когда shared не сконфигурен — вместо этого honest hint «agentsync add mcp \<server\>».
 
 ### Acceptance
 
-- [ ] README-разделу «Customization workflow» достаточно чтобы новичок понял `add mcp` vs `customize` vs `enable` без чтения остального.
+- [x] README-разделу «Customization workflow» достаточно чтобы новичок понял `enable` / `add mcp` / `customize` без чтения остального.
 
 ---
 
 ## Cross-phase checklist
 
-- [ ] Обратная совместимость: любой проект с текущей версии обновляется без ручных правок.
-- [ ] `bash tests/run_all.sh` — зелёный на каждой фазе.
-- [ ] `shellcheck lib/**/*.sh` — нет новых warnings.
-- [ ] `agentsync doctor` — зелёный на install-dir репо (self-sync).
-- [ ] Каждая фаза — отдельный PR, с ссылкой на этот TODO.
-- [ ] CHANGELOG обновляется в каждой фазе, не в конце.
+- [x] Обратная совместимость: legacy-резолвер жив до 0.12, `migrate` — opt-in.
+- [x] `bats tests/` — зелёный на каждой фазе (260 тестов на финале 0.11).
+- [x] `shellcheck -S warning` — нет новых warnings (одна pre-existing SC2034 в doctor.sh).
+- [x] `agentsync doctor` — чисто по payload layout в install-dir. Остаётся 1 pre-existing warning про `claude: uses legacy 'enabled: true'` — это артефакт до-0.9 эпохи в tool YAML, не связан с 0.11 scope (лечится `agentsync enable claude ...`, но это отдельный коммит/решение maintainer'а).
+- [x] CHANGELOG обновляется в каждой фазе.
+- ~~«Каждая фаза — отдельный PR»~~ — retroactive не применимо, 0.11 landed as one dev session.
 
-## Что сознательно НЕ делаем (YAGNI)
+## Future / Someday (отложено — добавлять только по реальному запросу)
 
-- Profiles/presets (backend/frontend стэки) — ждём реального запроса.
-- `.ai/agent_sync.local.yaml` для персональных оверрайдов — добавим, если команды попросят.
-- Плагинная система для кастомных инструментов — достаточно `.ai/src/tools/<name>.yaml`.
-- Автокоммит/автопуш сгенерированных артефактов — вне scope CLI.
+- Profiles/presets (backend/frontend стэки).
+- `.ai/agent_sync.local.yaml` для персональных оверрайдов.
+- Плагинная система для кастомных инструментов.
+- Автокоммит/автопуш сгенерированных артефактов.
 - GUI/TUI поверх CLI.
+- Доп. hook-стартеры для Claude/Gemini/etc.
+- Cleanup `targets.<resource>.source` из tool YAML (non-functional).
+- `doctor` executable-флаг check для скриптов в hooks.
+- SHA256 manifests для `lib/templates/**` + `doctor --strict` checksum validation.
+- `agentsync show <tool> --resources` — отдельный флаг только для payload-таблицы.
+- Templates-no-secrets bats-тест (при появлении новых шаблонов).
 
 ## Метрики успеха
 

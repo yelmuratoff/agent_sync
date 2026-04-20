@@ -124,9 +124,39 @@ cmd_update() {
 
     echo ""
 
+    _show_migration_banner "$project_dir"
+
     if [[ "$strict" == "true" ]] && [[ "$had_conflicts" == "true" ]]; then
         exit 1
     fi
+}
+
+# Banner for projects still on the pre-0.11 flat-layout overrides. Detected by
+# existence of any file under .ai/src/{hooks,mcp,settings}/ in the project.
+_show_migration_banner() {
+    local project_dir="$1"
+    [[ -d "$project_dir/.ai/src" ]] || return 0
+
+    local found=false
+    local resource file
+    for resource in hooks mcp settings; do
+        [[ -d "$project_dir/.ai/src/$resource" ]] || continue
+        for file in "$project_dir/.ai/src/$resource"/*; do
+            [[ -f "$file" ]] || continue
+            found=true
+            break 2
+        done
+    done
+
+    [[ "$found" == "true" ]] || return 0
+
+    echo ""
+    echo "  $(_yellow "Legacy payload layout detected")"
+    echo "  $(_dim "Your project has overrides under") $(_cyan ".ai/src/{hooks,mcp,settings}/")$(_dim ". The canonical")"
+    echo "  $(_dim "layout since 0.11 is") $(_cyan ".ai/src/tools/<tool>/<resource>.<ext>")$(_dim ".")"
+    echo "  $(_dim "Run") $(_cyan "agentsync migrate --apply") $(_dim "to move them. Legacy paths still read,")"
+    echo "  $(_dim "but will be dropped in 0.12.")"
+    echo ""
 }
 
 # Pretty-print conflicts grouped by tool. Input: TSV lines on stdin via arg-1.
