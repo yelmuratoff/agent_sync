@@ -3,9 +3,16 @@
 
 load test_helper
 
+setup_file() {
+    seed_project
+}
+
+teardown_file() {
+    teardown_seed_project
+}
+
 setup() {
-    setup_test_project
-    run_agentsync init >/dev/null
+    clone_seed
 }
 
 teardown() {

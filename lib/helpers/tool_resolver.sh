@@ -74,11 +74,13 @@ get_tool_bool() {
 
     local v
     v=$(get_tool_value "$tool_name" "$key_path")
-    case "$(echo "$v" | tr '[:upper:]' '[:lower:]')" in
+    shopt -s nocasematch
+    case "$v" in
         true|yes|1|on)  echo "true" ;;
         false|no|0|off) echo "false" ;;
         *)              echo "" ;;
     esac
+    shopt -u nocasematch
 }
 
 # ── Payload resolution (settings / mcp / hooks) ───────────────────────────────

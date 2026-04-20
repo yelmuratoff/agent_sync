@@ -7,24 +7,31 @@
 # Usage: parse_yaml_value "file.yaml" "key" OR "key.subkey" OR "key.subkey.subsubkey"
 # Returns: the value as string, or empty if not found
 # Always returns exit code 0 (safe for use with set -e)
-_yaml_normalize_scalar() {
-    local raw="$1"
-    local value
-    value=$(echo "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+# Normalize a YAML scalar into $REPLY. Pure-bash, no forks.
+# Prefer this in hot loops. _yaml_normalize_scalar wraps it for the
+# echo-returning API kept for backwards compatibility with `$(...)` callers.
+_yaml_normalize_scalar_reply() {
+    local value="$1"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
 
-    # Keep inline # only when the scalar is quoted.
     if [[ "$value" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
-        echo "${BASH_REMATCH[1]}"
+        REPLY="${BASH_REMATCH[1]}"
         return 0
     fi
     if [[ "$value" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
-        echo "${BASH_REMATCH[1]}"
+        REPLY="${BASH_REMATCH[1]}"
         return 0
     fi
 
     value="${value%%#*}"
-    value=$(echo "$value" | sed 's/[[:space:]]*$//')
-    echo "$value"
+    value="${value%"${value##*[![:space:]]}"}"
+    REPLY="$value"
+}
+
+_yaml_normalize_scalar() {
+    _yaml_normalize_scalar_reply "$1"
+    echo "$REPLY"
 }
 
 parse_yaml_value() {
@@ -59,15 +66,15 @@ parse_yaml_value() {
         local line_key line_value
         if [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):[[:space:]]*(.*) ]]; then
             line_key="${BASH_REMATCH[1]}"
-            line_value="${BASH_REMATCH[2]}"
-            line_value=$(_yaml_normalize_scalar "$line_value")
+            _yaml_normalize_scalar_reply "${BASH_REMATCH[2]}"
+            line_value="$REPLY"
         elif [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):$ ]]; then
             line_key="${BASH_REMATCH[1]}"
             line_value=""
         else
             continue
         fi
-        
+
         if [[ "$in_section" == false ]]; then
             # Looking for first key at root level
             if [[ $indent -eq 0 ]] && [[ "$line_key" == "$looking_for" ]]; then
@@ -130,8 +137,8 @@ parse_yaml_list() {
         local IFS=','
         local item
         for item in $items; do
-            item=$(_yaml_normalize_scalar "$item")
-            [[ -n "$item" ]] && echo "$item"
+            _yaml_normalize_scalar_reply "$item"
+            [[ -n "$REPLY" ]] && echo "$REPLY"
         done
         return 0
     fi
@@ -163,9 +170,8 @@ parse_yaml_list() {
                     collect_min_indent=$indent
                 fi
                 if [[ $indent -eq $collect_min_indent ]]; then
-                    local item="${BASH_REMATCH[1]}"
-                    item=$(_yaml_normalize_scalar "$item")
-                    [[ -n "$item" ]] && echo "$item"
+                    _yaml_normalize_scalar_reply "${BASH_REMATCH[1]}"
+                    [[ -n "$REPLY" ]] && echo "$REPLY"
                     continue
                 fi
             fi
@@ -220,22 +226,17 @@ parse_yaml_list() {
 parse_yaml_bool() {
     local file="$1"
     local key_path="$2"
-    
+
     local value
     value=$(parse_yaml_value "$file" "$key_path")
-    
-    # Convert to lowercase using tr (POSIX compatible)
-    local lower_value
-    lower_value=$(echo "$value" | tr '[:upper:]' '[:lower:]')
-    
-    case "$lower_value" in
-        true|yes|1|on)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
+
+    shopt -s nocasematch
+    local rc=1
+    case "$value" in
+        true|yes|1|on) rc=0 ;;
     esac
+    shopt -u nocasematch
+    return $rc
 }
 
 # Parse strict boolean value from YAML file
@@ -257,20 +258,12 @@ parse_yaml_bool_strict() {
         return 2
     fi
 
-    local lower_value
-    lower_value=$(echo "$value" | tr '[:upper:]' '[:lower:]')
-
-    case "$lower_value" in
-        true|yes|1|on)
-            echo "true"
-            return 0
-            ;;
-        false|no|0|off)
-            echo "false"
-            return 0
-            ;;
-        *)
-            return 3
-            ;;
+    shopt -s nocasematch
+    local rc=3
+    case "$value" in
+        true|yes|1|on)  echo "true";  rc=0 ;;
+        false|no|0|off) echo "false"; rc=0 ;;
     esac
+    shopt -u nocasematch
+    return $rc
 }

@@ -3,16 +3,19 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    run_agentsync init
-    enable_tools claude
-    run_agentsync sync
+setup_file() {
+    # Seed with init + enable claude + sync so every test starts from a
+    # post-sync project tree. APFS clonefile per test.
+    seed_project
+    (
+        cd "$TEST_SEED"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude >/dev/null
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    )
 }
-
-teardown() {
-    teardown_test_project
-}
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 @test "check passes after sync" {
     run run_agentsync check

@@ -25,9 +25,23 @@ _resolve_version() {
 _resolve_version
 readonly VERSION
 
-# ─── Load modules ────────────────────────────────────────────────────────────
-_load_lib() {
-    # Resolve real path of this script (follow symlinks)
+# ─── Module loader ───────────────────────────────────────────────────────────
+# Only cli_colors, resolve, and update are always loaded (needed by main/dispatch
+# and cmd_engine). Subcommand-specific modules are sourced on demand via _need.
+_AGENTSYNC_LIB_DIR=""
+
+_need() {
+    local mod flag
+    for mod in "$@"; do
+        flag="_AS_LOADED_${mod//[^a-zA-Z0-9_]/_}"
+        [[ "${!flag:-}" == 1 ]] && continue
+        # shellcheck disable=SC1090
+        source "$_AGENTSYNC_LIB_DIR/$mod.sh"
+        printf -v "$flag" '%s' 1
+    done
+}
+
+_load_lib_core() {
     local source="${BASH_SOURCE[0]}"
     while [[ -L "$source" ]]; do
         local link_dir
@@ -38,41 +52,22 @@ _load_lib() {
     local script_dir
     script_dir="$(cd "$(dirname "$source")" && pwd)"
 
-    # Engine root is one level up from bin/
     _AGENTSYNC_ENGINE_ROOT="$(cd "$script_dir/.." && pwd)"
 
-    local lib_dir="$_AGENTSYNC_ENGINE_ROOT/lib/helpers"
-    if [[ ! -d "$lib_dir" ]]; then
-        lib_dir="${AGENTSYNC_HOME:-.}/lib/helpers"
+    _AGENTSYNC_LIB_DIR="$_AGENTSYNC_ENGINE_ROOT/lib/helpers"
+    if [[ ! -d "$_AGENTSYNC_LIB_DIR" ]]; then
+        _AGENTSYNC_LIB_DIR="${AGENTSYNC_HOME:-.}/lib/helpers"
     fi
-
-    if [[ ! -d "$lib_dir" ]]; then
+    if [[ ! -d "$_AGENTSYNC_LIB_DIR" ]]; then
         echo "Error: Cannot find AgentSync lib directory." >&2
         exit 1
     fi
 
-    source "$lib_dir/cli_colors.sh"
-    source "$lib_dir/prompts.sh"
-    source "$lib_dir/resolve.sh"
-    source "$lib_dir/yaml.sh"
-    source "$lib_dir/yaml_edit.sh"
-    source "$lib_dir/tool_resolver.sh"
-    source "$lib_dir/init.sh"
-    source "$lib_dir/list.sh"
-    source "$lib_dir/enable.sh"
-    source "$lib_dir/customize.sh"
-    source "$lib_dir/add.sh"
-    source "$lib_dir/simplify.sh"
-    source "$lib_dir/doctor.sh"
-    source "$lib_dir/resolve_cmd.sh"
-    source "$lib_dir/generate.sh"
-    source "$lib_dir/snapshot.sh"
-    source "$lib_dir/update.sh"
-    source "$lib_dir/release.sh"
-    source "$lib_dir/export.sh"
-    source "$lib_dir/import.sh"
+    # Always-loaded core: colour helpers for all output, resolve_system_dir for
+    # cmd_engine, update.sh for AGENTSYNC_REPO + check_for_updates used in main.
+    _need cli_colors resolve update
 }
-_load_lib
+_load_lib_core
 
 # ─── Help ────────────────────────────────────────────────────────────────────
 print_usage() {
@@ -180,26 +175,26 @@ main() {
     esac
 
     case "$command" in
-        init)          shift; cmd_init "$@" ;;
+        init)          _need prompts yaml tool_resolver init;          shift; cmd_init "$@" ;;
         sync)          shift; cmd_engine "sync.sh" "$@" ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
-        generate|gen)  shift; cmd_generate "$*" ;;
-        export)        shift; cmd_export "$@" ;;
-        import)        shift; cmd_import "$@" ;;
-        enable)        shift; cmd_enable "$@" ;;
-        disable)       shift; cmd_disable "$@" ;;
-        add)           shift; cmd_add "$@" ;;
-        customize)     shift; cmd_customize "$@" ;;
-        simplify)      shift; cmd_simplify "$@" ;;
-        show)          shift; cmd_show "$@" ;;
-        diff)          shift; cmd_diff "$@" ;;
-        resolve)       shift; cmd_resolve "$@" ;;
-        doctor)        cmd_doctor ;;
-        update)        shift; cmd_update "$@" ;;
-        upgrade-config) shift; cmd_upgrade_config "$@" ;;
-        release)       shift; cmd_release "$@" ;;
-        list|ls)       cmd_list ;;
+        generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
+        export)        _need yaml export;                              shift; cmd_export "$@" ;;
+        import)        _need import;                                   shift; cmd_import "$@" ;;
+        enable)        _need yaml yaml_edit tool_resolver enable;      shift; cmd_enable "$@" ;;
+        disable)       _need yaml yaml_edit tool_resolver enable;      shift; cmd_disable "$@" ;;
+        add)           _need add;                                      shift; cmd_add "$@" ;;
+        customize)     _need yaml yaml_edit tool_resolver customize;   shift; cmd_customize "$@" ;;
+        simplify)      _need yaml yaml_edit tool_resolver customize simplify;   shift; cmd_simplify "$@" ;;
+        show)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_show "$@" ;;
+        diff)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_diff "$@" ;;
+        resolve)       _need yaml yaml_edit tool_resolver snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
+        doctor)        _need yaml tool_resolver doctor;                cmd_doctor ;;
+        update)        _need yaml snapshot;                            shift; cmd_update "$@" ;;
+        upgrade-config) _need prompts yaml tool_resolver init;         shift; cmd_upgrade_config "$@" ;;
+        release)       _need release;                                  shift; cmd_release "$@" ;;
+        list|ls)       _need yaml tool_resolver customize list;        cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;
         help|--help|-h)       print_usage ;;
         *)

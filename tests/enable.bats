@@ -3,14 +3,10 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    run_agentsync init >/dev/null
-}
-
-teardown() {
-    teardown_test_project
-}
+setup_file() { seed_project; }
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 @test "enable adds tool to tools.enabled" {
     run run_agentsync enable claude
