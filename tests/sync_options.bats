@@ -1,69 +1,58 @@
 #!/usr/bin/env bats
 # Tests for sync filtering, dry-run, disable/enable, idempotency.
-# Each group uses setup_file for shared state where possible.
+# Shares a single `init`ed project via seed_project/clone_seed — each test then
+# layers its own enable/sync on top.
 
 load test_helper
+
+setup_file() { seed_project; }
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 # ── --only / --skip / --dry-run ──────────────────────────────────────────────
 
 @test "sync --only filters to single tool" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude cursor
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ -f "CLAUDE.md" ]
     [ ! -f "AGENTS.md" ]
-    teardown_test_project
 }
 
 @test "sync --skip excludes a tool" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude cursor
     run run_agentsync sync --skip claude
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]
     [ -f "AGENTS.md" ]
-    teardown_test_project
 }
 
 @test "sync --only multiple tools" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude cursor copilot
     run run_agentsync sync --only claude,cursor
     [ "$status" -eq 0 ]
     [ -f "CLAUDE.md" ]
     [ -f "AGENTS.md" ]
     [ ! -f ".github/copilot-instructions.md" ]
-    teardown_test_project
 }
 
 @test "sync --dry-run does not create files" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude
     run run_agentsync sync --dry-run
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]
     [[ "$output" == *"dry-run"* ]]
-    teardown_test_project
 }
 
 @test "sync skips disabled tools" {
-    setup_test_project
-    run_agentsync init
     # Claude is disabled by default after init — no need to flip.
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]
-    teardown_test_project
 }
 
 @test "sync cleans up when tool is disabled" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude
     run_agentsync sync --only claude
     [ -f "CLAUDE.md" ]
@@ -71,12 +60,9 @@ load test_helper
     run run_agentsync sync --only claude
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]
-    teardown_test_project
 }
 
 @test "sync copies settings.json for Claude" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude
     mkdir -p .ai/src/settings
     echo '{"permissions":{"allow":["Read"]}}' > .ai/src/settings/claude.json
@@ -84,12 +70,9 @@ load test_helper
     [ "$status" -eq 0 ]
     [ -f ".claude/settings.json" ]
     grep -q "permissions" .claude/settings.json
-    teardown_test_project
 }
 
 @test "sync is idempotent" {
-    setup_test_project
-    run_agentsync init
     enable_tools claude
     run_agentsync sync --only claude
     local hash1
@@ -100,5 +83,4 @@ load test_helper
     hash2=$(find .claude -type f -exec md5sum {} \; 2>/dev/null | sort || \
             find .claude -type f -exec md5 {} \; 2>/dev/null | sort)
     [ "$hash1" = "$hash2" ]
-    teardown_test_project
 }
