@@ -134,27 +134,35 @@ cmd_simplify() {
     local overrides
     overrides=$(list_user_override_tools)
 
-    if [[ -z "$overrides" ]]; then
+    local matched=false
+
+    # Pass 1: tool YAML overrides.
+    if [[ -n "$overrides" ]]; then
+        local tool
+        while IFS= read -r tool; do
+            [[ -z "$tool" ]] && continue
+            if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
+                continue
+            fi
+            matched=true
+            _simplify_one_tool "$tool" "$apply" "$auto_yes"
+        done <<< "$overrides"
+    fi
+
+    # Pass 2: payload overrides (hooks/mcp/settings). Byte-compare with base.
+    # Considered "matched" if the filter hit at least one payload.
+    _simplify_payload_overrides "$apply" "$auto_yes" "$tool_filter"
+    [[ $? -eq 0 ]] && matched=true
+
+    if [[ "$matched" != "true" ]]; then
+        if [[ -n "$tool_filter" ]]; then
+            echo "$(_red "Error"): No override found for '$tool_filter'." >&2
+            return 1
+        fi
         echo ""
         echo "  $(_dim "No user overrides — nothing to simplify.")"
         echo ""
         return 0
-    fi
-
-    local matched=false
-    local tool
-    while IFS= read -r tool; do
-        [[ -z "$tool" ]] && continue
-        if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
-            continue
-        fi
-        matched=true
-        _simplify_one_tool "$tool" "$apply" "$auto_yes"
-    done <<< "$overrides"
-
-    if [[ "$matched" != "true" ]]; then
-        echo "$(_red "Error"): No override found for '$tool_filter'." >&2
-        return 1
     fi
 
     echo ""
@@ -166,6 +174,105 @@ cmd_simplify() {
     fi
     echo ""
     return 0
+}
+
+# Scan .ai/src/{hooks,mcp,settings}/ for overrides that are byte-identical to
+# their base template. Those are scaffolded copies the user never edited —
+# deleting them lets the base drift through on future updates.
+#
+# Returns 0 if at least one payload was considered (matched tool_filter),
+# 1 otherwise (only meaningful for error reporting in the caller).
+_simplify_payload_overrides() {
+    local apply="$1"
+    local auto_yes="$2"
+    local tool_filter="$3"
+
+    local overrides_root="$REPO_ROOT/.ai/src"
+    local any_considered=1  # 1 = none yet, 0 = at least one
+
+    # First pass: collect candidates so we can print a clean block-with-header.
+    local -a redundant_files=()
+    local -a kept_files=()
+    local resource file tool base_file
+    for resource in hooks mcp settings; do
+        [[ -d "$overrides_root/$resource" ]] || continue
+        for file in "$overrides_root/$resource"/*; do
+            [[ -f "$file" ]] || continue
+            tool="$(basename "$file")"
+            tool="${tool%.*}"
+
+            if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
+                continue
+            fi
+            any_considered=0
+
+            base_file=$(_find_base_payload "$resource" "$tool")
+
+            if [[ -z "$base_file" ]] || ! cmp -s "$file" "$base_file"; then
+                kept_files+=("$file")
+                continue
+            fi
+            redundant_files+=("$file")
+        done
+    done
+
+    if [[ ${#redundant_files[@]} -eq 0 ]] && [[ ${#kept_files[@]} -eq 0 ]]; then
+        return $any_considered
+    fi
+
+    echo ""
+    _bold "  Payload overrides"; echo ""
+    echo ""
+
+    local rel
+    if [[ ${#redundant_files[@]} -eq 0 ]]; then
+        _dim "  No byte-identical payload overrides — ${#kept_files[@]} real customization(s)."; echo ""
+        return $any_considered
+    fi
+
+    echo "  $(_yellow "Byte-identical to base (safe to delete):")"
+    for file in "${redundant_files[@]}"; do
+        rel="${file#"$REPO_ROOT/"}"
+        printf "    %s %s\n" "$(_dim "-")" "$rel"
+    done
+    echo ""
+
+    if [[ ${#kept_files[@]} -gt 0 ]]; then
+        _dim "  Kept (diverge from base or no base): ${#kept_files[@]} file(s)"; echo ""
+    fi
+
+    if [[ "$apply" != "true" ]]; then
+        _dim "  → would delete ${#redundant_files[@]} payload override(s)."; echo ""
+        return $any_considered
+    fi
+
+    # --apply: delete (with confirmation unless --yes or non-TTY).
+    local deleted=0 skipped=0
+    for file in "${redundant_files[@]}"; do
+        rel="${file#"$REPO_ROOT/"}"
+        local do_delete=false
+        if [[ "$auto_yes" == "true" ]]; then
+            do_delete=true
+        elif [[ -t 0 ]] && [[ -t 1 ]]; then
+            local answer
+            printf "  %s " "$(_bold "Delete $rel? [y/N]")"
+            IFS= read -r answer < /dev/tty || answer=""
+            case "$answer" in y|Y|yes|Yes) do_delete=true ;; esac
+        else
+            do_delete=true
+        fi
+        if [[ "$do_delete" == "true" ]]; then
+            rm -f "$file"
+            echo "  $(_green "Deleted") $rel"
+            deleted=$((deleted + 1))
+        else
+            _dim "  Kept $rel"; echo ""
+            skipped=$((skipped + 1))
+        fi
+    done
+    echo ""
+    _dim "  Removed $deleted, kept $skipped."; echo ""
+    return $any_considered
 }
 
 _simplify_one_tool() {

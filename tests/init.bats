@@ -11,7 +11,7 @@ teardown() {
     teardown_test_project
 }
 
-@test "init creates .ai/src structure" {
+@test "init creates .ai/src content directories" {
     run run_agentsync init
     [ "$status" -eq 0 ]
 
@@ -20,11 +20,61 @@ teardown() {
     [ -d ".ai/src/skills" ]
     [ -d ".ai/src/commands" ]
     [ -d ".ai/src/agents" ]
-    [ -d ".ai/src/settings" ]
-    [ -d ".ai/src/mcp" ]
-    [ -d ".ai/src/hooks" ]
-    # tools/ dir is NOT created by init — created on demand by `customize`.
+    # tools/ is created on demand by `customize`.
     [ ! -d ".ai/src/tools" ]
+    # Payload dirs (settings/mcp/hooks) are lazy — created only when a tool
+    # is enabled (auto-detect or --tools). Empty project = no payload dirs.
+    [ ! -d ".ai/src/settings" ]
+    [ ! -d ".ai/src/mcp" ]
+    [ ! -d ".ai/src/hooks" ]
+}
+
+@test "init --tools claude scaffolds only claude payloads" {
+    run run_agentsync init --tools claude
+    [ "$status" -eq 0 ]
+
+    # Claude has settings + mcp templates, but no hooks template.
+    [ -f ".ai/src/settings/claude.json" ]
+    [ -f ".ai/src/mcp/claude.json" ]
+    [ ! -d ".ai/src/hooks" ]
+    # No cursor leakage.
+    [ ! -f ".ai/src/settings/cursor.json" ]
+    [ ! -f ".ai/src/mcp/cursor.json" ]
+}
+
+@test "init --content agents,rules skips skills/commands/agents" {
+    run run_agentsync init --content agents,rules
+    [ "$status" -eq 0 ]
+
+    [ -f ".ai/src/AGENTS.md" ]
+    [ -d ".ai/src/rules" ]
+    [ ! -d ".ai/src/skills" ]
+    [ ! -d ".ai/src/commands" ]
+    [ ! -d ".ai/src/agents" ]
+}
+
+@test "init --no-detect ignores existing tool markers" {
+    mkdir -p .claude
+    run run_agentsync init --no-detect
+    [ "$status" -eq 0 ]
+
+    grep -q "enabled: \[\]" ".ai/agent_sync.yaml"
+    [ ! -d ".ai/src/settings" ]
+}
+
+@test "init --tools union with auto-detect" {
+    mkdir -p .cursor
+    run run_agentsync init --tools claude
+    [ "$status" -eq 0 ]
+
+    grep -q "^    - claude$" ".ai/agent_sync.yaml"
+    grep -q "^    - cursor$" ".ai/agent_sync.yaml"
+}
+
+@test "init rejects unknown --content token" {
+    run run_agentsync init --content bogus
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Unknown --content section"* ]]
 }
 
 @test "init creates starter rules" {
@@ -128,4 +178,47 @@ teardown() {
     # Both detected tools should appear under tools.enabled.
     grep -q "^    - claude$" ".ai/agent_sync.yaml"
     grep -q "^    - cursor$" ".ai/agent_sync.yaml"
+}
+
+# ── Phase 4: interactive init, --yes, --dry-run ─────────────────────────────
+
+@test "init --dry-run shows plan without writing" {
+    run run_agentsync init --dry-run --tools claude,cursor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Dry run"* ]]
+    [[ "$output" == *"Plan:"* ]]
+    [[ "$output" == *"claude"* ]]
+    [[ "$output" == *"cursor"* ]]
+
+    [ ! -d ".ai" ]
+    [ ! -f ".ai/agent_sync.yaml" ]
+}
+
+@test "init --dry-run --content filters in plan" {
+    run run_agentsync init --dry-run --content agents,rules
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"agents, rules"* ]]
+    [ ! -d ".ai" ]
+}
+
+@test "init --yes in non-TTY behaves like defaults" {
+    # --yes is a no-op here (no prompts run in non-TTY), but must not error.
+    run run_agentsync init --yes --no-detect
+    [ "$status" -eq 0 ]
+    [ -f ".ai/agent_sync.yaml" ]
+    [ -f ".ai/src/AGENTS.md" ]
+}
+
+@test "init non-TTY without flags runs silently with defaults" {
+    # No flags, no TTY → fall through to defaults; must NOT hang on prompts.
+    run run_agentsync init
+    [ "$status" -eq 0 ]
+    [ -f ".ai/agent_sync.yaml" ]
+}
+
+@test "init --help documents --yes and --dry-run" {
+    run run_agentsync init --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--yes"* ]]
+    [[ "$output" == *"--dry-run"* ]]
 }

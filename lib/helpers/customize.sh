@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
 # agentsync customize / show / diff — inspect and create overrides for tools.
+#
+# Resources:
+#   tool      (default)  — tools/<name>.yaml override
+#   hooks                — hooks/<name>.<ext> payload override
+#   mcp                  — mcp/<name>.<ext> payload override
+#   settings             — settings/<name>.<ext> payload override
+
+_VALID_RESOURCES="tool hooks mcp settings"
+
+_validate_resource() {
+    local resource="$1"
+    case " $_VALID_RESOURCES " in
+        *" $resource "*) return 0 ;;
+        *)
+            echo "$(_red "Error"): Unknown resource '$resource'." >&2
+            echo "Valid: $_VALID_RESOURCES" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Find override path for a tool payload resource.
+#   <repo>/.ai/src/<resource>/<tool>.<ext>
+# Extension is discovered from the base template. Prints empty if no base.
+_payload_override_path() {
+    local tool_name="$1"
+    local resource="$2"
+    local base_file
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    [[ -z "$base_file" ]] && return 0
+    local ext="${base_file##*.}"
+    echo "$REPO_ROOT/.ai/src/${resource}/${tool_name}.${ext}"
+}
 
 _customize_prepare_context() {
     local project_dir
@@ -29,11 +62,14 @@ _customize_prepare_context() {
 
 cmd_customize() {
     local full=false
+    local yes=false
     local tool_name=""
+    local resource=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --full) full=true; shift ;;
+            --yes|-y) yes=true; shift ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
                 exit 1
@@ -42,8 +78,12 @@ cmd_customize() {
                 if [[ -z "$tool_name" ]]; then
                     tool_name="$1"
                     shift
+                elif [[ -z "$resource" ]]; then
+                    resource="$1"
+                    shift
                 else
-                    echo "$(_red "Error"): Only one tool at a time." >&2
+                    echo "$(_red "Error"): Too many arguments." >&2
+                    echo "Usage: agentsync customize <tool> [<resource>] [--full] [--yes]" >&2
                     exit 1
                 fi
                 ;;
@@ -51,11 +91,27 @@ cmd_customize() {
     done
 
     if [[ -z "$tool_name" ]]; then
-        echo "$(_red "Error"): agentsync customize <tool> [--full]" >&2
+        echo "$(_red "Error"): agentsync customize <tool> [<resource>] [--full] [--yes]" >&2
+        echo "  <resource>: $_VALID_RESOURCES (default: tool)" >&2
         exit 1
     fi
 
+    resource="${resource:-tool}"
+    _validate_resource "$resource"
+
     _customize_prepare_context
+
+    case "$resource" in
+        tool)     _customize_tool "$tool_name" "$full" ;;
+        hooks)    _customize_payload "$tool_name" "hooks" "$yes" ;;
+        mcp)      _customize_payload "$tool_name" "mcp" "$yes" ;;
+        settings) _customize_payload "$tool_name" "settings" "$yes" ;;
+    esac
+}
+
+_customize_tool() {
+    local tool_name="$1"
+    local full="$2"
 
     local base_file user_file
     base_file=$(tool_resolver_base_file "$tool_name")
@@ -117,11 +173,86 @@ cmd_customize() {
     fi
 }
 
+# Copy a base payload file (hooks/mcp/settings) into .ai/src/ as an override.
+# For hooks: show summary + require confirmation (unless --yes or non-TTY batch).
+_customize_payload() {
+    local tool_name="$1"
+    local resource="$2"
+    local yes="$3"
+
+    local base_file
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    if [[ -z "$base_file" ]]; then
+        echo "$(_red "Error"): No base $resource template for '$tool_name'." >&2
+        echo "" >&2
+        echo "Either '$tool_name' is unknown, or this tool doesn't ship a $resource template." >&2
+        echo "Run $(_cyan "agentsync list") to see available tools." >&2
+        exit 1
+    fi
+
+    local user_file
+    user_file=$(_payload_override_path "$tool_name" "$resource")
+
+    if [[ -f "$user_file" ]]; then
+        echo "$(_yellow "Override already exists"): $user_file"
+        echo ""
+        echo "Edit it directly, or remove it to start over."
+        echo "See effective source:  $(_cyan "agentsync show $tool_name $resource")"
+        echo "See your vs base diff: $(_cyan "agentsync diff $tool_name $resource")"
+        return 0
+    fi
+
+    # Hooks carry executable intent — show summary + require opt-in.
+    if [[ "$resource" == "hooks" ]]; then
+        echo ""
+        _yellow "⚠  You are about to override hooks for $(tool_display_name "$tool_name")."
+        echo ""
+        echo "Hooks can run shell commands after sync. Review the base template"
+        echo "below before copying it — anything you put here will run locally."
+        echo ""
+        _dim "  Base: $base_file"; echo ""
+        echo ""
+        sed 's/^/    /' "$base_file"
+        echo ""
+
+        if [[ "$yes" != "true" ]]; then
+            if [[ -t 0 ]]; then
+                local reply=""
+                read -r -p "$(_bold "Create this override? [y/N] ")" reply
+                case "$reply" in
+                    y|Y|yes|YES) ;;
+                    *)
+                        echo "$(_dim "Cancelled.")"
+                        return 0
+                        ;;
+                esac
+            else
+                echo "$(_red "Error"): Refusing to scaffold hook override in non-interactive mode." >&2
+                echo "Re-run with $(_cyan "--yes") to confirm." >&2
+                exit 1
+            fi
+        fi
+    fi
+
+    mkdir -p "$(dirname "$user_file")"
+    cp "$base_file" "$user_file"
+
+    echo ""
+    _green "Created $resource override:"; echo " $user_file"
+    echo ""
+    _dim "  source (base): $base_file"; echo ""
+    echo ""
+    echo "Edit this file to customize. Remove it to fall back to the base template."
+    echo "See diff vs base: $(_cyan "agentsync diff $tool_name $resource")"
+    echo ""
+}
+
 # ── show ──────────────────────────────────────────────────────────────────────
 
 cmd_show() {
     local show_base=false
     local tool_name=""
+    local resource=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -134,8 +265,11 @@ cmd_show() {
                 if [[ -z "$tool_name" ]]; then
                     tool_name="$1"
                     shift
+                elif [[ -z "$resource" ]]; then
+                    resource="$1"
+                    shift
                 else
-                    echo "$(_red "Error"): Only one tool at a time." >&2
+                    echo "$(_red "Error"): Too many arguments." >&2
                     exit 1
                 fi
                 ;;
@@ -143,11 +277,21 @@ cmd_show() {
     done
 
     if [[ -z "$tool_name" ]]; then
-        echo "$(_red "Error"): agentsync show <tool> [--base]" >&2
+        echo "$(_red "Error"): agentsync show <tool> [<resource>] [--base]" >&2
+        echo "  <resource>: $_VALID_RESOURCES (default: tool)" >&2
         exit 1
     fi
 
+    resource="${resource:-tool}"
+    _validate_resource "$resource"
+
     _customize_prepare_context
+
+    # Payload resources resolve via base+override fallback.
+    if [[ "$resource" != "tool" ]]; then
+        _show_payload "$tool_name" "$resource" "$show_base"
+        return 0
+    fi
 
     local base_file user_file
     base_file=$(tool_resolver_base_file "$tool_name")
@@ -242,12 +386,94 @@ cmd_show() {
     echo ""
 }
 
+_show_payload() {
+    local tool_name="$1"
+    local resource="$2"
+    local show_base="$3"
+
+    local base_file user_file effective
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    user_file=$(_payload_override_path "$tool_name" "$resource")
+    effective=$(resolve_payload_source "$tool_name" "$resource")
+
+    if [[ "$show_base" == "true" ]]; then
+        if [[ -z "$base_file" ]]; then
+            echo "$(_red "Error"): No base $resource template for '$tool_name'." >&2
+            exit 1
+        fi
+        echo ""
+        _bold "  Base $resource"; echo " $(_dim "$base_file")"
+        echo ""
+        sed 's/^/    /' "$base_file"
+        echo ""
+        return 0
+    fi
+
+    if [[ -z "$effective" ]]; then
+        echo "$(_red "Error"): No $resource source for '$tool_name' (neither override nor base)." >&2
+        echo "Run $(_cyan "agentsync list") to see available tools." >&2
+        exit 1
+    fi
+
+    local source_label="$(_dim "base")"
+    if [[ -f "$user_file" ]] && [[ "$user_file" == "$effective" ]]; then
+        source_label="$(_yellow "★ user override")"
+    fi
+
+    echo ""
+    _bold "  $(tool_display_name "$tool_name") — $resource  [$source_label]"; echo ""
+    _dim "  effective: $effective"; echo ""
+    if [[ -f "$user_file" ]]; then
+        _dim "  override:  $user_file"; echo ""
+    fi
+    if [[ -n "$base_file" ]]; then
+        _dim "  base:      $base_file"; echo ""
+    fi
+    echo ""
+    sed 's/^/    /' "$effective"
+    echo ""
+}
+
 # ── diff ──────────────────────────────────────────────────────────────────────
 
 cmd_diff() {
-    local tool_name="${1:-}"
+    local tool_name=""
+    local resource=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -*)
+                echo "$(_red "Error"): Unknown flag: $1" >&2
+                exit 1
+                ;;
+            *)
+                if [[ -z "$tool_name" ]]; then
+                    tool_name="$1"
+                    shift
+                elif [[ -z "$resource" ]]; then
+                    resource="$1"
+                    shift
+                else
+                    echo "$(_red "Error"): Too many arguments." >&2
+                    exit 1
+                fi
+                ;;
+        esac
+    done
 
     _customize_prepare_context
+
+    resource="${resource:-tool}"
+    _validate_resource "$resource"
+
+    if [[ "$resource" != "tool" ]]; then
+        if [[ -z "$tool_name" ]]; then
+            echo "$(_red "Error"): agentsync diff <tool> <resource>" >&2
+            exit 1
+        fi
+        _diff_payload "$tool_name" "$resource"
+        return 0
+    fi
 
     local overrides
     overrides=$(list_user_override_tools)
@@ -274,6 +500,52 @@ cmd_diff() {
         echo "$(_red "Error"): No override found for '$tool_name'." >&2
         exit 1
     fi
+}
+
+_diff_payload() {
+    local tool_name="$1"
+    local resource="$2"
+
+    local base_file user_file
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    user_file=$(_payload_override_path "$tool_name" "$resource")
+
+    if [[ -z "$base_file" ]] && [[ ! -f "$user_file" ]]; then
+        echo "$(_red "Error"): No $resource source for '$tool_name' (no base, no override)." >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$user_file" ]]; then
+        echo ""
+        _dim "  No override for $(tool_display_name "$tool_name") $resource — inheriting fully from base."; echo ""
+        _dim "  base: $base_file"; echo ""
+        echo ""
+        return 0
+    fi
+
+    if [[ -z "$base_file" ]]; then
+        echo ""
+        _yellow "  Custom $resource override (no base to diff against):"; echo ""
+        _dim "  override: $user_file"; echo ""
+        echo ""
+        return 0
+    fi
+
+    echo ""
+    _bold "  $(tool_display_name "$tool_name") — $resource diff"; echo ""
+    _dim "    override: $user_file"; echo ""
+    _dim "    base:     $base_file"; echo ""
+    echo ""
+    if diff -u "$base_file" "$user_file" > /dev/null 2>&1; then
+        _dim "    Identical — override is a byte-for-byte copy of base."
+        echo ""
+        _dim "    Tip: $(_cyan "agentsync simplify") can remove redundant overrides."
+        echo ""
+        return 0
+    fi
+    # diff returns 1 when files differ — that's expected, not an error.
+    diff -u --label "base" --label "override" "$base_file" "$user_file" 2>/dev/null | sed 's/^/    /' || true
+    echo ""
 }
 
 _diff_one_tool() {

@@ -456,42 +456,30 @@ sync_tool() {
         fi
     fi
 
-    # 6. SETTINGS
+    # 6. SETTINGS  — override → base fallback via resolve_payload_source
     if [[ -n "$dest_settings_abs" ]]; then
-        local src_settings
-        src_settings=$(get_tool_value "$tool_name" "targets.settings.source")
-        if [[ -n "$src_settings" ]]; then
-            local src_settings_abs
-            src_settings_abs=$(resolve_source_path "$src_settings" "targets.settings.source for $display")
-            if [[ -f "$src_settings_abs" ]]; then
-                copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
-            fi
+        local src_settings_abs
+        src_settings_abs=$(resolve_payload_source "$tool_name" "settings")
+        if [[ -n "$src_settings_abs" ]] && [[ -f "$src_settings_abs" ]]; then
+            copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
         fi
     fi
 
-    # 7. MCP
+    # 7. MCP  — override → base fallback
     if [[ -n "$dest_mcp_abs" ]]; then
-        local src_mcp
-        src_mcp=$(get_tool_value "$tool_name" "targets.mcp.source")
-        if [[ -n "$src_mcp" ]]; then
-            local src_mcp_abs
-            src_mcp_abs=$(resolve_source_path "$src_mcp" "targets.mcp.source for $display")
-            if [[ -f "$src_mcp_abs" ]]; then
-                copy_file "$src_mcp_abs" "$dest_mcp_abs" "$DRY_RUN"
-            fi
+        local src_mcp_abs
+        src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
+        if [[ -n "$src_mcp_abs" ]] && [[ -f "$src_mcp_abs" ]]; then
+            copy_file "$src_mcp_abs" "$dest_mcp_abs" "$DRY_RUN"
         fi
     fi
 
-    # 8. HOOKS
+    # 8. HOOKS  — override → base fallback
     if [[ -n "$dest_hooks_abs" ]]; then
-        local src_hooks
-        src_hooks=$(get_tool_value "$tool_name" "targets.hooks.source")
-        if [[ -n "$src_hooks" ]]; then
-            local src_hooks_abs
-            src_hooks_abs=$(resolve_source_path "$src_hooks" "targets.hooks.source for $display")
-            if [[ -f "$src_hooks_abs" ]]; then
-                copy_file "$src_hooks_abs" "$dest_hooks_abs" "$DRY_RUN"
-            fi
+        local src_hooks_abs
+        src_hooks_abs=$(resolve_payload_source "$tool_name" "hooks")
+        if [[ -n "$src_hooks_abs" ]] && [[ -f "$src_hooks_abs" ]]; then
+            copy_file "$src_hooks_abs" "$dest_hooks_abs" "$DRY_RUN"
         fi
     fi
 

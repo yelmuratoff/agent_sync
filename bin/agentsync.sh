@@ -52,6 +52,7 @@ _load_lib() {
     fi
 
     source "$lib_dir/cli_colors.sh"
+    source "$lib_dir/prompts.sh"
     source "$lib_dir/resolve.sh"
     source "$lib_dir/yaml.sh"
     source "$lib_dir/yaml_edit.sh"
@@ -101,6 +102,7 @@ print_usage() {
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
     echo "    $(_cyan "import")         Import config from GitHub, archive, or directory"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
+    echo "    $(_cyan "upgrade-config") Re-pin agentsync_version in agent_sync.yaml"
     echo "    $(_cyan "release")        Bump version, tag, and push (maintainer)"
     echo "    $(_cyan "version")        Print version"
     echo "    $(_cyan "help")           Show this message"
@@ -178,7 +180,7 @@ main() {
     esac
 
     case "$command" in
-        init)          shift; cmd_init "${1:-.}" ;;
+        init)          shift; cmd_init "$@" ;;
         sync)          shift; cmd_engine "sync.sh" "$@" ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
@@ -195,6 +197,7 @@ main() {
         resolve)       shift; cmd_resolve "$@" ;;
         doctor)        cmd_doctor ;;
         update)        shift; cmd_update "$@" ;;
+        upgrade-config) shift; cmd_upgrade_config "$@" ;;
         release)       shift; cmd_release "$@" ;;
         list|ls)       cmd_list ;;
         version|--version|-v) echo "agentsync v${VERSION}" ;;

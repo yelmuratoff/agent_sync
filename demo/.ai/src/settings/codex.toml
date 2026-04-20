@@ -1,9 +1,0 @@
-# Codex project config — .codex/config.toml
-# https://developers.openai.com/codex/config-basic
-#
-# Add MCP servers under [mcp_servers.<name>], e.g.:
-#
-# [mcp_servers.github]
-# command = "npx"
-# args = ["-y", "@modelcontextprotocol/server-github"]
-# env = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }

@@ -90,18 +90,18 @@ Restart your terminal or run `source ~/.zshrc` after installation. Running the i
 
 ```bash
 cd your-project
-agentsync init                      # 1. Create .ai/ structure with starter templates
+agentsync init                      # 1. Interactive wizard in a TTY; auto-detect elsewhere
 agentsync generate | pbcopy         # 2. (Optional) Generate project-specific config via AI
-agentsync sync                      # 3. Distribute to all tools
+agentsync sync                      # 3. Distribute to all enabled tools
 ```
 
 **What each step does:**
 
-1. **`agentsync init`** — Creates the `.ai/src/` directory with starter templates: `AGENTS.md` (agent identity), sample rules, skills, commands, agent personas, and tool YAML configs for all 14 supported tools. Safe to run only once — if `.ai/src/` already exists, it skips to avoid overwriting your content.
+1. **`agentsync init`** — Scaffolds the `.ai/` directory. In a terminal it opens a short wizard to pick which tools and content sections you want; in scripts/CI it runs silently using auto-detection (`.claude/`, `.cursor/`, `CLAUDE.md`, ...) and sensible defaults. Only the payloads you opt into get scaffolded — other tools use shipped base templates at sync time. Useful flags: `--tools claude,cursor` (explicit list), `--content agents,rules` (narrow content), `--no-detect` (blank slate), `--yes` (accept defaults), `--dry-run` (preview). Safe to run twice — if `.ai/src/` already exists, it skips.
 
 2. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
 
-3. **`agentsync sync`** — Reads each tool YAML config from `.ai/src/tools/`, then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also updates `.gitignore` to exclude generated files.
+3. **`agentsync sync`** — Reads each enabled tool's config (user override + shipped base — see [How Resources Resolve](#how-resources-resolve)), then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also updates `.gitignore` to exclude generated files.
 
 After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
 
@@ -115,35 +115,23 @@ AgentSync supports two source layouts:
 
 ```
 .ai/
-├── src/                        # Source of truth. Edit ONLY here.
-│   ├── AGENTS.md               # Agent identity: role, approach, principles
-│   ├── rules/                  # Rules — always-on constraints
-│   │   ├── core.md
-│   │   └── git.md
-│   ├── skills/                 # Skills — on-demand step-by-step recipes
-│   │   ├── commit/SKILL.md
-│   │   ├── review/SKILL.md
-│   │   └── ...
-│   ├── commands/               # Custom slash commands
-│   │   ├── review.md
-│   │   └── fix-issue.md
-│   ├── agents/                 # Subagent personas
-│   │   └── code-reviewer.md
-│   ├── settings/               # Tool-specific settings (JSON)
-│   │   └── claude.json
-│   ├── mcp/                    # MCP server configs (JSON)
-│   │   ├── claude.json
-│   │   └── cursor.json
-│   ├── hooks/                  # Event hooks (JSON)
-│   │   ├── cursor.json
-│   │   └── codex.json
-│   └── tools/                  # Tool YAML configurations
-│       ├── claude.yaml
-│       ├── cursor.yaml
-│       └── _TEMPLATE.yaml
+├── agent_sync.yaml             # project config (tools.enabled, version pin, paths)
+└── src/                        # Source of truth. Edit ONLY here.
+    ├── AGENTS.md               # Agent identity: role, approach, principles
+    ├── rules/                  # Rules — always-on constraints
+    │   ├── core.md
+    │   └── git.md
+    ├── skills/                 # (optional) on-demand step-by-step recipes
+    │   └── .../SKILL.md
+    ├── commands/               # (optional) custom slash commands
+    ├── agents/                 # (optional) subagent personas
+    ├── tools/                  # (optional) per-tool YAML overrides
+    ├── settings/               # (optional) per-tool settings overrides
+    ├── mcp/                    # (optional) per-tool MCP overrides
+    └── hooks/                  # (optional) per-tool hooks overrides
 ```
 
-> **Note:** `init` no longer copies the sync engine into the project. The engine runs from the global `~/.agentsync/` installation.
+> **Note:** `init` is minimal. `tools/`, `settings/`, `mcp/`, `hooks/` are *override* directories — files appear there only when you opt in (via `agentsync init --tools <list>`, auto-detection, or `agentsync customize <tool> <resource>`). Missing overrides fall back to shipped base templates automatically — see [How Resources Resolve](#how-resources-resolve).
 
 **Flat (auto-detected):** `.ai/AGENTS.md`, `.ai/rules/`, `.ai/skills/`, `.ai/tools/`
 
@@ -368,10 +356,38 @@ Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatic
    - Syncs skills directories (or inlines skill index into agents file if `inline_into_agents`)
    - Syncs commands (with optional MD→TOML conversion)
    - Syncs agents (with optional extension rename or MD→TOML)
-   - Copies settings, MCP, and hooks files
+   - Resolves settings / MCP / hooks per the base + override rules below
    - Runs optional `post_sync` command
 4. Updates `.gitignore`
 5. Disabled tools get their generated files cleaned up automatically.
+
+## How Resources Resolve
+
+Every resource that ships as a file — tool YAML, hooks, MCP config, settings — follows the same two-layer lookup. Nothing is cloned into every project by default; overrides are opt-in and merge on top of a shipped base.
+
+```
+┌─ Project override ───────┐    ┌─ Shipped base ──────────────────────────┐
+│ .ai/src/<resource>/      │    │ <install-dir>/lib/templates/<resource>/ │
+│   <tool>.<ext>           │ ►► │   <tool>.<ext>                          │
+└──────────────────────────┘    └─────────────────────────────────────────┘
+
+         override ??= base     (override wins; falls back silently)
+```
+
+| Resource    | Base path                                 | Override path                      |
+| ----------- | ----------------------------------------- | ---------------------------------- |
+| tool YAML   | `lib/templates/tools/<tool>.yaml`         | `.ai/src/tools/<tool>.yaml`        |
+| hooks       | `lib/templates/hooks/<tool>.json`         | `.ai/src/hooks/<tool>.json`        |
+| mcp         | `lib/templates/mcp/<tool>.json`           | `.ai/src/mcp/<tool>.json`          |
+| settings    | `lib/templates/settings/<tool>.<ext>`     | `.ai/src/settings/<tool>.<ext>`    |
+
+**Why it matters:**
+
+- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
+- **Updates flow through.** Because the base lives in the install dir, `agentsync update` improves every project that hasn't locked the file in as an override.
+- **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/hooks/cursor.json`. Delete the file later to resume inheriting from base.
+- **Safe hooks.** `customize <tool> hooks` prints the base content first and requires `--yes` in non-interactive mode — you never scaffold executable intent silently.
+- **`simplify` prunes noise.** Scaffolded payloads that are still byte-identical to base are flagged by `agentsync simplify` and removed with `--apply`, so you don't accidentally pin yesterday's defaults forever.
 
 ## Path Overrides
 

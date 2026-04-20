@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.0
+
+### Added
+
+- **Minimal `init`:** fresh projects get `.ai/agent_sync.yaml` + `AGENTS.md` + starter rules — payload files for hooks / MCP / settings are no longer eagerly copied for every supported tool. Opt in per tool with `--tools <csv>` or let auto-detection (`.claude/`, `.cursor/`, `CLAUDE.md`, ...) union in what you already use. A Claude-only project drops from ~20 scaffolded files to 3.
+- **Interactive `init` wizard:** running `agentsync init` in a TTY opens a multiselect for tools (base catalog + auto-detected preselected) and content sections, then shows a plan + confirm before writing. Non-TTY (CI, scripts) skips the wizard silently. `--yes` accepts defaults in a TTY, `--dry-run` prints the plan without writing.
+- **Base + override for hooks / MCP / settings:** `sync` now resolves each payload the same way tool YAMLs already do — project override (`.ai/src/<resource>/<tool>.<ext>`) wins, otherwise the shipped base template at `lib/templates/<resource>/<tool>.<ext>` is used. Delete an override and the base flows through on the next sync; no more per-tool payloads gating on files that have to exist somewhere.
+- **`agentsync customize <tool> <resource>`:** dedicated path to create a payload override. `customize cursor hooks` copies the base hooks template into `.ai/src/hooks/cursor.json`; same pattern for `mcp` and `settings`. Hooks get a security gate — the base content is displayed first, and in non-TTY mode `--yes` is required before scaffolding.
+- **`agentsync show <tool> <resource>` / `diff <tool> <resource>`:** inspect any payload resource — `show` tags `base` vs `★ user override`, `diff` prints a unified diff against the base.
+- **Secret scanning in `doctor`:** `.ai/src/{mcp,settings,hooks}/*` are regex-scanned for common credential shapes (OpenAI/Anthropic `sk-*`, GitHub `ghp_*` / `github_pat_*`, AWS `AKIA*`, Slack `xox[baprs]-*`, Google `AIza*`, JWT). Placeholders (`${VAR}`, `<PLACEHOLDER>`) are ignored. JSON files are also syntax-validated when `python3` or `node` is available.
+- **Version pinning:** `init` writes `agentsync_version: "<VERSION>"` at the top of `agent_sync.yaml`. `doctor` warns when the pinned version differs from the current CLI and suggests `agentsync upgrade-config` — the new command to re-pin.
+- **`agentsync simplify` extended to payloads:** in addition to trimming redundant fields from tool YAML overrides, `simplify` now detects byte-identical payload overrides (scaffolded copies the user never edited) and offers to delete them so future updates to the base flow through automatically. `--apply -y` deletes non-interactively, `--apply` prompts in a TTY.
+- **`list` resources column:** each tool row now shows `H M S` — hooks / MCP / settings indicators. Lowercase letter = base template available, `*` = user override present, `·` = no base for that resource. Summary line counts payload overrides separately from tool overrides.
+
+### Changed
+
+- **`init` no longer eagerly copies payloads for every tool.** Projects that opt in explicitly (`--tools claude,cursor`) or via auto-detection still get scaffolded copies; everything else falls through to base templates at sync time. Existing projects with per-tool payloads in `.ai/src/{hooks,mcp,settings}/` continue to work unchanged.
+- **`customize <tool>` signature is now `customize <tool> [<resource>]`.** Without a resource argument it behaves exactly as before (tool YAML override). `<resource>` accepts `tool` (default), `hooks`, `mcp`, or `settings`.
+
+### Migration
+
+- Existing projects are not required to change anything. Run `agentsync simplify --apply` to clear out scaffolded-but-unedited payload overrides — the base templates will take over on the next sync without a behavior change. Run `agentsync upgrade-config` to re-pin `agentsync_version`.
+
 ## 0.9.0
 
 ### Added

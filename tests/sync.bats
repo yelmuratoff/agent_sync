@@ -11,7 +11,8 @@ setup_file() {
     git config user.email "test@test.com"
     git config user.name "Test"
 
-    # Init + full sync once
+    # Init + full sync once. Minimal init; sync falls back to base templates
+    # for hooks/mcp/settings when project overrides are absent (Phase 2).
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init
     echo "node_modules/" > .gitignore
 

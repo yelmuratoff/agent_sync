@@ -1,11 +1,15 @@
 # AgentSync — Project Configuration
 # All keys are optional — remove any that you leave at the default.
 
+agentsync_version: "0.10.0"
+
 # Tools: which ones to sync for this project.
 # Each name must match a base tool (see `agentsync list`) or a custom override
 # file under .ai/src/tools/<name>.yaml.
 tools:
-  enabled: []
+  enabled:
+    - claude
+    - cursor
 
 # Source paths (override if you use a custom layout).
 source:

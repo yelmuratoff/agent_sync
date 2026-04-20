@@ -25,12 +25,40 @@ _list_prepare_context() {
     export REPO_ROOT REPO_ROOT_CANONICAL DEFAULT_REPO_ROOT PROJECT_CONFIG_PATH
 }
 
+# Build a short resources string for a tool. Each resource (hooks, mcp,
+# settings) is shown as:
+#   H  — base available, no override
+#   H* — override present
+# Missing resources are shown as ·
+_list_resources_column() {
+    local tool="$1"
+    local resource letter base user out=""
+    for resource in hooks mcp settings; do
+        case "$resource" in
+            hooks)    letter="H" ;;
+            mcp)      letter="M" ;;
+            settings) letter="S" ;;
+        esac
+        base=$(_find_base_payload "$resource" "$tool")
+        user=$(_payload_override_path "$tool" "$resource")
+        if [[ -n "$user" ]] && [[ -f "$user" ]]; then
+            out+="$(_yellow "${letter}*")"
+        elif [[ -n "$base" ]]; then
+            out+="$(_dim "${letter} ")"
+        else
+            out+="$(_dim "· ")"
+        fi
+        out+=" "
+    done
+    printf '%s' "$out"
+}
+
 cmd_list() {
     _list_prepare_context
 
     echo ""
     _bold "  AgentSync Tools"; echo ""
-    _dim "  ● enabled   ○ available   ★ customized"; echo ""
+    _dim "  ● enabled   ○ available   ★ tool override   H M S = hooks/mcp/settings (lower = base only, star = override)"; echo ""
     echo ""
 
     # Collect sets as newline-separated strings for fast membership checks.
@@ -49,6 +77,7 @@ cmd_list() {
     fi
 
     local enabled_count=0 available_count=0 customized_count=0
+    local payload_override_count=0
     local tool
     while IFS= read -r tool; do
         [[ -z "$tool" ]] && continue
@@ -70,24 +99,34 @@ cmd_list() {
             available_count=$((available_count + 1))
         fi
 
-        local star=""
+        local star=" "
         if [[ "$customized" == "true" ]]; then
-            star="  $(_yellow "★")"
+            star="$(_yellow "★")"
             customized_count=$((customized_count + 1))
         fi
 
-        printf "    %s  %-30s %s%s\n" "$marker" "$display" "$status_text" "$star"
+        # Resources column tracks hooks/mcp/settings overrides.
+        local resources
+        resources=$(_list_resources_column "$tool")
+        if [[ "$resources" == *"*"* ]]; then
+            payload_override_count=$((payload_override_count + 1))
+        fi
+
+        printf "    %s %s  %-22s %-10s  %s\n" "$marker" "$star" "$display" "$status_text" "$resources"
     done <<< "$all"
 
     echo ""
     local total
     total=$(echo "$all" | grep -c .)
-    echo "  $enabled_count of $total enabled$( [[ $customized_count -gt 0 ]] && echo ", $customized_count customized")"
+    local summary="$enabled_count of $total enabled"
+    [[ $customized_count -gt 0 ]]         && summary="$summary, $customized_count tool override(s)"
+    [[ $payload_override_count -gt 0 ]]   && summary="$summary, $payload_override_count payload override(s)"
+    echo "  $summary"
     echo ""
     if [[ $enabled_count -eq 0 ]]; then
         echo "  Enable a tool:     $(_cyan "agentsync enable <name>")"
     fi
-    echo "  Customize a tool:  $(_cyan "agentsync customize <name>")"
+    echo "  Customize a tool:  $(_cyan "agentsync customize <name> [<resource>]")"
     echo "  Sync outputs:      $(_cyan "agentsync sync")"
     echo ""
 }
