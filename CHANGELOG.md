@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+### Fixed
+
+- `agentsync simplify` aborted under `set -euo pipefail` when no payload overrides were present because the payload pass returned a non-zero "nothing matched" code and `set -u` tripped on an unbound `any_considered` on exit paths. Switched to an explicit `_SIMPLIFY_PAYLOAD_MATCHED` out-flag and removed the unbound reads so `simplify` with no overrides now prints the friendly "nothing to simplify" message as intended.
+
 ## 0.10.0
 
 ### Added
