@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2
+
+### Fixed
+
+- `agentsync init` crashed on macOS (bash 3.2) with `${default,,}: bad substitution`. The new interactive-prompt helper used the bash 4+ lowercase expansion `${var,,}`, which doesn't exist in macOS's stock `/bin/bash`. Replaced with a portable `tr '[:upper:]' '[:lower:]'` pipeline so `init` (and any future `prompt_confirm` caller) works on macOS's shipped bash without requiring `brew install bash`.
+
 ## 0.10.1
 
 ### Fixed

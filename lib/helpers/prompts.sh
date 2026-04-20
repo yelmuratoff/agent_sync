@@ -17,7 +17,7 @@ is_tty() {
 prompt_confirm() {
     local question="$1"
     local default="${2:-n}"
-    default="${default,,}"
+    default=$(printf '%s' "$default" | tr '[:upper:]' '[:lower:]')
 
     if ! is_tty; then
         [[ "$default" == "y" ]] && return 0 || return 1
@@ -33,7 +33,7 @@ prompt_confirm() {
     local reply
     printf '%s %s ' "$question" "$hint" >&2
     read -r reply </dev/tty || reply=""
-    reply="${reply,,}"
+    reply=$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')
     reply="${reply:-$default}"
     [[ "$reply" == "y" || "$reply" == "yes" ]]
 }
