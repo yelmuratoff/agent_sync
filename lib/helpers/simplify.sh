@@ -150,9 +150,10 @@ cmd_simplify() {
     fi
 
     # Pass 2: payload overrides (hooks/mcp/settings). Byte-compare with base.
-    # Considered "matched" if the filter hit at least one payload.
-    _simplify_payload_overrides "$apply" "$auto_yes" "$tool_filter"
-    [[ $? -eq 0 ]] && matched=true
+    # Sets _SIMPLIFY_PAYLOAD_MATCHED=true if any payload was considered.
+    _SIMPLIFY_PAYLOAD_MATCHED=false
+    _simplify_payload_overrides "$apply" "$auto_yes" "$tool_filter" || true
+    [[ "$_SIMPLIFY_PAYLOAD_MATCHED" == "true" ]] && matched=true
 
     if [[ "$matched" != "true" ]]; then
         if [[ -n "$tool_filter" ]]; then
@@ -188,7 +189,6 @@ _simplify_payload_overrides() {
     local tool_filter="$3"
 
     local overrides_root="$REPO_ROOT/.ai/src"
-    local any_considered=1  # 1 = none yet, 0 = at least one
 
     # First pass: collect candidates so we can print a clean block-with-header.
     local -a redundant_files=()
@@ -204,7 +204,7 @@ _simplify_payload_overrides() {
             if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
                 continue
             fi
-            any_considered=0
+            _SIMPLIFY_PAYLOAD_MATCHED=true
 
             base_file=$(_find_base_payload "$resource" "$tool")
 
@@ -217,7 +217,7 @@ _simplify_payload_overrides() {
     done
 
     if [[ ${#redundant_files[@]} -eq 0 ]] && [[ ${#kept_files[@]} -eq 0 ]]; then
-        return $any_considered
+        return 0
     fi
 
     echo ""
@@ -227,7 +227,7 @@ _simplify_payload_overrides() {
     local rel
     if [[ ${#redundant_files[@]} -eq 0 ]]; then
         _dim "  No byte-identical payload overrides — ${#kept_files[@]} real customization(s)."; echo ""
-        return $any_considered
+        return 0
     fi
 
     echo "  $(_yellow "Byte-identical to base (safe to delete):")"
@@ -243,7 +243,7 @@ _simplify_payload_overrides() {
 
     if [[ "$apply" != "true" ]]; then
         _dim "  → would delete ${#redundant_files[@]} payload override(s)."; echo ""
-        return $any_considered
+        return 0
     fi
 
     # --apply: delete (with confirmation unless --yes or non-TTY).
@@ -272,7 +272,7 @@ _simplify_payload_overrides() {
     done
     echo ""
     _dim "  Removed $deleted, kept $skipped."; echo ""
-    return $any_considered
+    return 0
 }
 
 _simplify_one_tool() {
