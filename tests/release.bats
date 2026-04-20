@@ -3,33 +3,40 @@
 
 load test_helper
 
+setup_file() {
+    # Build a seeded copy of the repo once. Each test clones via APFS
+    # clonefile, which is near-instant and isolates concurrent tests.
+    TEST_SEED="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_release_seed.XXXXXX")"
+    export TEST_SEED
+
+    # clonefile the whole repo when on APFS; fall back to cp -R.
+    if ! cp -c -R "$REPO_ROOT"/. "$TEST_SEED/" 2>/dev/null; then
+        cp -R "$REPO_ROOT"/. "$TEST_SEED/"
+    fi
+
+    (
+        cd "$TEST_SEED"
+        rm -rf .git
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        git add -A
+        git commit -m "initial" --quiet
+
+        echo "1.0.0" > VERSION
+        git add VERSION
+        git commit -m "set version" --quiet
+    )
+}
+
+teardown_file() { teardown_seed_project; }
+
 setup() {
-    TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_release_test.XXXXXX")"
-
-    # Copy repo contents and create a fresh git repo
-    cp -r "$REPO_ROOT"/* "$TEST_PROJECT/"
-    cp -r "$REPO_ROOT"/.??* "$TEST_PROJECT/" 2>/dev/null || true
-    cd "$TEST_PROJECT"
-
-    rm -rf .git
-    git init --quiet
-    git config user.email "test@test.com"
-    git config user.name "Test"
-    git add -A
-    git commit -m "initial" --quiet
-
-    echo "1.0.0" > VERSION
-    git add VERSION
-    git commit -m "set version" --quiet
-
+    clone_seed
     export AGENTSYNC_HOME="$TEST_PROJECT"
 }
 
-teardown() {
-    if [[ -n "${TEST_PROJECT:-}" ]] && [[ -d "$TEST_PROJECT" ]]; then
-        rm -rf "$TEST_PROJECT"
-    fi
-}
+teardown() { teardown_test_project; }
 
 @test "release patch bumps version" {
     echo "y" | bash bin/agentsync.sh release patch --no-push

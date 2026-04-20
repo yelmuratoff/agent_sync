@@ -353,7 +353,7 @@ _init_print_summary() {
             *)           echo "   $(_green "Enabled $count tool(s):") $joined" ;;
         esac
     else
-        echo "   $(_dim "No tools enabled. Run 'agentsync enable <tool>' to opt in.")"
+        echo "   $(_dim "No tools enabled. Run 'agentsync enable <slug>' to opt in.")"
     fi
 
     echo ""
@@ -368,9 +368,9 @@ _init_print_summary() {
     echo "  $step. Run $(_cyan "agentsync list")        — browse all available tools"
     step=$((step + 1))
     if [[ -z "$enabled_list" ]]; then
-        echo "  $step. Run $(_cyan "agentsync enable <tool>") — opt in to tools you use"
+        echo "  $step. Run $(_cyan "agentsync enable <slug>") — opt in to tools you use"
     else
-        echo "  $step. Run $(_cyan "agentsync enable <tool>") — add more tools"
+        echo "  $step. Run $(_cyan "agentsync enable <slug>") — add more tools"
     fi
     step=$((step + 1))
     echo "  $step. Run $(_cyan "agentsync sync")        — distribute to enabled tools"

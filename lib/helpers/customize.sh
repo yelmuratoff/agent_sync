@@ -21,19 +21,6 @@ _validate_resource() {
     esac
 }
 
-# Find override path for a tool payload resource.
-#   <repo>/.ai/src/<resource>/<tool>.<ext>
-# Extension is discovered from the base template. Prints empty if no base.
-_payload_override_path() {
-    local tool_name="$1"
-    local resource="$2"
-    local base_file
-    base_file=$(_find_base_payload "$resource" "$tool_name")
-    [[ -z "$base_file" ]] && return 0
-    local ext="${base_file##*.}"
-    echo "$REPO_ROOT/.ai/src/${resource}/${tool_name}.${ext}"
-}
-
 _customize_prepare_context() {
     local project_dir
     project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
@@ -83,7 +70,7 @@ cmd_customize() {
                     shift
                 else
                     echo "$(_red "Error"): Too many arguments." >&2
-                    echo "Usage: agentsync customize <tool> [<resource>] [--full] [--yes]" >&2
+                    echo "Usage: agentsync customize <slug> [<resource>] [--full] [--yes]" >&2
                     exit 1
                 fi
                 ;;
@@ -91,7 +78,7 @@ cmd_customize() {
     done
 
     if [[ -z "$tool_name" ]]; then
-        echo "$(_red "Error"): agentsync customize <tool> [<resource>] [--full] [--yes]" >&2
+        echo "$(_red "Error"): agentsync customize <slug> [<resource>] [--full] [--yes]" >&2
         echo "  <resource>: $_VALID_RESOURCES (default: tool)" >&2
         exit 1
     fi
@@ -173,8 +160,10 @@ _customize_tool() {
     fi
 }
 
-# Copy a base payload file (hooks/mcp/settings) into .ai/src/ as an override.
-# For hooks: show summary + require confirmation (unless --yes or non-TTY batch).
+# Copy a base payload file (hooks/mcp/settings) into .ai/src/tools/<tool>/
+# as an override. If a legacy flat-layout file exists at the old path, migrate
+# it inline before scaffolding. For hooks: show summary + require confirmation
+# (unless --yes or non-TTY batch).
 _customize_payload() {
     local tool_name="$1"
     local resource="$2"
@@ -190,8 +179,17 @@ _customize_payload() {
         exit 1
     fi
 
-    local user_file
+    local user_file legacy_file
     user_file=$(_payload_override_path "$tool_name" "$resource")
+    legacy_file=$(_payload_override_legacy_path "$tool_name" "$resource")
+
+    # Inline migration: if legacy flat file exists and new path does not,
+    # move it to the per-tool dir before anything else.
+    if [[ -n "$legacy_file" ]] && [[ -f "$legacy_file" ]] && [[ ! -f "$user_file" ]]; then
+        mkdir -p "$(dirname "$user_file")"
+        mv "$legacy_file" "$user_file"
+        _yellow "Migrated legacy override:"; echo " ${legacy_file#"$REPO_ROOT/"} → ${user_file#"$REPO_ROOT/"}"
+    fi
 
     if [[ -f "$user_file" ]]; then
         echo "$(_yellow "Override already exists"): $user_file"
@@ -277,7 +275,7 @@ cmd_show() {
     done
 
     if [[ -z "$tool_name" ]]; then
-        echo "$(_red "Error"): agentsync show <tool> [<resource>] [--base]" >&2
+        echo "$(_red "Error"): agentsync show <slug> [<resource>] [--base]" >&2
         echo "  <resource>: $_VALID_RESOURCES (default: tool)" >&2
         exit 1
     fi
@@ -391,9 +389,10 @@ _show_payload() {
     local resource="$2"
     local show_base="$3"
 
-    local base_file user_file effective
+    local base_file user_file legacy_file effective
     base_file=$(_find_base_payload "$resource" "$tool_name")
     user_file=$(_payload_override_path "$tool_name" "$resource")
+    legacy_file=$(_payload_override_legacy_path "$tool_name" "$resource")
     effective=$(resolve_payload_source "$tool_name" "$resource")
 
     if [[ "$show_base" == "true" ]]; then
@@ -416,15 +415,23 @@ _show_payload() {
     fi
 
     local source_label="$(_dim "base")"
-    if [[ -f "$user_file" ]] && [[ "$user_file" == "$effective" ]]; then
+    if [[ -n "$user_file" ]] && [[ -f "$user_file" ]] && [[ "$user_file" == "$effective" ]]; then
         source_label="$(_yellow "★ user override")"
+    elif [[ -n "$legacy_file" ]] && [[ -f "$legacy_file" ]] && [[ "$legacy_file" == "$effective" ]]; then
+        source_label="$(_yellow "★ user override (legacy layout)")"
     fi
 
     echo ""
     _bold "  $(tool_display_name "$tool_name") — $resource  [$source_label]"; echo ""
     _dim "  effective: $effective"; echo ""
-    if [[ -f "$user_file" ]]; then
+    if [[ -n "$user_file" ]] && [[ -f "$user_file" ]]; then
         _dim "  override:  $user_file"; echo ""
+    fi
+    if [[ -n "$legacy_file" ]] && [[ -f "$legacy_file" ]] && [[ "$legacy_file" != "$effective" || "$effective" != "$user_file" ]]; then
+        # Show legacy only if it's actually on disk and not already listed.
+        if [[ ! -f "$user_file" ]]; then
+            _dim "  legacy:    $legacy_file"; echo ""
+        fi
     fi
     if [[ -n "$base_file" ]]; then
         _dim "  base:      $base_file"; echo ""
@@ -468,7 +475,7 @@ cmd_diff() {
 
     if [[ "$resource" != "tool" ]]; then
         if [[ -z "$tool_name" ]]; then
-            echo "$(_red "Error"): agentsync diff <tool> <resource>" >&2
+            echo "$(_red "Error"): agentsync diff <slug> <resource>" >&2
             exit 1
         fi
         _diff_payload "$tool_name" "$resource"
@@ -508,14 +515,22 @@ _diff_payload() {
 
     local base_file user_file
     base_file=$(_find_base_payload "$resource" "$tool_name")
-    user_file=$(_payload_override_path "$tool_name" "$resource")
+    # Prefer new layout; fall back to legacy flat file if present.
+    user_file=$(_find_new_payload_override "$tool_name" "$resource")
+    if [[ -z "$user_file" ]]; then
+        local legacy
+        legacy=$(_payload_override_legacy_path "$tool_name" "$resource")
+        if [[ -n "$legacy" ]] && [[ -f "$legacy" ]]; then
+            user_file="$legacy"
+        fi
+    fi
 
-    if [[ -z "$base_file" ]] && [[ ! -f "$user_file" ]]; then
+    if [[ -z "$base_file" ]] && [[ -z "$user_file" ]]; then
         echo "$(_red "Error"): No $resource source for '$tool_name' (no base, no override)." >&2
         exit 1
     fi
 
-    if [[ ! -f "$user_file" ]]; then
+    if [[ -z "$user_file" ]] || [[ ! -f "$user_file" ]]; then
         echo ""
         _dim "  No override for $(tool_display_name "$tool_name") $resource — inheriting fully from base."; echo ""
         _dim "  base: $base_file"; echo ""

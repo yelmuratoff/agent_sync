@@ -177,12 +177,15 @@ cmd_simplify() {
     return 0
 }
 
-# Scan .ai/src/{hooks,mcp,settings}/ for overrides that are byte-identical to
-# their base template. Those are scaffolded copies the user never edited —
-# deleting them lets the base drift through on future updates.
+# Scan payload overrides for byte-identical copies of their base templates.
+# Those are scaffolded copies the user never edited — deleting them lets the
+# base drift through on future updates.
 #
-# Returns 0 if at least one payload was considered (matched tool_filter),
-# 1 otherwise (only meaningful for error reporting in the caller).
+# Reads both layouts:
+#   new:    .ai/src/tools/<tool>/<resource>.<ext>    (0.11+, byte-compare)
+#   legacy: .ai/src/<resource>/<tool>.<ext>          (pre-0.11, migration hint)
+#
+# Sets _SIMPLIFY_PAYLOAD_MATCHED=true if any payload was considered.
 _simplify_payload_overrides() {
     local apply="$1"
     local auto_yes="$2"
@@ -190,33 +193,51 @@ _simplify_payload_overrides() {
 
     local overrides_root="$REPO_ROOT/.ai/src"
 
-    # First pass: collect candidates so we can print a clean block-with-header.
+    # ── Pass 1: collect candidates from the new per-tool dir layout ─────────
     local -a redundant_files=()
     local -a kept_files=()
-    local resource file tool base_file
+    local tools_dir="$overrides_root/tools"
+    local resource file tool base_file tool_dir
+
+    if [[ -d "$tools_dir" ]]; then
+        for tool_dir in "$tools_dir"/*/; do
+            [[ -d "$tool_dir" ]] || continue
+            tool="$(basename "$tool_dir")"
+            if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
+                continue
+            fi
+            for resource in hooks mcp settings; do
+                for file in "$tool_dir${resource}".*; do
+                    [[ -f "$file" ]] || continue
+                    _SIMPLIFY_PAYLOAD_MATCHED=true
+                    base_file=$(_find_base_payload "$resource" "$tool")
+                    if [[ -z "$base_file" ]] || ! cmp -s "$file" "$base_file"; then
+                        kept_files+=("$file")
+                    else
+                        redundant_files+=("$file")
+                    fi
+                done
+            done
+        done
+    fi
+
+    # ── Pass 2: detect legacy flat-layout overrides (migration hint) ────────
+    local -a legacy_files=()
     for resource in hooks mcp settings; do
         [[ -d "$overrides_root/$resource" ]] || continue
         for file in "$overrides_root/$resource"/*; do
             [[ -f "$file" ]] || continue
             tool="$(basename "$file")"
             tool="${tool%.*}"
-
             if [[ -n "$tool_filter" ]] && [[ "$tool" != "$tool_filter" ]]; then
                 continue
             fi
             _SIMPLIFY_PAYLOAD_MATCHED=true
-
-            base_file=$(_find_base_payload "$resource" "$tool")
-
-            if [[ -z "$base_file" ]] || ! cmp -s "$file" "$base_file"; then
-                kept_files+=("$file")
-                continue
-            fi
-            redundant_files+=("$file")
+            legacy_files+=("$file")
         done
     done
 
-    if [[ ${#redundant_files[@]} -eq 0 ]] && [[ ${#kept_files[@]} -eq 0 ]]; then
+    if [[ ${#redundant_files[@]} -eq 0 ]] && [[ ${#kept_files[@]} -eq 0 ]] && [[ ${#legacy_files[@]} -eq 0 ]]; then
         return 0
     fi
 
@@ -225,6 +246,24 @@ _simplify_payload_overrides() {
     echo ""
 
     local rel
+
+    # Legacy hint first — surfaces the migration ask clearly.
+    if [[ ${#legacy_files[@]} -gt 0 ]]; then
+        echo "  $(_yellow "Legacy layout — move into .ai/src/tools/<tool>/ (flat layout is deprecated):")"
+        for file in "${legacy_files[@]}"; do
+            rel="${file#"$REPO_ROOT/"}"
+            printf "    %s %s\n" "$(_dim "·")" "$rel"
+        done
+        echo ""
+        _dim "  Re-run $(_cyan "agentsync customize <tool> <resource>") to migrate inline,"; echo ""
+        _dim "  or wait for $(_cyan "agentsync migrate") (shipping in 0.12)."; echo ""
+        echo ""
+    fi
+
+    if [[ ${#redundant_files[@]} -eq 0 ]] && [[ ${#kept_files[@]} -eq 0 ]]; then
+        return 0
+    fi
+
     if [[ ${#redundant_files[@]} -eq 0 ]]; then
         _dim "  No byte-identical payload overrides — ${#kept_files[@]} real customization(s)."; echo ""
         return 0
@@ -263,6 +302,8 @@ _simplify_payload_overrides() {
         fi
         if [[ "$do_delete" == "true" ]]; then
             rm -f "$file"
+            # Clean up empty parent dir so re-running init stays minimal.
+            rmdir "$(dirname "$file")" 2>/dev/null || true
             echo "  $(_green "Deleted") $rel"
             deleted=$((deleted + 1))
         else

@@ -186,46 +186,47 @@ YAML
     [[ "$output" != *"Claude Code"* ]]
 }
 
-# ── Phase 6: payload overrides (hooks / mcp / settings) ─────────────────────
+# ── Phase 6/7: payload overrides (hooks / mcp / settings) ────────────────────
 #
 # These tests hand-place scaffolded-but-unchanged payload copies that mirror
-# what `init --tools cursor` would produce. Setup already ran a minimal init,
-# so we only need to add the payloads to exercise the simplify path.
+# what `customize cursor <resource>` would produce. Setup already ran a
+# minimal init, so we only need to add the payloads to exercise the simplify
+# path.
 
 _scaffold_cursor_payloads() {
     local base_hooks base_mcp
     base_hooks="$REPO_ROOT/lib/templates/hooks/cursor.json"
     base_mcp="$REPO_ROOT/lib/templates/mcp/cursor.json"
-    mkdir -p .ai/src/hooks .ai/src/mcp
-    cp "$base_hooks" .ai/src/hooks/cursor.json
-    cp "$base_mcp"   .ai/src/mcp/cursor.json
+    mkdir -p .ai/src/tools/cursor
+    cp "$base_hooks" .ai/src/tools/cursor/hooks.json
+    cp "$base_mcp"   .ai/src/tools/cursor/mcp.json
 }
 
 @test "simplify --apply removes byte-identical payload overrides" {
     _scaffold_cursor_payloads
-    [ -f ".ai/src/hooks/cursor.json" ]
-    [ -f ".ai/src/mcp/cursor.json" ]
+    [ -f ".ai/src/tools/cursor/hooks.json" ]
+    [ -f ".ai/src/tools/cursor/mcp.json" ]
 
     run run_agentsync simplify --apply -y
     [ "$status" -eq 0 ]
     [[ "$output" == *"Payload overrides"* ]]
 
     # Scaffolded-but-unchanged copies are gone; sync now uses base directly.
-    [ ! -f ".ai/src/hooks/cursor.json" ]
-    [ ! -f ".ai/src/mcp/cursor.json" ]
+    [ ! -f ".ai/src/tools/cursor/hooks.json" ]
+    [ ! -f ".ai/src/tools/cursor/mcp.json" ]
 }
 
 @test "simplify keeps payload overrides that diverge from base" {
     _scaffold_cursor_payloads
-    echo '{"marker":"USER_EDIT"}' > .ai/src/hooks/cursor.json
+    echo '{"marker":"USER_EDIT"}' > .ai/src/tools/cursor/hooks.json
 
     run run_agentsync simplify --apply -y
     [ "$status" -eq 0 ]
 
     # Diverged override preserved; unchanged MCP removed.
-    [ -f ".ai/src/hooks/cursor.json" ]
-    grep -q "USER_EDIT" .ai/src/hooks/cursor.json
-    [ ! -f ".ai/src/mcp/cursor.json" ]
+    [ -f ".ai/src/tools/cursor/hooks.json" ]
+    grep -q "USER_EDIT" .ai/src/tools/cursor/hooks.json
+    [ ! -f ".ai/src/tools/cursor/mcp.json" ]
 }
 
 @test "simplify dry-run on payloads reports byte-identical files" {
@@ -237,6 +238,19 @@ _scaffold_cursor_payloads() {
     [[ "$output" == *"would delete"* ]]
 
     # Dry-run must not mutate.
+    [ -f ".ai/src/tools/cursor/hooks.json" ]
+    [ -f ".ai/src/tools/cursor/mcp.json" ]
+}
+
+@test "simplify flags legacy flat-layout payloads without deleting them" {
+    local base_hooks
+    base_hooks="$REPO_ROOT/lib/templates/hooks/cursor.json"
+    mkdir -p .ai/src/hooks
+    cp "$base_hooks" .ai/src/hooks/cursor.json
+
+    run run_agentsync simplify --apply -y
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Legacy layout"* ]]
+    # Legacy files are NOT deleted — only flagged for migration.
     [ -f ".ai/src/hooks/cursor.json" ]
-    [ -f ".ai/src/mcp/cursor.json" ]
 }

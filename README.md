@@ -478,6 +478,23 @@ Or exclude it at sync time:
 agentsync sync --skip cursor
 ```
 
+## Development
+
+Run the test suite from the repo root:
+
+```bash
+# Full suite in parallel (needs GNU parallel — `brew install parallel` or
+# `apt-get install parallel`). ~2x the CPU count is the sweet spot because
+# tests block on git/filesystem. On an 8-core Mac: jobs=16, ≈ 25-30s.
+bats --jobs "$(( $(getconf _NPROCESSORS_ONLN) * 2 ))" tests/
+
+# A single file, or a subset:
+bats tests/sync.bats
+```
+
+CI runs `--jobs 4` on Linux and macOS; Windows falls back to serial because
+GNU parallel isn't available under git-bash.
+
 ## Uninstall
 
 ```bash

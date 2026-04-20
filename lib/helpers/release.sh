@@ -98,9 +98,11 @@ cmd_release() {
     local tag_body
     tag_body=$(awk -v ver="## ${new_version}" \
         '$0 == ver {found=1; next} found && /^## /{exit} found' CHANGELOG.md)
-    printf 'v%s\n\n%s' "$new_version" "$tag_body" > /tmp/agentsync_tag_msg.txt
-    git tag -a "$new_version" -F /tmp/agentsync_tag_msg.txt
-    rm -f /tmp/agentsync_tag_msg.txt
+    local tag_msg_file
+    tag_msg_file="$(mktemp "${TMPDIR:-/tmp}/agentsync_tag_msg.XXXXXX")"
+    printf 'v%s\n\n%s' "$new_version" "$tag_body" > "$tag_msg_file"
+    git tag -a "$new_version" -F "$tag_msg_file"
+    rm -f "$tag_msg_file"
     echo "  Created tag: $(_cyan "$new_version")"
 
     # Push

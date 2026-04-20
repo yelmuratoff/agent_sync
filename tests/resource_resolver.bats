@@ -86,3 +86,49 @@ teardown() {
     [ -f ".cursor/hooks.json" ]
     ! grep -q "USER_OVERRIDE" .cursor/hooks.json
 }
+
+# ── Phase 7: per-tool override directory ────────────────────────────────────
+
+@test "new per-tool-dir override is used by sync" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+
+    mkdir -p .ai/src/tools/cursor
+    echo '{"marker":"PER_TOOL_DIR"}' > .ai/src/tools/cursor/hooks.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+
+    grep -q "PER_TOOL_DIR" .cursor/hooks.json
+}
+
+@test "new layout wins over legacy flat layout when both exist" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+
+    mkdir -p .ai/src/hooks .ai/src/tools/cursor
+    echo '{"marker":"LEGACY"}'   > .ai/src/hooks/cursor.json
+    echo '{"marker":"CANONICAL"}' > .ai/src/tools/cursor/hooks.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+
+    grep -q "CANONICAL" .cursor/hooks.json
+    ! grep -q "LEGACY" .cursor/hooks.json
+}
+
+@test "legacy flat override emits deprecation warning" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+
+    mkdir -p .ai/src/hooks
+    echo '{"marker":"LEGACY"}' > .ai/src/hooks/cursor.json
+
+    # Warning is on stderr — `run` captures combined stdout+stderr by default.
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Legacy payload override layout"* ]]
+
+    # But the override still takes effect.
+    grep -q "LEGACY" .cursor/hooks.json
+}

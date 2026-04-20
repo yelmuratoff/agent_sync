@@ -64,8 +64,8 @@ YAML
 
 @test "doctor catches planted GitHub PAT in mcp override" {
     run_agentsync init >/dev/null
-    mkdir -p .ai/src/mcp
-    cat > .ai/src/mcp/claude.json <<'JSON'
+    mkdir -p .ai/src/tools/claude
+    cat > .ai/src/tools/claude/mcp.json <<'JSON'
 {"mcpServers":{"gh":{"env":{"TOKEN":"ghp_abcdefghijklmnopqrstuvwxyz012345678901"}}}}
 JSON
     run run_agentsync doctor
@@ -75,8 +75,8 @@ JSON
 
 @test "doctor catches AWS access key" {
     run_agentsync init >/dev/null
-    mkdir -p .ai/src/settings
-    cat > .ai/src/settings/claude.json <<'JSON'
+    mkdir -p .ai/src/tools/claude
+    cat > .ai/src/tools/claude/settings.json <<'JSON'
 {"aws":{"key":"AKIAIOSFODNN7EXAMPLE"}}
 JSON
     run run_agentsync doctor
@@ -86,8 +86,8 @@ JSON
 
 @test "doctor allows \${VAR} placeholders in mcp overrides" {
     run_agentsync init >/dev/null
-    mkdir -p .ai/src/mcp
-    cat > .ai/src/mcp/claude.json <<'JSON'
+    mkdir -p .ai/src/tools/claude
+    cat > .ai/src/tools/claude/mcp.json <<'JSON'
 {"mcpServers":{"gh":{"env":{"TOKEN":"${GITHUB_TOKEN}"}}}}
 JSON
     run run_agentsync doctor
@@ -97,15 +97,26 @@ JSON
 
 @test "doctor flags invalid JSON override" {
     run_agentsync init >/dev/null
-    mkdir -p .ai/src/mcp
+    mkdir -p .ai/src/tools/cursor
     # Only run this check if python3 or node is available to validate JSON.
     if ! command -v python3 >/dev/null 2>&1 && ! command -v node >/dev/null 2>&1; then
         skip "no JSON validator available"
     fi
-    echo '{"broken":' > .ai/src/mcp/cursor.json
+    echo '{"broken":' > .ai/src/tools/cursor/mcp.json
     run run_agentsync doctor
     [ "$status" -eq 2 ]
     [[ "$output" == *"invalid JSON"* ]]
+}
+
+@test "doctor warns about legacy flat-layout payload overrides" {
+    run_agentsync init >/dev/null
+    mkdir -p .ai/src/mcp
+    cat > .ai/src/mcp/cursor.json <<'JSON'
+{"mcpServers":{}}
+JSON
+    run run_agentsync doctor
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Legacy payload layout"* ]]
 }
 
 # ── Phase 5: list payload-override column ──────────────────────────────────

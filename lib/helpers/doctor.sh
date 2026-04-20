@@ -97,39 +97,68 @@ _doctor_validate_json() {
     return 0
 }
 
+# Run secret + JSON-syntax scan on a single payload file, updating hit/invalid
+# counters by name-reference. Expects variables `hit_count` and `invalid_count`
+# to exist in the caller's scope.
+_doctor_scan_one_file() {
+    local file="$1"
+    local rel="${file#"$REPO_ROOT/"}"
+
+    if [[ "$file" == *.json ]]; then
+        if ! _doctor_validate_json "$file"; then
+            _doctor_fail "$rel: invalid JSON syntax"
+            invalid_count=$((invalid_count + 1))
+            return 0
+        fi
+    fi
+
+    local scan_output
+    scan_output=$(_doctor_scan_file "$file") || true
+    if [[ -n "$scan_output" ]]; then
+        _doctor_fail "$rel: possible secret"
+        local hit_line
+        while IFS= read -r hit_line; do
+            [[ -z "$hit_line" ]] && continue
+            echo "        $(_dim "$hit_line")"
+        done <<< "$scan_output"
+        hit_count=$((hit_count + 1))
+    fi
+}
+
 _doctor_scan_overrides() {
     local overrides_root="$REPO_ROOT/.ai/src"
-    local resource file rel hit_count=0 invalid_count=0
+    local hit_count=0 invalid_count=0
+    local legacy_count=0
+    local resource file tool_dir
+
+    # New per-tool layout (0.11+).
+    if [[ -d "$overrides_root/tools" ]]; then
+        for tool_dir in "$overrides_root/tools"/*/; do
+            [[ -d "$tool_dir" ]] || continue
+            for resource in mcp settings hooks; do
+                for file in "$tool_dir${resource}".*; do
+                    [[ -f "$file" ]] || continue
+                    _doctor_scan_one_file "$file"
+                done
+            done
+        done
+    fi
+
+    # Legacy flat layout (pre-0.11, deprecated).
     for resource in mcp settings hooks; do
         [[ -d "$overrides_root/$resource" ]] || continue
         for file in "$overrides_root/$resource"/*; do
             [[ -f "$file" ]] || continue
-            rel="${file#"$REPO_ROOT/"}"
-
-            # Syntax check for .json files.
-            if [[ "$file" == *.json ]]; then
-                if ! _doctor_validate_json "$file"; then
-                    _doctor_fail "$rel: invalid JSON syntax"
-                    invalid_count=$((invalid_count + 1))
-                    continue
-                fi
-            fi
-
-            # Secret scan.
-            local scan_output
-            scan_output=$(_doctor_scan_file "$file") || true
-            if [[ -n "$scan_output" ]]; then
-                _doctor_fail "$rel: possible secret"
-                while IFS= read -r hit_line; do
-                    [[ -z "$hit_line" ]] && continue
-                    echo "        $(_dim "$hit_line")"
-                done <<< "$scan_output"
-                hit_count=$((hit_count + 1))
-            fi
+            legacy_count=$((legacy_count + 1))
+            _doctor_scan_one_file "$file"
         done
     done
 
-    if [[ $hit_count -eq 0 ]] && [[ $invalid_count -eq 0 ]]; then
+    if [[ $legacy_count -gt 0 ]]; then
+        _doctor_warn "Legacy payload layout ($legacy_count file(s) under .ai/src/{hooks,mcp,settings}/) — canonical path is .ai/src/tools/<tool>/<resource>.<ext>. Re-run $(_cyan "agentsync customize <tool> <resource>") per file to migrate inline."
+    fi
+
+    if [[ $hit_count -eq 0 ]] && [[ $invalid_count -eq 0 ]] && [[ $legacy_count -eq 0 ]]; then
         _doctor_info "No overrides to scan, or all clean."
     elif [[ $hit_count -gt 0 ]]; then
         echo ""
@@ -186,7 +215,7 @@ cmd_doctor() {
     enabled=$(list_enabled_tools) || true
 
     if [[ -z "$enabled" ]]; then
-        _doctor_info "No tools enabled — run $(_cyan "agentsync enable <tool>")"
+        _doctor_info "No tools enabled — run $(_cyan "agentsync enable <slug>")"
     else
         local tool base_file user_file
         while IFS= read -r tool; do

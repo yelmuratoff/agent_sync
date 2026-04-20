@@ -86,18 +86,17 @@ get_tool_bool() {
 # ── Payload resolution (settings / mcp / hooks) ───────────────────────────────
 #
 # Each tool can ship a per-resource payload file (e.g. Cursor's hooks.json).
-# Two locations are searched, in order:
-#   1. Override: <repo>/.ai/src/<resource>/<tool>.<ext>     (project-local)
-#   2. Base:     <install-dir>/lib/templates/<resource>/<tool>.<ext>  (shipped)
+# Lookup order:
+#   1. Per-tool override:  <repo>/.ai/src/tools/<tool>/<resource>.<ext>   (0.11+)
+#   2. Declared override:  whatever targets.<resource>.source points to   (user-set)
+#   3. Legacy flat:        <repo>/.ai/src/<resource>/<tool>.<ext>         (pre-0.11, deprecated)
+#   4. Base template:      <install-dir>/lib/templates/<resource>/<tool>.<ext>
 #
-# Extension is discovered from whichever file exists. If the tool YAML sets
-# targets.<resource>.source to a non-conventional path, that path is used for
-# the override lookup (for backward compat), but the base fallback still works
-# by tool name + resource.
+# The extension in (1) and (3) is discovered by probing the directory — so
+# custom tools that ship their own file without a base still resolve.
 #
 # Usage: resolve_payload_source <tool> <resource>   resource ∈ {settings,mcp,hooks}
-# Prints absolute path to the source file, or empty if neither override nor
-# base exists. Always exits 0.
+# Prints absolute path to the source file, or empty if nothing exists. Exit 0.
 
 _payload_base_dir() {
     echo "$DEFAULT_REPO_ROOT/lib/templates/$1"
@@ -118,41 +117,129 @@ _find_base_payload() {
     done
 }
 
+# Per-tool override directory: .ai/src/tools/<tool>/ (0.11+ canonical layout).
+_payload_override_dir() {
+    local tool_name="$1"
+    echo "$REPO_ROOT/.ai/src/tools/${tool_name}"
+}
+
+# Canonical write-path for a payload override (0.11+ layout).
+# Extension derived from base; empty if no base (custom tool).
+_payload_override_path() {
+    local tool_name="$1"
+    local resource="$2"
+    local base_file ext
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    [[ -z "$base_file" ]] && return 0
+    ext="${base_file##*.}"
+    echo "$(_payload_override_dir "$tool_name")/${resource}.${ext}"
+}
+
+# Probe the per-tool dir for any existing <resource>.* file. Read-side helper.
+_find_new_payload_override() {
+    local tool_name="$1"
+    local resource="$2"
+    local dir
+    dir=$(_payload_override_dir "$tool_name")
+    [[ -d "$dir" ]] || return 0
+    local candidate
+    for candidate in "$dir/${resource}".*; do
+        [[ -f "$candidate" ]] || continue
+        echo "$candidate"
+        return 0
+    done
+}
+
+# Legacy flat-layout override path (pre-0.11). Extension derived from base.
+_payload_override_legacy_path() {
+    local tool_name="$1"
+    local resource="$2"
+    local base_file ext
+    base_file=$(_find_base_payload "$resource" "$tool_name")
+    [[ -z "$base_file" ]] && return 0
+    ext="${base_file##*.}"
+    echo "$REPO_ROOT/.ai/src/${resource}/${tool_name}.${ext}"
+}
+
+# Find any existing override (new or legacy). Prints path, exit 0 if found.
+_find_any_payload_override() {
+    local tool_name="$1"
+    local resource="$2"
+    local p
+    p=$(_find_new_payload_override "$tool_name" "$resource")
+    if [[ -n "$p" ]]; then
+        echo "$p"
+        return 0
+    fi
+    p=$(_payload_override_legacy_path "$tool_name" "$resource")
+    if [[ -n "$p" ]] && [[ -f "$p" ]]; then
+        echo "$p"
+        return 0
+    fi
+    return 1
+}
+
+# Warn (once per CLI invocation) about legacy flat-layout overrides.
+# Uses a PID-scoped marker because resolve_payload_source is called from
+# command substitution subshells, so global variables won't persist.
+_warn_legacy_payload_path() {
+    local rel="${1#"$REPO_ROOT/"}"
+    local marker="${TMPDIR:-/tmp}/agentsync_legacy_warn_$$"
+    [[ -f "$marker" ]] && return 0
+    : > "$marker" 2>/dev/null || true
+    {
+        echo "⚠  Legacy payload override layout detected: $rel"
+        echo "   Move to .ai/src/tools/<tool>/<resource>.<ext> (canonical since 0.11)."
+        echo "   Legacy paths will be dropped in 0.12."
+    } >&2
+}
+
 resolve_payload_source() {
     local tool_name="$1"
     local resource="$2"
 
-    # Discover the base (also tells us the conventional extension).
-    local base_file
-    base_file=$(_find_base_payload "$resource" "$tool_name")
-
-    # Declared override path from tool YAML (user override or base's target block).
-    local declared
-    declared=$(get_tool_value "$tool_name" "targets.${resource}.source")
-
-    # If not declared, derive conventional override path from base's extension.
-    if [[ -z "$declared" ]] && [[ -n "$base_file" ]]; then
-        local ext="${base_file##*.}"
-        declared=".ai/src/${resource}/${tool_name}.${ext}"
+    # 1. New per-tool dir (canonical for 0.11+).
+    local new_override
+    new_override=$(_find_new_payload_override "$tool_name" "$resource")
+    if [[ -n "$new_override" ]]; then
+        echo "$new_override"
+        return 0
     fi
 
-    # 1. Override wins if present at the declared path.
+    # 2. Explicit path from tool YAML targets.<resource>.source (user-set).
+    local declared
+    declared=$(get_tool_value "$tool_name" "targets.${resource}.source")
     if [[ -n "$declared" ]]; then
-        local override_abs="$declared"
-        [[ "$override_abs" != /* ]] && override_abs="$REPO_ROOT/$declared"
-        if [[ -f "$override_abs" ]]; then
-            echo "$override_abs"
+        local declared_abs="$declared"
+        [[ "$declared_abs" != /* ]] && declared_abs="$REPO_ROOT/$declared"
+        if [[ -f "$declared_abs" ]]; then
+            case "$declared" in
+                .ai/src/hooks/*|.ai/src/mcp/*|.ai/src/settings/*)
+                    _warn_legacy_payload_path "$declared_abs"
+                    ;;
+            esac
+            echo "$declared_abs"
             return 0
         fi
     fi
 
-    # 2. Base fallback.
+    # 3. Legacy flat layout (pre-0.11, deprecated — warn once).
+    local legacy
+    legacy=$(_payload_override_legacy_path "$tool_name" "$resource")
+    if [[ -n "$legacy" ]] && [[ -f "$legacy" ]]; then
+        _warn_legacy_payload_path "$legacy"
+        echo "$legacy"
+        return 0
+    fi
+
+    # 4. Base fallback.
+    local base_file
+    base_file=$(_find_base_payload "$resource" "$tool_name")
     if [[ -n "$base_file" ]]; then
         echo "$base_file"
         return 0
     fi
 
-    # 3. Nothing found — caller will skip.
     return 0
 }
 

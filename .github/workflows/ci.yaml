@@ -34,27 +34,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install bats-core
+      - name: Install bats-core and GNU parallel
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo apt-get install -y bats
+            sudo apt-get install -y bats parallel
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install bats-core
+            brew install bats-core parallel
           else
             git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
             /tmp/bats-core/install.sh "$HOME/.local"
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Run unit tests
+      - name: Run tests
         shell: bash
-        run: bats tests/cli.bats tests/files.bats tests/gitignore.bats tests/list.bats tests/generate.bats tests/init.bats tests/hooks.bats tests/release.bats --tap
-        env:
-          TERM: xterm
-
-      - name: Run integration tests
-        shell: bash
-        run: bats tests/sync.bats tests/sync_options.bats tests/check.bats --tap
+        run: |
+          # bats --jobs needs GNU parallel (Linux/macOS). Windows git-bash
+          # lacks it, so fall back to serial there.
+          if command -v parallel >/dev/null 2>&1; then
+            bats --jobs 4 tests/ --tap
+          else
+            bats tests/ --tap
+          fi
         env:
           TERM: xterm

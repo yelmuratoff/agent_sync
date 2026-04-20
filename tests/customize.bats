@@ -72,3 +72,35 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"claude"* ]]
 }
+
+# ── Phase 7: per-tool payload layout ────────────────────────────────────────
+
+@test "customize cursor hooks writes to .ai/src/tools/cursor/hooks.json" {
+    run run_agentsync customize cursor hooks --yes
+    [ "$status" -eq 0 ]
+    [ -f ".ai/src/tools/cursor/hooks.json" ]
+    # Legacy flat path must NOT be created.
+    [ ! -f ".ai/src/hooks/cursor.json" ]
+}
+
+@test "customize migrates an existing legacy flat file to per-tool dir" {
+    mkdir -p .ai/src/mcp
+    echo '{"marker":"USER"}' > .ai/src/mcp/cursor.json
+
+    run run_agentsync customize cursor mcp
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Migrated legacy override"* ]]
+
+    # Legacy file moved into per-tool dir.
+    [ ! -f ".ai/src/mcp/cursor.json" ]
+    [ -f ".ai/src/tools/cursor/mcp.json" ]
+    grep -q "USER" .ai/src/tools/cursor/mcp.json
+}
+
+@test "show cursor hooks reflects per-tool dir override with star" {
+    run_agentsync customize cursor hooks --yes >/dev/null
+    run run_agentsync show cursor hooks
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"user override"* ]]
+    [[ "$output" == *"tools/cursor/hooks.json"* ]]
+}

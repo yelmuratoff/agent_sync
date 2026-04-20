@@ -310,6 +310,163 @@ TTY-friendly опыт для новичков. `--yes` для автоматиз
 
 ---
 
+---
+
+# 0.11 — Tool colocation, shared MCP, discoverability
+
+После 0.10 init минимальный, base+override работает. Но остался разрыв: юзер `enable claude`, делает sync, хочет изменить настройки Claude — **где ему редактировать?** Дефолтный `.claude/settings.json` в gitignore и затирается следующим sync. Нужен явный source-of-truth под редактирование, и он должен быть **очевидным**.
+
+Параллельно — MCP. Серверы одинаковые во всех тулах, но сейчас надо 5 раз копировать один и тот же JSON через `customize`. Единый `.ai/src/mcp.json` решает это.
+
+Главный критерий успеха: юзер без чтения README должен после `enable` понимать, куда идти и что править.
+
+## Архитектура «после 0.11»
+
+```
+.ai/src/
+├── AGENTS.md, rules/, skills/, commands/, agents/   ← shared (без изменений)
+├── mcp.json                                         ← NEW: shared MCP source
+└── tools/
+    ├── claude.yaml                                  ← tool config (без изменений)
+    ├── claude/                                      ← NEW: per-tool payload dir
+    │   └── settings.json                            ← здесь юзер редактирует
+    ├── cursor.yaml
+    └── cursor/
+        ├── hooks.json
+        └── mcp.json                                 ← опциональный override shared mcp.json
+```
+
+Resolution для MCP:
+1. `.ai/src/tools/<tool>/mcp.json` (per-tool override) — wins
+2. `.ai/src/mcp.json` (shared) — wins
+3. `lib/templates/mcp/<tool>.json` (shipped base) — fallback
+
+Resolution для hooks/settings (per-tool по природе):
+1. `.ai/src/tools/<tool>/<resource>.<ext>` — wins
+2. `lib/templates/<resource>/<tool>.<ext>` — fallback
+
+Старая раскладка `.ai/src/{hooks,mcp,settings}/<tool>.<ext>` читается с deprecation warning до 0.12.
+
+---
+
+## Phase 7 — Layout refactor: per-tool directories (2 дня) ✅ DONE
+
+### Цель
+
+Перевести payload-оверрайды из flat-by-resource в nested-by-tool. Один `.ai/src/tools/<tool>/` = всё tool-specific в одном месте.
+
+### Что делаем
+
+- [x] `tool_resolver.sh::resolve_payload_source`: новый порядок поиска:
+  1. `.ai/src/tools/<tool>/<resource>.<ext>` (новый путь)
+  2. `targets.<resource>.source` из tool YAML (если задан)
+  3. `.ai/src/<resource>/<tool>.<ext>` (старый путь, с `_warn_legacy_payload_path` один раз за запуск через PID-marker)
+  4. base template
+- [x] `customize <tool> <resource>` пишет в новый путь. При наличии старого — мигрирует inline (mv + сообщение).
+- [x] `simplify` сканирует новый путь первым, старый — только для миграционного warning (legacy файлы не удаляются byte-compare'ом).
+- [x] `list.sh` H/M/S-колонка читает новый путь; `~` маркирует legacy-only override.
+- [x] `doctor.sh` secret scan включает новый путь, и детектит legacy layout → warning с hint «re-run customize для миграции».
+- [x] Тесты: `resource_resolver.bats` (new-path wins, legacy warning) + `customize.bats` (writes new path, migrates legacy) + `simplify.bats` (legacy flagged, not deleted) + `doctor.bats` (new-layout scan + legacy warn).
+
+### Acceptance
+
+- [x] Проект с 0.10-раскладкой продолжает работать (sync, list, doctor) без ручных правок, но doctor печатает migration hint.
+- [x] `customize claude settings` создаёт `.ai/src/tools/claude/settings.json`, не `.ai/src/settings/claude.json`.
+
+---
+
+## Phase 8 — Shared MCP (1 день)
+
+### Цель
+
+Один файл `.ai/src/mcp.json` для MCP-серверов, применяется ко всем тулам. Per-tool override — редкое исключение.
+
+### Что делаем
+
+- [ ] `_find_mcp_source <tool>` с порядком: per-tool override → shared → base.
+- [ ] `sync.sh` MCP-шаг использует новый резолвер. Отчёт: `→ .mcp.json (shared)` / `(override)` / `(base)`.
+- [ ] Новая команда `agentsync add mcp <server> [--url …] [--command …]`:
+  - Создаёт `.ai/src/mcp.json` если нет (scaffold `{"mcpServers": {}}`).
+  - Добавляет сервер в `mcpServers`.
+  - Печатает: «Added `<server>`. Will apply to all enabled tools on next sync.»
+- [ ] `list`: в footer-hint «1 shared MCP source + N overrides» если есть shared.
+- [ ] Тесты: sync с shared mcp.json → все тулы получают одинаковый контент; override одного тула не ломает остальных.
+
+### Acceptance
+
+- [ ] `agentsync add mcp github --command "npx @github/mcp-server"` → один файл, sync раскатал его в `.claude/`, `.cursor/`, `.mcp.json` и т.д.
+
+---
+
+## Phase 9 — `enable` scaffolds + сигнальные сообщения (2 дня)
+
+### Цель
+
+После `enable <tool>` юзер **сразу видит**, где редактировать. Без необходимости читать README или искать команду.
+
+### Что делаем
+
+- [ ] `enable <tool>` после обновления YAML:
+  - Создаёт `.ai/src/tools/<tool>/`.
+  - Копирует туда base-шаблоны тех payload'ов, которые есть для тула (settings/hooks). MCP — нет, для него есть shared.
+  - TTY: `prompt_confirm "Scaffold editable copies for <tool>? [Y/n]" y` перед копированием (идемпотентно).
+  - Non-TTY: флаг `--scaffold` / `--no-scaffold` (default: `--scaffold`).
+- [ ] `enable` в конце печатает блок:
+  ```
+  Enabled: claude
+    Edit settings:  .ai/src/tools/claude/settings.json
+    Edit MCP:       .ai/src/mcp.json  (shared — use add mcp to extend)
+    Next:           agentsync sync
+  ```
+- [ ] `init` в конце печатает Next steps с MCP + customize подсказками.
+- [ ] `doctor` — новая секция «Edit paths» для каждого enabled тула: список существующих override-файлов + где можно создать новый.
+- [ ] Тесты: `enable claude` создаёт `.ai/src/tools/claude/settings.json` и печатает путь; `enable claude --no-scaffold` создаёт только YAML.
+
+### Acceptance
+
+- [ ] Новичок после `init` → `enable claude` видит ровно одну строку «Edit settings: …» и этот файл реально существует.
+- [ ] Повторный `enable claude` не затирает правки (scaffold skipped если файл уже есть).
+
+---
+
+## Phase 10 — Migration для 0.10 users (1 день)
+
+### Цель
+
+Апгрейд с 0.10 на 0.11 без ручной возни. Старая раскладка продолжает работать, но явно помечена как deprecated.
+
+### Что делаем
+
+- [ ] Новая команда `agentsync migrate`:
+  - Сканирует `.ai/src/{hooks,mcp,settings}/*` → перемещает в `.ai/src/tools/<tool>/<resource>.<ext>`.
+  - Если `.ai/src/mcp/*.json` все одинаковые и юзер согласен — сводит в `.ai/src/mcp.json`.
+  - Dry-run по умолчанию, `--apply` применяет.
+- [ ] `doctor` детектит legacy layout → пункт «Legacy override layout detected. Run `agentsync migrate` to move to per-tool dirs.»
+- [ ] `update` после pull с 0.10→0.11 печатает migration banner.
+- [ ] Deprecation timeline: legacy-пути читаются до 0.12, потом удаляются.
+
+### Acceptance
+
+- [ ] Проект с 0.10 после `update` → `migrate --apply` → sync работает, старые файлы и директории удалены.
+- [ ] Без `migrate` sync всё равно работает, но с warning.
+
+---
+
+## Phase 11 — Docs + release 0.11 (0.5 дня)
+
+### Что делаем
+
+- [ ] README: новая секция «Customization workflow» с диаграммой per-tool dirs + shared MCP.
+- [ ] README Quick Start обновить — в nonce-шаге подсказать `add mcp` / путь к settings.
+- [ ] CHANGELOG 0.11: shared MCP, per-tool layout, `add mcp`, `migrate`, enable-scaffold, deprecation старой раскладки.
+- [ ] Bump `VERSION` → `0.11.0`.
+
+### Acceptance
+
+- [ ] README-разделу «Customization workflow» достаточно чтобы новичок понял `add mcp` vs `customize` vs `enable` без чтения остального.
+
+---
+
 ## Cross-phase checklist
 
 - [ ] Обратная совместимость: любой проект с текущей версии обновляется без ручных правок.

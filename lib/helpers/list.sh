@@ -28,11 +28,12 @@ _list_prepare_context() {
 # Build a short resources string for a tool. Each resource (hooks, mcp,
 # settings) is shown as:
 #   H  — base available, no override
-#   H* — override present
+#   H* — override present (new per-tool layout)
+#   H~ — override present in legacy flat layout (migration pending)
 # Missing resources are shown as ·
 _list_resources_column() {
     local tool="$1"
-    local resource letter base user out=""
+    local resource letter base new_override legacy out=""
     for resource in hooks mcp settings; do
         case "$resource" in
             hooks)    letter="H" ;;
@@ -40,9 +41,12 @@ _list_resources_column() {
             settings) letter="S" ;;
         esac
         base=$(_find_base_payload "$resource" "$tool")
-        user=$(_payload_override_path "$tool" "$resource")
-        if [[ -n "$user" ]] && [[ -f "$user" ]]; then
+        new_override=$(_find_new_payload_override "$tool" "$resource")
+        legacy=$(_payload_override_legacy_path "$tool" "$resource")
+        if [[ -n "$new_override" ]]; then
             out+="$(_yellow "${letter}*")"
+        elif [[ -n "$legacy" ]] && [[ -f "$legacy" ]]; then
+            out+="$(_yellow "${letter}~")"
         elif [[ -n "$base" ]]; then
             out+="$(_dim "${letter} ")"
         else
@@ -58,7 +62,8 @@ cmd_list() {
 
     echo ""
     _bold "  AgentSync Tools"; echo ""
-    _dim "  ● enabled   ○ available   ★ tool override   H M S = hooks/mcp/settings (lower = base only, star = override)"; echo ""
+    _dim "  ● enabled   ○ available   ★ tool override   H M S = hooks/mcp/settings (· = base only, * = override, ~ = legacy override)"; echo ""
+    _dim "  Columns: name · slug (use in commands) · status · resources"; echo ""
     echo ""
 
     # Collect sets as newline-separated strings for fast membership checks.
@@ -108,11 +113,11 @@ cmd_list() {
         # Resources column tracks hooks/mcp/settings overrides.
         local resources
         resources=$(_list_resources_column "$tool")
-        if [[ "$resources" == *"*"* ]]; then
+        if [[ "$resources" == *"*"* ]] || [[ "$resources" == *"~"* ]]; then
             payload_override_count=$((payload_override_count + 1))
         fi
 
-        printf "    %s %s  %-22s %-10s  %s\n" "$marker" "$star" "$display" "$status_text" "$resources"
+        printf "    %s %s  %-22s %-13s %-10s  %s\n" "$marker" "$star" "$display" "$(_dim "$tool")" "$status_text" "$resources"
     done <<< "$all"
 
     echo ""
@@ -124,9 +129,9 @@ cmd_list() {
     echo "  $summary"
     echo ""
     if [[ $enabled_count -eq 0 ]]; then
-        echo "  Enable a tool:     $(_cyan "agentsync enable <name>")"
+        echo "  Enable a tool:     $(_cyan "agentsync enable <slug>")"
     fi
-    echo "  Customize a tool:  $(_cyan "agentsync customize <name> [<resource>]")"
+    echo "  Customize a tool:  $(_cyan "agentsync customize <slug> [<resource>]")"
     echo "  Sync outputs:      $(_cyan "agentsync sync")"
     echo ""
 }

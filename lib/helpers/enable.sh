@@ -64,7 +64,7 @@ _enable_print_tool_line() {
 
 cmd_enable() {
     if [[ $# -eq 0 ]]; then
-        echo "$(_red "Error"): agentsync enable <tool> [<tool>...]" >&2
+        echo "$(_red "Error"): agentsync enable <slug> [<slug>...]" >&2
         echo "" >&2
         echo "Run $(_cyan "agentsync list") to see available tools." >&2
         exit 1
@@ -116,7 +116,7 @@ cmd_enable() {
             echo "    $tool"
         done
         echo ""
-        echo "Run $(_cyan "agentsync list") to see available tools."
+        echo "Run $(_cyan "agentsync list") to see available tool slugs."
     fi
 
     if [[ $added -gt 0 ]]; then
@@ -130,7 +130,7 @@ cmd_enable() {
 
 cmd_disable() {
     if [[ $# -eq 0 ]]; then
-        echo "$(_red "Error"): agentsync disable <tool> [<tool>...]" >&2
+        echo "$(_red "Error"): agentsync disable <slug> [<slug>...]" >&2
         exit 1
     fi
 
