@@ -146,7 +146,12 @@ RULE_EOF
     fi
 }
 
-# Copy per-tool payload files (hooks, mcp, settings) ONLY for tools in the list.
+# Copy per-tool payload files (settings, hooks) ONLY for tools in the list.
+# MCP is intentionally excluded: in 0.11+ every tool gets MCP from the shared
+# .ai/src/mcp.json (or base template). Scaffolding empty per-tool MCP files
+# would shadow that shared source. Use `agentsync add mcp <server>` to create
+# a shared source, or `agentsync customize <tool> mcp` for a per-tool override.
+#
 # Creates destination directories lazily (only when a file is actually copied).
 # Returns 0 always. Prints one "<resource>/<file>" path per scaffold to stdout.
 _init_copy_tool_payloads() {
@@ -158,7 +163,7 @@ _init_copy_tool_payloads() {
     [[ -z "$tool_list" ]] && return 0
 
     local resource tool src_file dest_dir
-    for resource in settings mcp hooks; do
+    for resource in settings hooks; do
         [[ -d "$templates_dir/$resource" ]] || continue
         for tool in $tool_list; do
             for src_file in "$templates_dir/$resource/$tool".*; do
@@ -432,10 +437,11 @@ _init_print_plan() {
         echo "  Tools:    $(_dim "(none — opt in later via 'agentsync enable')")"
     fi
 
-    # Preview payload scaffolds.
+    # Preview payload scaffolds. MCP is intentionally excluded — it resolves
+    # via the shared .ai/src/mcp.json (or base) in 0.11+.
     if [[ -n "$tool_list" ]] && [[ -n "$templates_dir" ]]; then
         local resource tool src_file any_payload=0
-        for resource in settings mcp hooks; do
+        for resource in settings hooks; do
             [[ -d "$templates_dir/$resource" ]] || continue
             local per_resource=""
             for tool in $tool_list; do

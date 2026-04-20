@@ -132,3 +132,75 @@ teardown() {
     # But the override still takes effect.
     grep -q "LEGACY" .cursor/hooks.json
 }
+
+# ── Phase 8: shared MCP (.ai/src/mcp.json) ──────────────────────────────────
+
+@test "shared .ai/src/mcp.json propagates to every enabled tool" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude cursor
+
+    mkdir -p .ai/src
+    echo '{"mcpServers":{"shared":{"command":"shared-mcp"}}}' > .ai/src/mcp.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+
+    # Claude's dest is repo-root .mcp.json; Cursor's is .cursor/mcp.json.
+    grep -q "shared-mcp" .mcp.json
+    grep -q "shared-mcp" .cursor/mcp.json
+}
+
+@test "per-tool MCP override wins over shared source" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude cursor
+
+    mkdir -p .ai/src .ai/src/tools/cursor
+    echo '{"mcpServers":{"shared":{"command":"shared-mcp"}}}' > .ai/src/mcp.json
+    echo '{"mcpServers":{"cursor_only":{"command":"cursor-mcp"}}}' > .ai/src/tools/cursor/mcp.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+
+    # Cursor takes the override; claude keeps the shared source.
+    grep -q "cursor_only" .cursor/mcp.json
+    ! grep -q "shared-mcp" .cursor/mcp.json
+    grep -q "shared-mcp" .mcp.json
+}
+
+@test "legacy flat MCP override wins over shared source" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude cursor
+
+    mkdir -p .ai/src .ai/src/mcp
+    echo '{"mcpServers":{"shared":{"command":"shared-mcp"}}}' > .ai/src/mcp.json
+    echo '{"mcpServers":{"legacy":{"command":"legacy-mcp"}}}' > .ai/src/mcp/cursor.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+
+    grep -q "legacy-mcp" .cursor/mcp.json
+    grep -q "shared-mcp" .mcp.json
+}
+
+@test "sync emits source label line for MCP" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+
+    mkdir -p .ai/src
+    echo '{"mcpServers":{}}' > .ai/src/mcp.json
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mcp source: shared"* ]]
+}
+
+@test "sync MCP label is 'base' when nothing overrides" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+
+    [ ! -f ".ai/src/mcp.json" ]
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mcp source: base"* ]]
+}

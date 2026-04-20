@@ -375,7 +375,7 @@ Resolution для hooks/settings (per-tool по природе):
 
 ---
 
-## Phase 8 — Shared MCP (1 день)
+## Phase 8 — Shared MCP (1 день) ✅ DONE
 
 ### Цель
 
@@ -383,18 +383,21 @@ Resolution для hooks/settings (per-tool по природе):
 
 ### Что делаем
 
-- [ ] `_find_mcp_source <tool>` с порядком: per-tool override → shared → base.
-- [ ] `sync.sh` MCP-шаг использует новый резолвер. Отчёт: `→ .mcp.json (shared)` / `(override)` / `(base)`.
-- [ ] Новая команда `agentsync add mcp <server> [--url …] [--command …]`:
+- [x] Резолвер MCP с порядком per-tool override → declared → legacy flat → shared → base (логика в `resolve_payload_source`, shared слой срабатывает только для `resource == mcp`).
+- [x] `sync.sh` MCP-шаг использует новый резолвер и печатает отдельную строку-метку `mcp source: shared|override|legacy|base|declared`.
+- [x] Новая команда `agentsync add mcp <server> [--url …] [--command …] [--args …] [--env …] [--force]`:
   - Создаёт `.ai/src/mcp.json` если нет (scaffold `{"mcpServers": {}}`).
-  - Добавляет сервер в `mcpServers`.
-  - Печатает: «Added `<server>`. Will apply to all enabled tools on next sync.»
-- [ ] `list`: в footer-hint «1 shared MCP source + N overrides» если есть shared.
-- [ ] Тесты: sync с shared mcp.json → все тулы получают одинаковый контент; override одного тула не ломает остальных.
+  - Добавляет сервер в `mcpServers` через `python3` (безопасный JSON-merge).
+  - Печатает: «Will apply to every enabled tool on next sync.»
+- [x] `list`: footer-hint с путём `.ai/src/mcp.json` и количеством per-tool оверрайдов; если shared нет — подсказка про `add mcp`.
+- [x] `init` больше не создаёт пустые `.ai/src/mcp/<tool>.json` (они бы теневали shared). Сохранено только scaffolding `settings/hooks`; MCP тянется из shared/base.
+- [x] Тесты: `tests/resource_resolver.bats` — shared propagates, per-tool wins, legacy wins, source labels; `tests/add.bats` — create/append/args/env/force/validation.
 
 ### Acceptance
 
-- [ ] `agentsync add mcp github --command "npx @github/mcp-server"` → один файл, sync раскатал его в `.claude/`, `.cursor/`, `.mcp.json` и т.д.
+- [x] `agentsync add mcp github --command "npx @github/mcp-server"` → один файл; `sync` раскатал его в `.claude/mcp.json` (aka `.mcp.json`), `.cursor/mcp.json` и т.д.
+- [x] Демо: `init --tools claude,cursor` → `add mcp github` → `sync` → `diff .mcp.json .cursor/mcp.json` пустой.
+- [x] Per-tool override `.ai/src/tools/cursor/mcp.json` → у cursor своя карта, у claude shared.
 
 ---
 

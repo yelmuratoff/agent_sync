@@ -33,13 +33,13 @@ teardown() {
     run run_agentsync init --tools claude
     [ "$status" -eq 0 ]
 
-    # Claude has settings + mcp templates, but no hooks template.
+    # Claude has settings + hooks (none) templates; MCP is excluded in 0.11+
+    # because it resolves via shared .ai/src/mcp.json (or base).
     [ -f ".ai/src/settings/claude.json" ]
-    [ -f ".ai/src/mcp/claude.json" ]
+    [ ! -d ".ai/src/mcp" ]
     [ ! -d ".ai/src/hooks" ]
     # No cursor leakage.
     [ ! -f ".ai/src/settings/cursor.json" ]
-    [ ! -f ".ai/src/mcp/cursor.json" ]
 }
 
 @test "init --content agents,rules skips skills/commands/agents" {

@@ -90,7 +90,8 @@ get_tool_bool() {
 #   1. Per-tool override:  <repo>/.ai/src/tools/<tool>/<resource>.<ext>   (0.11+)
 #   2. Declared override:  whatever targets.<resource>.source points to   (user-set)
 #   3. Legacy flat:        <repo>/.ai/src/<resource>/<tool>.<ext>         (pre-0.11, deprecated)
-#   4. Base template:      <install-dir>/lib/templates/<resource>/<tool>.<ext>
+#   4. Shared MCP only:    <repo>/.ai/src/mcp.json                        (0.11+, mcp resource only)
+#   5. Base template:      <install-dir>/lib/templates/<resource>/<tool>.<ext>
 #
 # The extension in (1) and (3) is discovered by probing the directory — so
 # custom tools that ship their own file without a base still resolve.
@@ -194,6 +195,18 @@ _warn_legacy_payload_path() {
     } >&2
 }
 
+# Shared MCP path: .ai/src/mcp.json — one source of truth for every tool.
+# Only MCP supports this; hooks/settings remain per-tool by nature.
+shared_mcp_path() {
+    echo "$REPO_ROOT/.ai/src/mcp.json"
+}
+
+_find_shared_mcp() {
+    local p
+    p=$(shared_mcp_path)
+    [[ -f "$p" ]] && echo "$p"
+}
+
 resolve_payload_source() {
     local tool_name="$1"
     local resource="$2"
@@ -232,7 +245,17 @@ resolve_payload_source() {
         return 0
     fi
 
-    # 4. Base fallback.
+    # 4. Shared MCP: applies to every tool, scoped to resource == mcp.
+    if [[ "$resource" == "mcp" ]]; then
+        local shared
+        shared=$(_find_shared_mcp)
+        if [[ -n "$shared" ]]; then
+            echo "$shared"
+            return 0
+        fi
+    fi
+
+    # 5. Base fallback.
     local base_file
     base_file=$(_find_base_payload "$resource" "$tool_name")
     if [[ -n "$base_file" ]]; then
@@ -241,6 +264,48 @@ resolve_payload_source() {
     fi
 
     return 0
+}
+
+# Classify a resolved payload source path. Returns one of:
+#   override   — new per-tool dir (.ai/src/tools/<tool>/<resource>.*)
+#   declared   — explicit targets.<resource>.source override (non-legacy path)
+#   legacy     — legacy flat (.ai/src/<resource>/<tool>.*)
+#   shared     — shared MCP (.ai/src/mcp.json)
+#   base       — shipped base template
+#   unknown    — none of the above (custom declared path outside .ai/src)
+describe_payload_source() {
+    local path="$1"
+    local tool_name="$2"
+    local resource="$3"
+
+    [[ -z "$path" ]] && { echo ""; return 0; }
+
+    local new_dir
+    new_dir=$(_payload_override_dir "$tool_name")
+    if [[ -n "$new_dir" ]] && [[ "$path" == "$new_dir/"* ]]; then
+        echo "override"
+        return 0
+    fi
+
+    if [[ "$resource" == "mcp" ]] && [[ "$path" == "$(shared_mcp_path)" ]]; then
+        echo "shared"
+        return 0
+    fi
+
+    local legacy_prefix="$REPO_ROOT/.ai/src/${resource}/"
+    if [[ "$path" == "$legacy_prefix"* ]]; then
+        echo "legacy"
+        return 0
+    fi
+
+    local base_prefix
+    base_prefix=$(_payload_base_dir "$resource")
+    if [[ -n "$base_prefix" ]] && [[ "$path" == "$base_prefix/"* ]]; then
+        echo "base"
+        return 0
+    fi
+
+    echo "declared"
 }
 
 # ── Catalog listings ──────────────────────────────────────────────────────────

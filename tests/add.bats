@@ -163,3 +163,76 @@ teardown() { teardown_test_project; }
     grep -q "^name: my-skill$" .ai/src/skills/my-skill/SKILL.md
     grep -q "^# my-skill$" .ai/src/skills/my-skill/SKILL.md
 }
+
+# ── add mcp ───────────────────────────────────────────────────────────────────
+
+@test "add mcp creates .ai/src/mcp.json on first run" {
+    [ ! -f ".ai/src/mcp.json" ]
+    run run_agentsync add mcp github --command "npx @github/mcp-server"
+    [ "$status" -eq 0 ]
+    [ -f ".ai/src/mcp.json" ]
+    python3 -c "import json,sys; d=json.load(open('.ai/src/mcp.json')); \
+                assert 'github' in d['mcpServers']; \
+                assert d['mcpServers']['github']['command'] == 'npx @github/mcp-server'"
+}
+
+@test "add mcp appends a second server without touching the first" {
+    run_agentsync add mcp github --command "npx @github/mcp-server" >/dev/null
+    run run_agentsync add mcp linear --url "https://mcp.linear.app/sse"
+    [ "$status" -eq 0 ]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json')); \
+                assert 'github' in d['mcpServers']; \
+                assert 'linear' in d['mcpServers']; \
+                assert d['mcpServers']['linear']['type'] == 'http'; \
+                assert d['mcpServers']['linear']['url'] == 'https://mcp.linear.app/sse'"
+}
+
+@test "add mcp parses --args into a list" {
+    run run_agentsync add mcp fs --command "fs-server" --args "--root /tmp --debug"
+    [ "$status" -eq 0 ]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json')); \
+                assert d['mcpServers']['fs']['args'] == ['--root','/tmp','--debug']"
+}
+
+@test "add mcp parses --env pairs into a map" {
+    run run_agentsync add mcp gh --command "gh-mcp" --env "TOKEN=abc,DEBUG=1"
+    [ "$status" -eq 0 ]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json')); \
+                env=d['mcpServers']['gh']['env']; \
+                assert env['TOKEN']=='abc' and env['DEBUG']=='1'"
+}
+
+@test "add mcp refuses duplicate server without --force" {
+    run_agentsync add mcp gh --command "gh-mcp" >/dev/null
+    run run_agentsync add mcp gh --command "other"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"already exists"* ]]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json')); \
+                assert d['mcpServers']['gh']['command']=='gh-mcp'"
+}
+
+@test "add mcp --force overwrites existing entry" {
+    run_agentsync add mcp gh --command "gh-mcp" >/dev/null
+    run run_agentsync add mcp gh --command "other" --force
+    [ "$status" -eq 0 ]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json')); \
+                assert d['mcpServers']['gh']['command']=='other'"
+}
+
+@test "add mcp requires --url or --command" {
+    run run_agentsync add mcp gh
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--url or --command"* ]]
+}
+
+@test "add mcp rejects both --url and --command" {
+    run run_agentsync add mcp gh --url "https://example" --command "foo"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"mutually exclusive"* ]]
+}
+
+@test "add mcp rejects invalid server name" {
+    run run_agentsync add mcp "bad/name" --command "x"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"path separators"* ]]
+}

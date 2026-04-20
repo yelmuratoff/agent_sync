@@ -465,12 +465,15 @@ sync_tool() {
         fi
     fi
 
-    # 7. MCP  — override → base fallback
+    # 7. MCP  — per-tool override → shared .ai/src/mcp.json → base fallback
     if [[ -n "$dest_mcp_abs" ]]; then
         local src_mcp_abs
         src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
         if [[ -n "$src_mcp_abs" ]] && [[ -f "$src_mcp_abs" ]]; then
+            local mcp_label
+            mcp_label=$(describe_payload_source "$src_mcp_abs" "$tool_name" "mcp")
             copy_file "$src_mcp_abs" "$dest_mcp_abs" "$DRY_RUN"
+            [[ -n "$mcp_label" ]] && log_step "mcp source: $mcp_label"
         fi
     fi
 

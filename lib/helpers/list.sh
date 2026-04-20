@@ -127,11 +127,33 @@ cmd_list() {
     [[ $customized_count -gt 0 ]]         && summary="$summary, $customized_count tool override(s)"
     [[ $payload_override_count -gt 0 ]]   && summary="$summary, $payload_override_count payload override(s)"
     echo "  $summary"
+
+    # Shared MCP source: one .ai/src/mcp.json applies to every enabled tool
+    # unless the tool has its own per-tool override.
+    local shared_mcp="$REPO_ROOT/.ai/src/mcp.json"
+    if [[ -f "$shared_mcp" ]]; then
+        local mcp_override_count=0
+        while IFS= read -r tool; do
+            [[ -z "$tool" ]] && continue
+            if [[ -n "$(_find_new_payload_override "$tool" "mcp")" ]]; then
+                mcp_override_count=$((mcp_override_count + 1))
+            fi
+        done <<< "$all"
+        local mcp_hint="  Shared MCP: $(_yellow ".ai/src/mcp.json")"
+        if [[ $mcp_override_count -gt 0 ]]; then
+            mcp_hint="$mcp_hint $(_dim "(+ $mcp_override_count per-tool override)")"
+        fi
+        echo "$mcp_hint"
+    fi
+
     echo ""
     if [[ $enabled_count -eq 0 ]]; then
         echo "  Enable a tool:     $(_cyan "agentsync enable <slug>")"
     fi
     echo "  Customize a tool:  $(_cyan "agentsync customize <slug> [<resource>]")"
+    if [[ ! -f "$shared_mcp" ]]; then
+        echo "  Add MCP server:    $(_cyan "agentsync add mcp <server> --command …")"
+    fi
     echo "  Sync outputs:      $(_cyan "agentsync sync")"
     echo ""
 }
