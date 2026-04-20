@@ -125,6 +125,57 @@ _doctor_scan_one_file() {
     fi
 }
 
+# Print payload edit paths for a single enabled tool. Shows existing overrides
+# with their on-disk location, and hints at the `customize` command for payloads
+# that have a base template but no override yet. MCP line points at the shared
+# .ai/src/mcp.json (or `add mcp` hint if the file isn't there yet).
+_doctor_print_tool_edit_paths() {
+    local tool_name="$1"
+
+    local settings_base hooks_base mcp_base
+    settings_base=$(_find_base_payload settings "$tool_name")
+    hooks_base=$(_find_base_payload hooks "$tool_name")
+    mcp_base=$(_find_base_payload mcp "$tool_name")
+
+    # Nothing editable for this tool — skip entirely.
+    if [[ -z "$settings_base$hooks_base$mcp_base" ]]; then
+        return 0
+    fi
+
+    local display
+    display=$(tool_display_name "$tool_name")
+
+    local settings_path hooks_path
+    settings_path=$(_payload_override_path "$tool_name" settings)
+    hooks_path=$(_payload_override_path "$tool_name" hooks)
+
+    echo "      $(_bold "$display")"
+
+    local resource user_path base
+    for resource in settings hooks; do
+        case "$resource" in
+            settings) base="$settings_base"; user_path="$settings_path" ;;
+            hooks)    base="$hooks_base";    user_path="$hooks_path" ;;
+        esac
+        [[ -z "$base" ]] && continue
+        if [[ -n "$user_path" ]] && [[ -f "$user_path" ]]; then
+            printf "          %s  %-10s %s\n" "$(_green "✓")" "$resource" "${user_path#"$REPO_ROOT/"}"
+        else
+            printf "          %s  %-10s %s\n" "$(_dim "·")" "$resource" "$(_dim "agentsync customize $tool_name $resource")"
+        fi
+    done
+
+    if [[ -n "$mcp_base" ]]; then
+        local shared
+        shared=$(shared_mcp_path)
+        if [[ -f "$shared" ]]; then
+            printf "          %s  %-10s %s\n" "$(_green "✓")" "mcp" "${shared#"$REPO_ROOT/"} $(_dim "(shared)")"
+        else
+            printf "          %s  %-10s %s\n" "$(_dim "·")" "mcp" "$(_dim "agentsync add mcp <server> (shared — not yet configured)")"
+        fi
+    fi
+}
+
 _doctor_scan_overrides() {
     local overrides_root="$REPO_ROOT/.ai/src"
     local hit_count=0 invalid_count=0
@@ -237,6 +288,24 @@ cmd_doctor() {
         done <<< "$enabled"
     fi
     echo ""
+
+    # ── Section 2b: edit paths for enabled tools ─────────────────────────────
+    if [[ -n "$enabled" ]]; then
+        _bold "  Edit paths"; echo ""
+        local any_edit=false
+        local edit_tool
+        while IFS= read -r edit_tool; do
+            [[ -z "$edit_tool" ]] && continue
+            # Skip tools we already flagged as unknown — nothing actionable.
+            if ! tool_exists "$edit_tool"; then
+                continue
+            fi
+            _doctor_print_tool_edit_paths "$edit_tool"
+            any_edit=true
+        done <<< "$enabled"
+        [[ "$any_edit" == "false" ]] && _doctor_info "No tools with editable payloads."
+        echo ""
+    fi
 
     # ── Section 3: user overrides ────────────────────────────────────────────
     _bold "  User overrides"; echo ""

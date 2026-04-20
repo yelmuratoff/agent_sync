@@ -401,7 +401,7 @@ Resolution для hooks/settings (per-tool по природе):
 
 ---
 
-## Phase 9 — `enable` scaffolds + сигнальные сообщения (2 дня)
+## Phase 9 — `enable` scaffolds + сигнальные сообщения (2 дня) ✅ DONE
 
 ### Цель
 
@@ -409,26 +409,27 @@ Resolution для hooks/settings (per-tool по природе):
 
 ### Что делаем
 
-- [ ] `enable <tool>` после обновления YAML:
+- [x] `enable <tool>` после обновления YAML:
   - Создаёт `.ai/src/tools/<tool>/`.
   - Копирует туда base-шаблоны тех payload'ов, которые есть для тула (settings/hooks). MCP — нет, для него есть shared.
-  - TTY: `prompt_confirm "Scaffold editable copies for <tool>? [Y/n]" y` перед копированием (идемпотентно).
+  - TTY: `prompt_confirm "Scaffold editable copies for <tool>?" y` перед копированием (идемпотентно).
   - Non-TTY: флаг `--scaffold` / `--no-scaffold` (default: `--scaffold`).
-- [ ] `enable` в конце печатает блок:
+  - Идемпотентно также для legacy flat override (не создаёт shadow).
+- [x] `enable` в конце печатает per-tool блок:
   ```
-  Enabled: claude
+  Claude Code
     Edit settings:  .ai/src/tools/claude/settings.json
-    Edit MCP:       .ai/src/mcp.json  (shared — use add mcp to extend)
-    Next:           agentsync sync
+    Edit MCP:       .ai/src/mcp.json  (shared — agentsync add mcp to extend)
   ```
-- [ ] `init` в конце печатает Next steps с MCP + customize подсказками.
-- [ ] `doctor` — новая секция «Edit paths» для каждого enabled тула: список существующих override-файлов + где можно создать новый.
-- [ ] Тесты: `enable claude` создаёт `.ai/src/tools/claude/settings.json` и печатает путь; `enable claude --no-scaffold` создаёт только YAML.
+  Для payload'ов, у которых есть base, но нет оверрайда, печатается подсказка `agentsync customize <tool> <resource>`. Финальная строка `Run agentsync sync to apply.` остаётся общим footer'ом (consistent с текущим стилем команды).
+- [x] `init` в конце печатает Next steps с MCP + customize подсказками (sub-блок «Customize:»).
+- [x] `doctor` — новая секция «Edit paths» для каждого enabled тула: список существующих override-файлов + где можно создать новый (подсказка `customize` или `add mcp`).
+- [x] Тесты: `enable claude` создаёт `.ai/src/tools/claude/settings.json` и печатает путь; `enable claude --no-scaffold` создаёт только YAML.
 
 ### Acceptance
 
-- [ ] Новичок после `init` → `enable claude` видит ровно одну строку «Edit settings: …» и этот файл реально существует.
-- [ ] Повторный `enable claude` не затирает правки (scaffold skipped если файл уже есть).
+- [x] Новичок после `init` → `enable claude` видит ровно одну строку «Edit settings: …» и этот файл реально существует.
+- [x] Повторный `enable claude` не затирает правки (scaffold skipped если файл уже есть или есть legacy-override).
 
 ---
 

@@ -380,6 +380,10 @@ _init_print_summary() {
     step=$((step + 1))
     echo "  $step. Run $(_cyan "agentsync sync")        — distribute to enabled tools"
     echo ""
+    echo "Customize:"
+    echo "  $(_dim "•") $(_cyan "agentsync add mcp <server>")            — configure shared MCP servers"
+    echo "  $(_dim "•") $(_cyan "agentsync customize <tool> <resource>") — override settings/hooks per tool"
+    echo ""
 }
 
 # Validate --content tokens against the allowed set. Prints error + exits on

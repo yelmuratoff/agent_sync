@@ -28,10 +28,12 @@ run_agentsync() {
 }
 
 # Enable tools via agentsync CLI (writes to tools.enabled in agent_sync.yaml).
-# Call after `init`.
+# Call after `init`. Passes --no-scaffold so existing tests stay deterministic —
+# resolver-level tests can still write overrides at whichever layout they test.
+# Tests that specifically validate enable's scaffolding call `run_agentsync enable`.
 # Usage: enable_tools claude cursor copilot
 enable_tools() {
-    run_agentsync enable "$@" >/dev/null
+    run_agentsync enable "$@" --no-scaffold >/dev/null
 }
 
 # ── Shared seed/clone fixture ────────────────────────────────────────────────

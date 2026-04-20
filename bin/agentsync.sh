@@ -182,7 +182,7 @@ main() {
         generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
         export)        _need yaml export;                              shift; cmd_export "$@" ;;
         import)        _need import;                                   shift; cmd_import "$@" ;;
-        enable)        _need yaml yaml_edit tool_resolver enable;      shift; cmd_enable "$@" ;;
+        enable)        _need prompts yaml yaml_edit tool_resolver enable; shift; cmd_enable "$@" ;;
         disable)       _need yaml yaml_edit tool_resolver enable;      shift; cmd_disable "$@" ;;
         add)           _need add;                                      shift; cmd_add "$@" ;;
         customize)     _need yaml yaml_edit tool_resolver customize;   shift; cmd_customize "$@" ;;

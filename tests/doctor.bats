@@ -165,3 +165,40 @@ JSON
     run run_agentsync doctor
     [[ "$output" != *"differs from pinned"* ]]
 }
+
+@test "doctor shows Edit paths section for enabled tools" {
+    run_agentsync init --no-detect >/dev/null
+    run_agentsync enable claude >/dev/null
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Edit paths"* ]]
+    [[ "$output" == *".ai/src/tools/claude/settings.json"* ]]
+    # Shared MCP not configured → hint line should appear.
+    [[ "$output" == *"agentsync add mcp"* ]]
+}
+
+@test "doctor Edit paths shows customize hint when no override exists" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Edit paths"* ]]
+    [[ "$output" == *"agentsync customize cursor hooks"* ]]
+}
+
+@test "doctor Edit paths points at shared mcp.json when configured" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude
+    echo '{"mcpServers":{}}' > .ai/src/mcp.json
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".ai/src/mcp.json"* ]]
+    [[ "$output" == *"(shared)"* ]]
+}
+
+@test "doctor skips Edit paths section when no tools enabled" {
+    run_agentsync init --no-detect >/dev/null
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Edit paths"* ]]
+}

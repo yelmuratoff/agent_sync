@@ -54,3 +54,46 @@ teardown() { teardown_test_project; }
     [ "$status" -ne 0 ]
     [[ "$output" == *"Error"* ]]
 }
+
+@test "enable scaffolds per-tool payload dir by default (non-TTY)" {
+    run run_agentsync enable claude
+    [ "$status" -eq 0 ]
+    [ -f .ai/src/tools/claude/settings.json ]
+    [[ "$output" == *"Edit settings:"* ]]
+    [[ "$output" == *".ai/src/tools/claude/settings.json"* ]]
+    [[ "$output" == *"Edit MCP:"* ]]
+    [[ "$output" == *".ai/src/mcp.json"* ]]
+}
+
+@test "enable --no-scaffold skips per-tool dir but still prints hints" {
+    run run_agentsync enable claude --no-scaffold
+    [ "$status" -eq 0 ]
+    [ ! -d .ai/src/tools/claude ]
+    [[ "$output" != *"Edit settings:"* ]]
+    [[ "$output" == *"agentsync customize claude settings"* ]]
+}
+
+@test "enable is idempotent for scaffolded files" {
+    run_agentsync enable claude >/dev/null
+    echo '{"custom": true}' > .ai/src/tools/claude/settings.json
+    run_agentsync disable claude >/dev/null
+    run run_agentsync enable claude
+    [ "$status" -eq 0 ]
+    grep -q '"custom": true' .ai/src/tools/claude/settings.json
+}
+
+@test "enable scaffolds hooks when tool has hooks base" {
+    run run_agentsync enable windsurf
+    [ "$status" -eq 0 ]
+    [ -f .ai/src/tools/windsurf/hooks.json ]
+    [[ "$output" == *"Edit hooks:"* ]]
+}
+
+@test "enable respects legacy flat-layout overrides (no shadow)" {
+    mkdir -p .ai/src/settings
+    echo '{"legacy": true}' > .ai/src/settings/claude.json
+    run run_agentsync enable claude
+    [ "$status" -eq 0 ]
+    [ ! -f .ai/src/tools/claude/settings.json ]
+    grep -q '"legacy": true' .ai/src/settings/claude.json
+}

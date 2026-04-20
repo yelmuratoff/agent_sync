@@ -138,6 +138,13 @@ teardown() {
     [[ "$output" == *"agentsync enable"* ]]
 }
 
+@test "init Next steps lists MCP and customize hints" {
+    run run_agentsync init --no-detect
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"agentsync add mcp"* ]]
+    [[ "$output" == *"agentsync customize"* ]]
+}
+
 @test "init to custom directory" {
     mkdir -p subdir
     run run_agentsync init subdir

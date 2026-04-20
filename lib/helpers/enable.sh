@@ -60,11 +60,153 @@ _enable_print_tool_line() {
     echo "    $(_green "●") $display $(_dim "($tool)")"
 }
 
+# True (0) if the tool has at least one payload (settings/hooks) base template
+# without an existing user override — i.e. there is work for scaffolding to do.
+# Respects both the new per-tool layout and the legacy flat layout to avoid
+# shadowing an existing legacy override.
+_enable_has_scaffoldable_work() {
+    local tool_name="$1"
+    local resource base user legacy
+    for resource in settings hooks; do
+        base=$(_find_base_payload "$resource" "$tool_name")
+        [[ -z "$base" ]] && continue
+        user=$(_payload_override_path "$tool_name" "$resource")
+        [[ -z "$user" ]] && continue
+        [[ -f "$user" ]] && continue
+        legacy=$(_payload_override_legacy_path "$tool_name" "$resource")
+        [[ -n "$legacy" ]] && [[ -f "$legacy" ]] && continue
+        return 0
+    done
+    return 1
+}
+
+# Copy base templates for settings + hooks into .ai/src/tools/<tool>/.
+# MCP is intentionally excluded — it resolves through shared .ai/src/mcp.json.
+# Idempotent: skips files that already exist in either the new per-tool layout
+# or the legacy flat layout. Emits "<resource>:<path>" lines for created files.
+_enable_scaffold_tool_dir() {
+    local tool_name="$1"
+    local resource base user legacy
+    for resource in settings hooks; do
+        base=$(_find_base_payload "$resource" "$tool_name")
+        [[ -z "$base" ]] && continue
+        user=$(_payload_override_path "$tool_name" "$resource")
+        [[ -z "$user" ]] && continue
+        [[ -f "$user" ]] && continue
+        legacy=$(_payload_override_legacy_path "$tool_name" "$resource")
+        [[ -n "$legacy" ]] && [[ -f "$legacy" ]] && continue
+        mkdir -p "$(dirname "$user")"
+        cp "$base" "$user"
+        echo "${resource}:${user}"
+    done
+}
+
+# Print the "Edit paths" block for a newly-enabled tool. Shows existing override
+# files, a shared-MCP line for tools that ship MCP templates, and gentle hints
+# for payloads the user can still materialize via `customize`.
+_enable_print_edit_block() {
+    local tool_name="$1"
+
+    local settings_base hooks_base mcp_base
+    settings_base=$(_find_base_payload settings "$tool_name")
+    hooks_base=$(_find_base_payload hooks "$tool_name")
+    mcp_base=$(_find_base_payload mcp "$tool_name")
+
+    if [[ -z "$settings_base$hooks_base$mcp_base" ]]; then
+        return 0
+    fi
+
+    local display
+    display=$(tool_display_name "$tool_name")
+
+    local settings_path hooks_path
+    settings_path=$(_payload_override_path "$tool_name" settings)
+    hooks_path=$(_payload_override_path "$tool_name" hooks)
+
+    echo ""
+    _bold "  $display"; echo ""
+
+    if [[ -n "$settings_base" ]]; then
+        if [[ -n "$settings_path" ]] && [[ -f "$settings_path" ]]; then
+            printf "    Edit settings:  %s\n" "${settings_path#"$REPO_ROOT/"}"
+        else
+            printf "    Settings:       %s\n" "$(_dim "agentsync customize $tool_name settings")"
+        fi
+    fi
+
+    if [[ -n "$hooks_base" ]]; then
+        if [[ -n "$hooks_path" ]] && [[ -f "$hooks_path" ]]; then
+            printf "    Edit hooks:     %s\n" "${hooks_path#"$REPO_ROOT/"}"
+        else
+            printf "    Hooks:          %s\n" "$(_dim "agentsync customize $tool_name hooks")"
+        fi
+    fi
+
+    if [[ -n "$mcp_base" ]]; then
+        printf "    Edit MCP:       %s  %s\n" \
+            ".ai/src/mcp.json" \
+            "$(_dim "(shared — agentsync add mcp to extend)")"
+    fi
+}
+
+# Decide + execute scaffolding for a single tool, then print its edit block.
+# scaffold_mode: auto | yes | no.
+_enable_scaffold_and_announce() {
+    local tool_name="$1"
+    local scaffold_mode="$2"
+    local yes="$3"
+
+    local should_scaffold=false
+    case "$scaffold_mode" in
+        yes) should_scaffold=true ;;
+        no)  should_scaffold=false ;;
+        auto)
+            if _enable_has_scaffoldable_work "$tool_name"; then
+                if is_tty && [[ "$yes" != "true" ]]; then
+                    local display
+                    display=$(tool_display_name "$tool_name")
+                    if prompt_confirm "Scaffold editable copies for $display?" y; then
+                        should_scaffold=true
+                    fi
+                else
+                    # Non-TTY (or --yes): default per TODO is to scaffold.
+                    should_scaffold=true
+                fi
+            fi
+            ;;
+    esac
+
+    if [[ "$should_scaffold" == "true" ]]; then
+        _enable_scaffold_tool_dir "$tool_name" >/dev/null
+    fi
+
+    _enable_print_edit_block "$tool_name"
+}
+
 # ── enable ────────────────────────────────────────────────────────────────────
 
 cmd_enable() {
-    if [[ $# -eq 0 ]]; then
-        echo "$(_red "Error"): agentsync enable <slug> [<slug>...]" >&2
+    local scaffold_mode="auto"
+    local yes=false
+    local -a tools=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scaffold)    scaffold_mode="yes"; shift ;;
+            --no-scaffold) scaffold_mode="no";  shift ;;
+            --yes|-y)      yes=true;            shift ;;
+            --)            shift; while [[ $# -gt 0 ]]; do tools+=("$1"); shift; done ;;
+            -*)
+                echo "$(_red "Error"): Unknown flag: $1" >&2
+                echo "Usage: agentsync enable <slug> [<slug>...] [--no-scaffold|--scaffold] [--yes]" >&2
+                exit 1
+                ;;
+            *) tools+=("$1"); shift ;;
+        esac
+    done
+
+    if [[ ${#tools[@]} -eq 0 ]]; then
+        echo "$(_red "Error"): agentsync enable <slug> [<slug>...] [--no-scaffold|--scaffold] [--yes]" >&2
         echo "" >&2
         echo "Run $(_cyan "agentsync list") to see available tools." >&2
         exit 1
@@ -75,9 +217,11 @@ cmd_enable() {
     local cfg
     cfg=$(_enable_resolve_or_create_config "$REPO_ROOT")
 
-    local added=0 already=0 unknown=()
+    local added=0 already=0
+    local -a unknown=()
+    local -a added_tools=()
     local tool
-    for tool in "$@"; do
+    for tool in "${tools[@]}"; do
         if ! tool_exists "$tool"; then
             unknown+=("$tool")
             continue
@@ -88,18 +232,13 @@ cmd_enable() {
         fi
         yaml_list_append "$cfg" "tools.enabled" "$tool"
         added=$((added + 1))
+        added_tools+=("$tool")
     done
 
     echo ""
     if [[ $added -gt 0 ]]; then
         _green "Enabled $added tool(s)"; echo ""
-        for tool in "$@"; do
-            local u
-            local skip=false
-            for u in "${unknown[@]+"${unknown[@]}"}"; do
-                [[ "$u" == "$tool" ]] && skip=true && break
-            done
-            [[ "$skip" == "true" ]] && continue
+        for tool in "${added_tools[@]+"${added_tools[@]}"}"; do
             _enable_print_tool_line "$tool"
         done
     fi
@@ -120,6 +259,10 @@ cmd_enable() {
     fi
 
     if [[ $added -gt 0 ]]; then
+        for tool in "${added_tools[@]+"${added_tools[@]}"}"; do
+            _enable_scaffold_and_announce "$tool" "$scaffold_mode" "$yes"
+        done
+
         echo ""
         echo "Run $(_cyan "agentsync sync") to apply."
         echo ""
