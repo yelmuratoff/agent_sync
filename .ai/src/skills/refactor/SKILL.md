@@ -1,34 +1,27 @@
 ---
 name: refactor
-description: >
-  Restructure AgentSync Bash scripts without changing behavior.
-  USE WHEN refactoring, cleaning up code, reducing duplication, improving naming, or simplifying shell logic.
+description: Restructure existing code without changing its behavior — reduce duplication, improve naming, simplify complex logic, extract helpers, split overgrown functions, untangle dependencies. Use this skill when the user asks to refactor, clean up, simplify, DRY out, rename, extract a helper, split a file, or make code "nicer" — including when they describe code-quality concerns without using the word "refactor" (e.g. "this is messy", "приведи в порядок", "это можно сделать чище").
 ---
 
 # Refactor
 
-Safely restructure AgentSync's Bash code while preserving existing behavior.
+Safely restructure code while preserving existing behavior.
 
 ## Steps
 
-1. **Verify tests exist** — Run `bats tests/` to confirm current behavior passes before touching anything.
-2. **Name the problem** — What exactly is wrong? Duplicated logic? Oversized function? Poor naming? Tangled helpers?
-3. **Plan the change** — Small, safe steps. Each step keeps `agentsync sync` producing identical output.
-4. **One change at a time** — Extract a helper, rename a function, simplify a conditional — one per commit.
-5. **Run tests after each step** — `bats tests/` must pass. If it fails, you changed behavior.
-6. **Run ShellCheck** — `shellcheck -x -S warning -e SC1091` on all changed files.
-7. **Verify idempotency** — Run `agentsync sync` in `example/`, then run `agentsync check` to confirm no drift.
-
-## Common Refactors
-
-- **Extract helper** — Move repeated logic from `lib/sync.sh` into `lib/helpers/<name>.sh`. Source it in `sync.sh`.
-- **Simplify sync logic** — The `sync_tool` function in `lib/sync.sh` is large. Extract tool-specific handlers when they grow.
-- **Consolidate YAML access** — Use `parse_yaml_value` consistently; don't reimplement parsing inline.
+1. **Verify tests exist** — Before touching anything, confirm test coverage on the code you'll change. If tests are missing, write them first against current behavior.
+2. **Name the problem** — What exactly is wrong?
+   - Duplicated logic? Function doing too many things? Poor naming? Tangled dependencies? Wrong abstraction?
+3. **Plan the change** — Describe what you'll do before doing it. Small, safe steps.
+4. **One change at a time** — Each step keeps the code working. Don't rewrite everything at once.
+5. **Run tests after each step** — If tests fail, you changed behavior. Undo and try smaller.
+6. **Stop when good enough** — Clear, tested, easy to change = done.
 
 ## Gotchas
 
-- Don't extract abstractions used only once — duplication is fine at small scale.
-- Don't rename exported functions without checking all callers (sync.sh, check.sh, agentsync.sh).
-- Don't refactor and add features in the same commit.
-- Keep Bash portable — refactored code must work on macOS, Linux, and Git Bash on Windows.
-- The `example/` output is the integration test — always re-sync and check after refactoring.
+- Don't extract abstractions used only once — three similar lines is better than a premature abstraction.
+- Don't add design patterns just to demonstrate knowledge.
+- Don't rename things across the entire codebase without asking.
+- Don't change public APIs without understanding downstream impact.
+- Don't refactor and add features in the same change — separate commits/PRs.
+- Don't refactor code that works, is clear, and is tested just because you'd write it differently.

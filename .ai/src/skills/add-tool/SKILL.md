@@ -1,8 +1,6 @@
 ---
 name: add-tool
-description: >
-  Add support for a new AI coding tool to AgentSync's sync engine.
-  USE WHEN adding a new tool, integrating a new AI assistant, or asked to support a new IDE/editor.
+description: Add support for a new AI coding tool to AgentSync's sync engine — create the tool YAML, configure targets and converters, add base templates, and write tests. Use this skill when integrating a new AI assistant, IDE, or editor into AgentSync, when a user asks "can AgentSync sync to X", or when extending the sync surface to a new agent — even if the user names the tool by brand without saying "tool" or "integration".
 ---
 
 # Add New Tool Support

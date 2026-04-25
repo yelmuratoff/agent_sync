@@ -1,8 +1,6 @@
 ---
 name: agentsync
-description: >
-  Create or edit AgentSync configuration — rules, skills, commands, agents, settings, MCP, or tool configs.
-  USE WHEN adding rules, creating skills, writing commands, defining agents, editing permissions, configuring tools, or setting up .ai/ directory.
+description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `add` / `customize` / `resolve` / `simplify` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
 ---
 
 # Working with AgentSync
@@ -37,6 +35,17 @@ Create and maintain AI agent instructions in the AgentSync format.
 
 After editing, run `agentsync sync` to distribute to all tools.
 
+## Scaffolding new content
+
+Use `agentsync add <kind> <name>` to create a new file with the correct frontmatter and placement:
+
+- `agentsync add rule <name>` — creates `.ai/src/rules/<name>.md`
+- `agentsync add skill <name>` — creates `.ai/src/skills/<name>/SKILL.md`
+- `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
+- `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
+
+The command refuses to overwrite existing files; pass `--force` (or `-f`) to replace them. Names must contain only letters, digits, hyphens, and underscores — no path separators, no `..`, no leading `.` or `-`.
+
 ## Writing AGENTS.md
 
 The agent's identity. Every sentence should change behavior.
@@ -45,7 +54,7 @@ The agent's identity. Every sentence should change behavior.
 - **Include the stack** — The agent needs to know what it's working with.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
 - **What NOT to do** — Constraints are often more useful than instructions.
-- Under 60 lines. No generic filler.
+- 40–70 lines. No generic filler.
 
 ## Writing Rules
 
@@ -54,69 +63,19 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 - **One concern per file** — `testing.md`, `security.md`. Not `everything.md`.
 - **Imperative and specific** — "Use `snake_case` for DB columns" not "Follow naming conventions".
 - **Constraints, not tutorials** — Say what to do and what not to do. Don't explain concepts.
-- **Scannable in 30 seconds** — If too long, split it.
+- **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
 
 ## Writing Skills — The Most Important Part
 
-Skills are the highest-leverage configuration. A skill is a directory with a `SKILL.md`.
+Skills are the highest-leverage configuration. AgentSync skills follow the open [agentskills.io](https://agentskills.io) format — a portable standard supported by Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, and ~30 other agents. Validate with `skills-ref validate <path>`.
 
-### The description is a TRIGGER, not a summary
+The **description is the trigger** — vague descriptions never activate. Be imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain), and keyword-rich. Hard limit: 1024 chars.
 
-The agent scans every skill description at startup. Vague = invisible.
+The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand docs), `scripts/` (executable code), `assets/` (templates). Keep `SKILL.md` ≤ 500 lines / ≤ 5000 tokens; move detail behind explicit triggers ("read `references/X.md` when Y").
 
-Bad: `description: "Helps with testing"`
-Good: `description: "Write unit and integration tests for new features. USE WHEN adding tests, writing test cases, or asked to verify behavior."`
+**When creating or editing a skill in `.ai/src/skills/<name>/`, read [`references/writing-skills.md`](references/writing-skills.md)** — it covers the full agentskills.io spec, frontmatter constraints, structure templates, calibration principles (procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility), reusable patterns (Gotchas, Templates, Checklists, Validation loops, Plan-validate-execute), and the iteration loop with evals.
 
-Always include `USE WHEN` with concrete trigger conditions.
-
-### Frontmatter fields
-
-```yaml
----
-name: skill-name # Required. Lowercase, kebab-case.
-description: > # Required. Trigger description with USE WHEN clause.
-  What this skill does.
-  USE WHEN [concrete trigger conditions].
-
-
-# Optional fields (tool-specific, passed through by agentsync):
-# context: fork                 # Run in isolated subagent (Claude Code)
-# allowed-tools: [Read, Grep]   # Limit available tools (Claude Code)
-# paths: ["src/api/**"]         # Only activate for matching paths
----
-```
-
-### Structure of a good skill
-
-```markdown
----
-name: example
-description: >
-  [What it does]. USE WHEN [triggers].
----
-
-# Skill Name
-
-[One line: what this skill does and when.]
-
-## Steps
-
-1. [Concrete numbered steps]
-2. [With real commands and paths]
-
-## Gotchas
-
-- [Every mistake the agent has made using this skill]
-- [Edge cases and common pitfalls]
-```
-
-### The Gotchas section
-
-This is the highest-signal content. Every time the agent makes a mistake, add it to Gotchas. This section prevents the same error from happening twice.
-
-### Rule of Three
-
-Don't create a skill for everything. If you've done something three times manually, then create a skill.
+**Rule of three:** don't create a skill for everything. Three manual repetitions, *then* a skill.
 
 ## Writing Commands
 
@@ -206,6 +165,14 @@ For tools without separate rules/skills directories, use inline options:
 1. Copy `.ai/src/tools/_TEMPLATE.yaml` to `.ai/src/tools/<tool>.yaml`.
 2. Set `name`, `enabled: true`, and configure `targets`.
 3. Run `agentsync sync --only <tool>` to test.
+
+## Maintenance: drift, resolve, simplify
+
+`agentsync update` snapshots the tool catalog and reports upstream changes to fields you've overridden into `.ai/.pending-resolutions.yaml`. Run `agentsync resolve` to walk and adopt or reject each one. Pass `--strict` in CI to fail the build when conflicts exist.
+
+`agentsync simplify` drops user-override fields that already match the current base, surfacing only true divergences. Dry-run by default; `--apply` to write, `-y` to auto-delete emptied files.
+
+**When running `agentsync update`, `resolve`, or `simplify`, or when investigating stale-override / upstream-drift problems, read [`references/maintenance.md`](references/maintenance.md)** for full file format, command semantics, idempotency rules, comment-preservation gotcha, and recommended cadence.
 
 ## Gotchas
 

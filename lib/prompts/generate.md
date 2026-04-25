@@ -60,9 +60,9 @@ Format:
 
 ### 3. `.ai/src/skills/` — On-Demand Recipes
 
-50–100 lines per skill. Skills can be more detailed since they're loaded on demand, but if a skill grows beyond that, it's likely two separate workflows — split by responsibility. One focused skill triggers reliably; a bloated one becomes noise.
+Each skill = a directory with `SKILL.md`. Skills follow the open [agentskills.io](https://agentskills.io) format. Hard limits: `name` ≤64 chars (lowercase letters/digits/hyphens, must match folder name); `description` ≤1024 chars; `SKILL.md` body ≤500 lines / ≤5000 tokens. Move detail beyond that into `references/` (docs read on demand), `scripts/` (executable code), or `assets/` (templates).
 
-Each skill = a directory with `SKILL.md`. Think about what developers do repeatedly:
+Think about what developers do repeatedly in this project:
 
 - Adding a feature/module following the project's architecture
 - Writing tests using the project's test setup
@@ -74,14 +74,16 @@ Format:
 ```markdown
 ---
 name: skill-name
-description: >
-  What this skill does.
-  USE WHEN [concrete trigger conditions — be specific so the agent can match].
+description: One imperative sentence on what the skill does + concrete trigger conditions, including phrasings the user might use without naming the domain. Stay under 1024 chars.
 ---
 
 # Skill Name
 
 [One line: what and when.]
+
+## Bundled references (load on demand)        # Optional, only if you have references/
+
+- `references/X.md` — read when [concrete trigger condition]
 
 ## Steps
 
@@ -96,9 +98,13 @@ description: >
 
 **Critical for skills:**
 
-- The `description` is a TRIGGER, not a summary. The agent scans descriptions to decide which skill to use. Vague descriptions = invisible skills. Always include `USE WHEN` with specific conditions.
-- The `Gotchas` section prevents repeated mistakes. Include at least 2-3 gotchas per skill based on what could go wrong in this project.
-- Don't create a skill for everything — only for workflows that happen repeatedly.
+- The `description` is a TRIGGER. Make it imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain — "even when phrased as 'this is broken' or 'почему падает'"), keyword-rich, and stay under 1024 chars. Vague descriptions = invisible skills.
+- `Gotchas` is the single highest-leverage section — concrete corrections to wrong assumptions ("the `users` table uses soft deletes; queries must include `WHERE deleted_at IS NULL`"), not generic advice. Include 2-3 based on what could go wrong in this project.
+- Add what the agent doesn't know about *this project*; omit what it knows generally. Don't explain what HTTP is or how `git` works.
+- Procedures over declarations — teach how to approach a class of problems, not the answer to one specific instance.
+- Defaults, not menus — pick one tool/library/approach and mention alternatives briefly.
+- Match specificity to fragility — be prescriptive on fragile sequence-sensitive ops, descriptive on flexible work.
+- Don't create a skill for everything — only for workflows that happen 3+ times.
 
 ### 4. `.ai/src/commands/` — Custom Slash Commands
 

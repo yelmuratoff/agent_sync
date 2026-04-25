@@ -1,8 +1,6 @@
 ---
 name: debug
-description: >
-  Investigate and fix bugs, errors, or unexpected behavior.
-  USE WHEN debugging, diagnosing test failures, analyzing stack traces, or fixing runtime errors.
+description: Investigate and fix bugs, errors, or unexpected behavior systematically — reproduce, locate, understand the root cause, fix it, and add a regression test. Use this skill when the user reports a failure (test, runtime, build, CI), shares a stack trace or error message, says something doesn't work, asks why something is broken, or asks for a fix that requires diagnosis — even when the word "debug" is not used (e.g. "this is broken", "почему падает", "не работает X").
 ---
 
 # Debug
