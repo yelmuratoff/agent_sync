@@ -10,30 +10,22 @@ Write a commit message that follows the project's conventions and clearly explai
 ## Steps
 
 1. Run `git diff --cached` (or `git diff` if nothing is staged) to see all changes.
-2. Run `git log --oneline -5` to match the project's existing commit style.
-3. Analyze the changes:
-   - What was added, changed, or removed?
-   - Is this a feature, bug fix, refactor, docs update, or chore?
-   - What is the *motivation* behind the change?
-4. Write the commit message:
-   - **First line**: imperative mood, under 72 chars (e.g., `fix: prevent duplicate API calls on rapid tap`).
-   - **Body** (if needed): blank line, then explain *why*, not *what*.
-   - Match the project's commit style (conventional commits, prefixes, etc.).
-5. Stage only relevant files. Don't `git add .` blindly — exclude generated files, secrets, unrelated changes.
+2. Run `git log --oneline -10` to detect the project's existing commit style — copy it. Don't impose a different convention.
+3. Analyze the changes: feature, fix, refactor, docs, or chore? What is the *motivation*?
+4. Write the commit:
+   - **First line**: imperative mood, ≤72 chars, matching the style from step 2.
+   - **Body** (only if the subject can't carry the meaning): blank line, then *why*, not *what*.
+5. Stage only relevant files explicitly by path. Don't `git add .` blindly — exclude generated files, secrets, unrelated changes.
 6. Create the commit.
 
-## Commit Prefixes (conventional commits)
+## Default style
 
-- `feat:` — new functionality
-- `fix:` — bug fix
-- `refactor:` — restructuring without behavior change
-- `docs:` — documentation only
-- `test:` — adding or fixing tests
-- `chore:` — maintenance (dependencies, CI, config)
+If the project has no established convention (step 2 returns mixed messages), default to **Conventional Commits**: `<type>: <subject>` where `<type>` is `feat`, `fix`, `refactor`, `docs`, `test`, or `chore`. Use `feat:` for new behavior, `fix:` for bug fixes, `refactor:` for behavior-preserving changes; the others are self-explanatory.
 
 ## Gotchas
 
-- Don't amend the previous commit unless explicitly asked — create a new commit instead.
-- Don't include unrelated changes in the same commit. One logical change per commit.
-- Don't commit `.env`, credentials, or generated lock files unless the project expects it.
-- If a pre-commit hook fails, fix the issue and create a NEW commit — don't use `--no-verify`.
+- Don't amend the previous commit unless explicitly asked — create a new commit.
+- Don't include unrelated changes in the same commit. Split them.
+- Don't commit `.env`, credentials, or generated lockfiles unless the project clearly expects it.
+- If a pre-commit hook fails, fix the underlying issue and create a NEW commit — don't use `--no-verify`.
+- Don't invent a new style if the project uses something specific (gitmoji, ticket-prefixed, plain-English) — match what's there.

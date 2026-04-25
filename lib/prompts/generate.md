@@ -13,6 +13,17 @@ If I haven't provided project context above, start by analyzing the codebase:
 
 If I provided a URL, description, or specific topic — use that as context for generation.
 
+## Universal principles (apply to every artifact below)
+
+These come from the agentskills.io best-practices guide and Anthropic prompt-engineering guidance. They apply to AGENTS.md, rules, skills, commands, and agents alike — not just one section.
+
+- **Add what the agent lacks; omit what it knows.** The agent already knows what HTTP is, how `git` works, and what DRY means. Useful content is project-specific: schema quirks, naming conventions, workarounds for known bugs, the team's preferred library when several would work. If the answer to "would the agent get this wrong without this instruction?" is no, cut it.
+- **Procedures over declarations.** Teach how to approach a class of problems, not the answer to one specific instance. "Read the schema, then join on the `_id` foreign key convention" generalizes; "join `orders` to `customers` on `customer_id`" doesn't.
+- **Defaults, not menus.** Pick one tool/library/approach and mention alternatives briefly. "Use `pdfplumber`; fall back to `pdf2image` for scanned PDFs" beats listing four equal options.
+- **Match specificity to fragility.** Be prescriptive on fragile sequence-sensitive ops ("run exactly: `python migrate.py --verify --backup`"). Be descriptive on flexible work ("look for SQL injection, weak auth, race conditions") and let the agent's judgment fill in.
+- **Rule of three for skills.** Don't create a skill until you've manually done the workflow at least three times. Earlier than that, you don't yet know its shape — and a poorly-scoped skill that loads on every task is worse than no skill.
+- **Soften aggressive language.** Modern Claude (Opus 4.6+) over-complies with `MUST` / `NEVER` / `ALWAYS` / `CRITICAL`. Prefer "use when…", "do not", "prefer X". Save emphasis for the genuinely fragile rules.
+
 ## What to generate
 
 ### 1. `.ai/src/AGENTS.md` — Agent Identity
@@ -98,13 +109,10 @@ description: One imperative sentence on what the skill does + concrete trigger c
 
 **Critical for skills:**
 
-- The `description` is a TRIGGER. Make it imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain — "even when phrased as 'this is broken' or 'почему падает'"), keyword-rich, and stay under 1024 chars. Vague descriptions = invisible skills.
-- `Gotchas` is the single highest-leverage section — concrete corrections to wrong assumptions ("the `users` table uses soft deletes; queries must include `WHERE deleted_at IS NULL`"), not generic advice. Include 2-3 based on what could go wrong in this project.
-- Add what the agent doesn't know about *this project*; omit what it knows generally. Don't explain what HTTP is or how `git` works.
-- Procedures over declarations — teach how to approach a class of problems, not the answer to one specific instance.
-- Defaults, not menus — pick one tool/library/approach and mention alternatives briefly.
-- Match specificity to fragility — be prescriptive on fragile sequence-sensitive ops, descriptive on flexible work.
-- Don't create a skill for everything — only for workflows that happen 3+ times.
+- The `description` is a TRIGGER. Discovery is the only thing the agent sees at startup, so vague = invisible. Make it imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain — "even when phrased as 'this is broken' or 'почему падает'"), and keyword-rich. Stay under 1024 chars.
+- `Gotchas` is the single highest-leverage section — concrete corrections to wrong assumptions ("the `users` table uses soft deletes; queries must include `WHERE deleted_at IS NULL`"), not generic advice. Include 2-3 based on what could actually go wrong in this project; update it every time the agent makes a mistake using the skill.
+- **Aim for 50–150 lines** when the workflow is simple. Cap at 500 lines / 5000 tokens hard. Beyond that, move detail to `references/<topic>.md` and load it with an explicit trigger ("read `references/X.md` when Y") — not a vague "see references/".
+- Apply the Universal principles above (add-what-agent-lacks, procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility) — they matter most for skills.
 
 ### 4. `.ai/src/commands/` — Custom Slash Commands
 
@@ -225,7 +233,9 @@ Output each file with its full path as a header:
 - Be specific to THIS project. Use real file paths, real commands, real patterns.
 - If you don't see evidence of something in the code, don't write a rule about it.
 - 5 specific rules > 20 vague rules. Quality over quantity.
+- Don't restate language defaults, framework documentation, or general programming wisdom — the agent already knows.
+- Don't create skills for workflows you can't show happen 3+ times in this codebase.
+- Don't create agents for domains that don't exist here.
 - Skills and commands must have real commands and paths, not placeholders.
-- Don't generate rules that just restate language defaults or framework documentation.
-- Don't generate agents for domains that don't exist in this project.
 - Settings should reflect this project's actual toolchain, not generic defaults.
+- Soften `MUST`/`NEVER`/`ALWAYS`/`CRITICAL` to `use when`/`do not`/`prefer` — modern Claude over-complies with aggressive language.
