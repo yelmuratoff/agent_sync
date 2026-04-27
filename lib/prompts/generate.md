@@ -31,8 +31,10 @@ These come from the agentskills.io best-practices guide and Anthropic prompt-eng
 The main file describing who the AI agent is. Be specific to this project:
 
 - Role (e.g., "Senior React/TypeScript Engineer", "Backend Go Developer")
-- Tech stack summary
+- Tech stack summary — include what NOT to use when there's a real risk of the agent reaching for it (e.g., "no Redux", "no styled-components")
+- What the product optimizes for — 2–4 lines of business context that shape implementation tradeoffs (e.g., "B2B analytics dashboard, primary goal: reduce time-to-insight"). Skip marketing copy and origin stories.
 - Approach: how the agent should work in this codebase (study → plan → implement → verify)
+- Commands — the actual install/dev/build/lint/test commands the project uses. Only include what's real and current.
 - Key principles specific to this project
 - What the agent must never do
 
@@ -53,6 +55,9 @@ Create only what's relevant. Possible files:
 - `security.md` — project-specific security requirements
 - `dependencies.md` — how packages are managed
 - `git.md` — commit style, branching, PR conventions
+- `ui.md` — for frontend projects: design-system primitives, spacing rhythm, typography hierarchy, required interactive states (hover/focus/disabled), accessibility expectations
+- `placement.md` — where new files/components go, when to extract a shared abstraction vs. edit in place, naming patterns. Stops repo drift in mature codebases.
+- `safe-changes.md` — what not to modify casually (public API routes, DB schema, auth flows, shared component contracts). Preserves backward compatibility and forces the agent to flag risky edits.
 
 Format:
 

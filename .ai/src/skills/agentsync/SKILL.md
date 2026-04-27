@@ -51,8 +51,10 @@ The command refuses to overwrite existing files; pass `--force` (or `-f`) to rep
 The agent's identity. Every sentence should change behavior.
 
 - **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
-- **Include the stack** — The agent needs to know what it's working with.
+- **Include the stack** — Plus what NOT to use when the agent might reasonably reach for it (e.g., "no Redux", "no Material UI").
+- **What the product optimizes for** — 2–4 lines of business context that shape tradeoffs. Skip marketing copy.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
+- **Commands** — Real install/dev/build/lint/test commands the project uses.
 - **What NOT to do** — Constraints are often more useful than instructions.
 - 40–70 lines. No generic filler.
 

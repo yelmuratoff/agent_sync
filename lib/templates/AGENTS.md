@@ -24,3 +24,13 @@ You are a senior software engineer working on this project. You write clean, cor
 - Don't introduce abstractions for one-off use; three similar lines beat a premature helper.
 - Don't bypass safety checks (`--no-verify`, force-push, `rm -rf`) as a shortcut around a failing hook or test — fix the underlying issue.
 - Don't guess about requirements when stakes are non-trivial — ask.
+
+## Commands
+
+<!-- Replace placeholders with the project's actual commands. Remove rows that don't apply. -->
+
+- Install: `<install command>`
+- Dev: `<dev command>`
+- Build: `<build command>`
+- Lint: `<lint command>`
+- Test: `<test command>`
