@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1
+
+### Changed
+
+- **`init` `Next steps` now points at `agentsync generate`:** the post-init summary previously listed only `list` / `enable` / `sync`, leaving newcomers to discover the AI-assisted bootstrap flow on their own. The new step ("Run `agentsync generate` — print an AI prompt to tailor `.ai/src/` to your codebase") sits right after the `AGENTS.md` edit hint, so a fresh project can go from `init` → AI-generated rules/skills without reading the README first.
+- **`generate` clipboard tip is now platform-aware:** the trailing "Tip: run `agentsync generate | pbcopy`" hint hardcoded macOS's `pbcopy`, which prints noise on Linux where the binary doesn't exist. `generate` now probes `pbcopy` → `wl-copy` → `xclip -selection clipboard` → `xsel --clipboard --input` and prints the tip only when one of them is available, so Linux users see the right command and headless environments see no tip at all.
+
 ## 0.11.0
 
 ### Added

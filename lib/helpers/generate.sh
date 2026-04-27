@@ -122,8 +122,22 @@ _output_prompt() {
         echo "" >&2
         echo "  $(_dim "─── end of prompt ──────────────────────────────────────────")" >&2
         echo "" >&2
-        echo "  $(_dim "Tip: run") $(_cyan "agentsync generate | pbcopy") $(_dim "to copy to clipboard.")" >&2
-        echo "" >&2
+
+        local clipboard_cmd=""
+        if command -v pbcopy >/dev/null 2>&1; then
+            clipboard_cmd="pbcopy"
+        elif command -v wl-copy >/dev/null 2>&1; then
+            clipboard_cmd="wl-copy"
+        elif command -v xclip >/dev/null 2>&1; then
+            clipboard_cmd="xclip -selection clipboard"
+        elif command -v xsel >/dev/null 2>&1; then
+            clipboard_cmd="xsel --clipboard --input"
+        fi
+
+        if [[ -n "$clipboard_cmd" ]]; then
+            echo "  $(_dim "Tip: run") $(_cyan "agentsync generate | $clipboard_cmd") $(_dim "to copy to clipboard.")" >&2
+            echo "" >&2
+        fi
     else
         # Piped — raw output, no decoration
         echo "$output"

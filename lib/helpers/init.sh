@@ -370,6 +370,8 @@ _init_print_summary() {
         echo "  $step. Edit $(_cyan ".ai/src/AGENTS.md") — customize your agent's identity"
         step=$((step + 1))
     fi
+    echo "  $step. Run $(_cyan "agentsync generate")    — print an AI prompt to tailor .ai/src/ to your codebase"
+    step=$((step + 1))
     echo "  $step. Run $(_cyan "agentsync list")        — browse all available tools"
     step=$((step + 1))
     if [[ -z "$enabled_list" ]]; then
