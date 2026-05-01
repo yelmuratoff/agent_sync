@@ -139,7 +139,8 @@ cmd_list() {
                 mcp_override_count=$((mcp_override_count + 1))
             fi
         done <<< "$all"
-        local mcp_hint="  Shared MCP: $(_yellow ".ai/src/mcp.json")"
+        local mcp_hint
+        mcp_hint="  Shared MCP: $(_yellow ".ai/src/mcp.json")"
         if [[ $mcp_override_count -gt 0 ]]; then
             mcp_hint="$mcp_hint $(_dim "(+ $mcp_override_count per-tool override)")"
         fi

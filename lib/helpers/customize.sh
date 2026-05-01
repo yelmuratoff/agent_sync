@@ -414,7 +414,8 @@ _show_payload() {
         exit 1
     fi
 
-    local source_label="$(_dim "base")"
+    local source_label
+    source_label="$(_dim "base")"
     if [[ -n "$user_file" ]] && [[ -f "$user_file" ]] && [[ "$user_file" == "$effective" ]]; then
         source_label="$(_yellow "★ user override")"
     elif [[ -n "$legacy_file" ]] && [[ -f "$legacy_file" ]] && [[ "$legacy_file" == "$effective" ]]; then

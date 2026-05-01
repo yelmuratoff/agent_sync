@@ -59,9 +59,8 @@ _doctor_scan_file() {
     local file="$1"
     [[ -f "$file" ]] || return 0
 
-    local entry label regex hits=0
+    local entry regex hits=0
     for entry in "${_DOCTOR_SECRET_PATTERNS[@]}"; do
-        label="${entry%%|*}"
         regex="${entry#*|}"
         # -E extended regex, -n line numbers, -I ignore binary.
         local matches
