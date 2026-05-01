@@ -6,6 +6,9 @@
 #   1 — warnings found (enabled tools without base, legacy flags, etc.)
 #   2 — fatal setup problem (no .ai/, no config)
 
+# shellcheck source=manifest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/manifest.sh"
+
 _doctor_prepare_context() {
     local project_dir
     project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
@@ -127,6 +130,59 @@ _doctor_scan_one_file() {
 # Thin wrapper: print the checklist-style edit paths via the shared formatter.
 _doctor_print_tool_edit_paths() {
     print_tool_edit_paths_checklist "$1"
+}
+
+# Compare each manifest entry to its current destination file.
+# Reports clean/edited/missing per entry; warns on the latter two.
+_doctor_check_drift() {
+    local mfile
+    mfile=$(manifest_path)
+    if [[ ! -f "$mfile" ]]; then
+        _doctor_info "No .sync-manifest yet — run $(_cyan "agentsync sync") to create it"
+        return 0
+    fi
+
+    manifest_load
+
+    if [[ ${#MANIFEST_KEYS[@]} -eq 0 ]]; then
+        _doctor_info ".sync-manifest is empty"
+        return 0
+    fi
+
+    local edited=0 missing=0 clean=0
+    local i rel old_hash dest_abs cur_hash
+    for ((i = 0; i < ${#MANIFEST_KEYS[@]}; i++)); do
+        rel="${MANIFEST_KEYS[$i]}"
+        old_hash="${MANIFEST_VALUES[$i]}"
+        dest_abs="$REPO_ROOT/$rel"
+
+        if [[ ! -f "$dest_abs" ]]; then
+            _doctor_warn "$rel — missing (deleted manually)"
+            missing=$((missing + 1))
+            continue
+        fi
+
+        cur_hash=$(manifest_compute_hash "$dest_abs") || {
+            _doctor_warn "$rel — could not hash"
+            continue
+        }
+
+        if [[ "$cur_hash" != "$old_hash" ]]; then
+            _doctor_warn "$rel — edited since last sync"
+            edited=$((edited + 1))
+        else
+            clean=$((clean + 1))
+        fi
+    done
+
+    if [[ $edited -eq 0 ]] && [[ $missing -eq 0 ]]; then
+        _doctor_ok "All ${clean} tracked file(s) match the manifest"
+    else
+        echo ""
+        local hint
+        hint="    $(_dim "Re-run") $(_cyan "agentsync sync") $(_dim "to overwrite, or move edits into") $(_cyan ".ai/src/") $(_dim "first.")"
+        echo "$hint"
+    fi
 }
 
 _doctor_scan_overrides() {
@@ -301,7 +357,12 @@ cmd_doctor() {
     done
     echo ""
 
-    # ── Section 5: security scan ─────────────────────────────────────────────
+    # ── Section 5: drift ─────────────────────────────────────────────────────
+    _bold "  Drift"; echo ""
+    _doctor_check_drift
+    echo ""
+
+    # ── Section 6: security scan ─────────────────────────────────────────────
     _bold "  Security"; echo ""
     _doctor_scan_overrides
     echo ""

@@ -29,7 +29,10 @@ if ! (cd "$REPO_ROOT" && tar --exclude='.git' -cf - .) | (cd "$TEMP_ROOT" && tar
 fi
 
 # Run sync in temporary workspace. This keeps the caller repository read-only.
-if ! AGENTSYNC_REPO_ROOT="$TEMP_ROOT" AGENTSYNC_SKIP_POST_SYNC=true "$SCRIPT_DIR/sync.sh" >"$SYNC_LOG" 2>&1; then
+# --force bypasses the manifest drift check inside the temp copy: any divergence
+# between source and dest is caught by the post-sync `diff -qr` below, which
+# gives the user a richer "out of sync" report than the abort message would.
+if ! AGENTSYNC_REPO_ROOT="$TEMP_ROOT" AGENTSYNC_SKIP_POST_SYNC=true "$SCRIPT_DIR/sync.sh" --force >"$SYNC_LOG" 2>&1; then
     echo "❌ Sync script failed during check"
     echo "Sync output (last 40 lines):"
     tail -n 40 "$SYNC_LOG"

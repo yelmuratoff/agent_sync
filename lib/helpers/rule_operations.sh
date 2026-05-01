@@ -127,6 +127,10 @@ append_imports() {
             fi
         done
     } >> "$agents_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$agents_file"
+    fi
 }
 
 # Merge all matching rule files into a single output file.
@@ -183,6 +187,10 @@ merge_rules_to_file() {
         fi
         cat "$src_file" >> "$dest_file"
     done
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest_file"
+    fi
 
     log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged)"
 }
@@ -244,6 +252,10 @@ copy_rules() {
             merge_or_prepend_header "$dest_file" "$header"
         fi
 
+        if declare -f manifest_record_write >/dev/null 2>&1; then
+            manifest_record_write "$dest_file"
+        fi
+
         count=$((count + 1))
     done
 
@@ -300,6 +312,9 @@ sync_rules() {
                 cp "$src_file" "$dest_path"
                 if [[ -n "$header" ]]; then
                     merge_or_prepend_header "$dest_path" "$header"
+                fi
+                if declare -f manifest_record_write >/dev/null 2>&1; then
+                    manifest_record_write "$dest_path"
                 fi
                 count_copy=$((count_copy + 1))
             fi

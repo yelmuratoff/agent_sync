@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0
+
+### Added
+
+- **Drift detection** (`.ai/.sync-manifest`): every successful `sync` now writes a content-addressed manifest — one SHA-256 hash per generated file, sorted, no timestamps. On the next run, AgentSync compares each destination against the manifest before writing. If a dest was edited manually since the last sync (typical IDE-iteration flow: tweak `.claude/rules/foo.md` directly while testing), `sync` aborts with the list of edited files instead of silently overwriting them. Commit `.ai/.sync-manifest` to git so CI catches a forgotten commit. Pass `--force` to discard the edits and rewrite from source. `doctor` adds a Drift section that lists each tracked file as ✓ in-sync, ⚠ edited, or ⚠ missing. `check` keeps its existing semantics (regenerate fresh in a temp tree, diff against the repo) — drift is caught by the diff step there.
+- **`agentsync adopt <dest-file>`**: reverse of sync — promote a manual edit in a generated file back into `.ai/src/` as the new canonical content, then refresh the manifest entry so the next `sync` is drift-free. Resolves the destination through the same YAML targets `sync` uses (so `.claude/rules/core.md` → `.ai/src/rules/core.md`, `.claude/settings.json` → `.ai/src/tools/claude/settings.json`). Settings/MCP/hooks scaffold the canonical per-tool override path when none exists yet, matching the 0.11 layout. Supports `--dry-run` (unified diff + plan, no writes), `--yes` (skip TTY confirm), and refuses transformed targets up front (`cursor` rules with header injection, `merge_to_file` / `inline_into_agents` variants, `format=toml` / `format=amazonq_json` outputs) — the round-trip would corrupt the shared source.
+
+### Changed
+
+- **`sync --force`**: new flag bypasses the drift check and rewrites every dest from source. Existing behavior of `sync` (write everything) becomes the explicit `--force` path; the default is now drift-aware.
+- **`check` runs sync with `--force` internally**: the in-temp regenerate-and-diff loop is unchanged for users; the flag prevents drift detection inside the temp tree from short-circuiting the diff that produces the actual "out of sync" report.
+
 ## 0.11.2
 
 ### Fixed

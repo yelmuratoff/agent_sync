@@ -51,13 +51,19 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 <details>
 <summary><strong>Table of contents</strong></summary>
 
+- [The problem](#the-problem)
+- [The solution](#the-solution)
+- [Why not just...?](#why-not-just)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [What Each Part Does](#what-each-part-does)
 - [CLI Commands](#cli-commands)
+  - [Sync options](#sync-options)
+  - [Generate](#generate)
 - [Tool Configuration](#tool-configuration)
 - [Tool YAML Schema](#tool-yaml-schema)
+  - [Key Fields](#key-fields)
 - [Supported Tools](#supported-tools)
 - [Format Conversions](#format-conversions)
 - [Adding a New Tool](#adding-a-new-tool)
@@ -66,9 +72,15 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 - [How Sync Works](#how-sync-works)
 - [Customization workflow](#customization-workflow)
 - [How Resources Resolve](#how-resources-resolve)
-- [Migrating from the 0.10 flat layout](#migrating-from-the-0-10-flat-layout)
+- [Migrating from the 0.10 flat layout](#migrating-from-the-010-flat-layout)
 - [Path Overrides](#path-overrides)
 - [Migrating Existing Configurations](#migrating-existing-configurations)
+  - [Step-by-step](#step-by-step)
+  - [What gets overwritten](#what-gets-overwritten)
+  - [Drift detection](#drift-detection)
+  - [`agentsync adopt` — promote an IDE edit back into source](#agentsync-adopt--promote-an-ide-edit-back-into-source)
+  - [Disabling sync for specific tools](#disabling-sync-for-specific-tools)
+- [Development](#development)
 - [Uninstall](#uninstall)
 
 </details>
@@ -104,7 +116,7 @@ agentsync sync                        # 5. Distribute to all enabled tools
 
 1. **`agentsync init`** — Scaffolds the `.ai/` directory. In a terminal it opens a short wizard to pick which tools and content sections you want; in scripts/CI it runs silently using auto-detection (`.claude/`, `.cursor/`, `CLAUDE.md`, ...) and sensible defaults. Only the payloads you opt into get scaffolded — other tools use shipped base templates at sync time. Useful flags: `--tools claude,cursor` (explicit list), `--content agents,rules` (narrow content), `--no-detect` (blank slate), `--yes` (accept defaults), `--dry-run` (preview). Safe to run twice — if `.ai/src/` already exists, it skips.
 
-2. **`agentsync enable <tool>`** — Adds the tool to `tools.enabled` *and* scaffolds editable copies of its settings / hooks at `.ai/src/tools/<tool>/`, then prints the exact file path to edit plus the shared MCP path. Pass `--no-scaffold` to skip materializing files; pass `--yes` to accept the TTY confirm non-interactively.
+2. **`agentsync enable <tool>`** — Adds the tool to `tools.enabled` _and_ scaffolds editable copies of its settings / hooks at `.ai/src/tools/<tool>/`, then prints the exact file path to edit plus the shared MCP path. Pass `--no-scaffold` to skip materializing files; pass `--yes` to accept the TTY confirm non-interactively.
 
 3. **`agentsync add mcp <server>`** — Writes an MCP server entry into the shared `.ai/src/mcp.json`. On the next `sync`, every enabled tool gets the same server map — no copy-pasting across five JSON files. Use `agentsync customize <tool> mcp` only when a tool needs a divergent map.
 
@@ -143,23 +155,23 @@ AgentSync supports two source layouts:
             └── mcp.json        #     per-tool MCP override (shadows mcp.json above)
 ```
 
-> **Note:** `init` is minimal. `mcp.json` and every file under `tools/<tool>/` are *overrides* — they appear only when you opt in via `agentsync enable`, `agentsync customize`, or `agentsync add mcp`. Missing overrides fall back to shipped base templates automatically — see [How Resources Resolve](#how-resources-resolve) and [Customization workflow](#customization-workflow).
+> **Note:** `init` is minimal. `mcp.json` and every file under `tools/<tool>/` are _overrides_ — they appear only when you opt in via `agentsync enable`, `agentsync customize`, or `agentsync add mcp`. Missing overrides fall back to shipped base templates automatically — see [How Resources Resolve](#how-resources-resolve) and [Customization workflow](#customization-workflow).
 
 **Flat (auto-detected):** `.ai/AGENTS.md`, `.ai/rules/`, `.ai/skills/`, `.ai/tools/`
 
 ## What Each Part Does
 
-| Source        | Purpose                                                                                                                                                                                                           | Tools that use it                                           |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`).                                                                                          | All                                                         |
-| **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).                                                                | All                                                         |
+| Source        | Purpose                                                                                                                                                                                                                                                                                                                                       | Tools that use it                                           |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`).                                                                                                                                                                                                                      | All                                                         |
+| **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).                                                                                                                                                                                            | All                                                         |
 | **skills/**   | On-demand recipes in the open [agentskills.io](https://agentskills.io) format. Each skill = directory with `SKILL.md` + optional `references/`, `scripts/`, `assets/`. Description is the trigger (imperative + pushy + ≤1024 chars). `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All                                                         |
-| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini.                                                                        | Claude, Gemini, Copilot (as `.prompt.md`)                   |
-| **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                                                                               | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
-| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                                                                                  | Claude                                                      |
-| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                            | Claude, Cursor, Windsurf                                    |
-| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                  | Cursor, Codex, Copilot                                      |
-| **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                    | —                                                           |
+| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini.                                                                                                                                                                                                    | Claude, Gemini, Copilot (as `.prompt.md`)                   |
+| **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                                                                                                                                                                                                           | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
+| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                                                                                                                                                                                                              | Claude                                                      |
+| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                                                                                                                                                        | Claude, Cursor, Windsurf                                    |
+| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                                                                                                                                              | Cursor, Codex, Copilot                                      |
+| **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                                                                                                                                                | —                                                           |
 
 ## CLI Commands
 
@@ -167,17 +179,19 @@ AgentSync supports two source layouts:
 agentsync <command> [options]
 ```
 
-| Command              | Alias | Description                                                 |
-| -------------------- | ----- | ----------------------------------------------------------- |
-| `init [dir]`         |       | Create `.ai/` structure with starter templates              |
-| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`) |
-| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)    |
-| `generate [context]` | `gen` | Print AI prompt for project-specific config generation      |
-| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout            |
-| `list`               | `ls`  | Show configured tools and status                            |
-| `update`             |       | Self-update via git pull (auto-check every 24h)             |
-| `version`            | `-v`  | Print version                                               |
-| `help`               | `-h`  | Show help                                                   |
+| Command              | Alias | Description                                                            |
+| -------------------- | ----- | ---------------------------------------------------------------------- |
+| `init [dir]`         |       | Create `.ai/` structure with starter templates                         |
+| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`) |
+| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)               |
+| `adopt <dest>`       |       | Promote a manual edit in a generated file back into `.ai/src/`         |
+| `doctor`             |       | Validate setup and surface drift / config warnings                     |
+| `generate [context]` | `gen` | Print AI prompt for project-specific config generation                 |
+| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout                       |
+| `list`               | `ls`  | Show configured tools and status                                       |
+| `update`             |       | Self-update via git pull (auto-check every 24h)                        |
+| `version`            | `-v`  | Print version                                                          |
+| `help`               | `-h`  | Show help                                                              |
 
 ### Sync options
 
@@ -186,6 +200,7 @@ agentsync sync                        # All enabled tools
 agentsync sync --only claude,cursor   # Only specified tools
 agentsync sync --skip gemini          # All except specified
 agentsync sync --dry-run              # Preview without writing
+agentsync sync --force                # Overwrite even if dest files were edited manually
 ```
 
 ### Generate
@@ -397,7 +412,7 @@ Three commands cover every customization, each with a single responsibility.
 
 **Mental model:**
 
-- `enable` is the entry point. One command turns a tool on *and* gives you the file to edit.
+- `enable` is the entry point. One command turns a tool on _and_ gives you the file to edit.
 - Shared MCP is the default. `add mcp` writes to `.ai/src/mcp.json` which every tool picks up — no per-tool duplication.
 - `customize` is the escape hatch. Use it only when you need a per-tool override that diverges from the shared source, or when `enable --no-scaffold` skipped materializing a file you later want.
 
@@ -416,12 +431,12 @@ Every payload resource — tool YAML, hooks, MCP config, settings — follows th
      per-tool wins   →   shared fills in (for MCP)   →   base fills in otherwise
 ```
 
-| Resource    | Base path                                 | Per-tool override                      | Shared override           |
-| ----------- | ----------------------------------------- | -------------------------------------- | ------------------------- |
-| tool YAML   | `lib/templates/tools/<tool>.yaml`         | `.ai/src/tools/<tool>.yaml`            | —                         |
-| hooks       | `lib/templates/hooks/<tool>.json`         | `.ai/src/tools/<tool>/hooks.json`      | —                         |
-| mcp         | `lib/templates/mcp/<tool>.json`           | `.ai/src/tools/<tool>/mcp.json`        | `.ai/src/mcp.json`        |
-| settings    | `lib/templates/settings/<tool>.<ext>`     | `.ai/src/tools/<tool>/settings.<ext>`  | —                         |
+| Resource  | Base path                             | Per-tool override                     | Shared override    |
+| --------- | ------------------------------------- | ------------------------------------- | ------------------ |
+| tool YAML | `lib/templates/tools/<tool>.yaml`     | `.ai/src/tools/<tool>.yaml`           | —                  |
+| hooks     | `lib/templates/hooks/<tool>.json`     | `.ai/src/tools/<tool>/hooks.json`     | —                  |
+| mcp       | `lib/templates/mcp/<tool>.json`       | `.ai/src/tools/<tool>/mcp.json`       | `.ai/src/mcp.json` |
+| settings  | `lib/templates/settings/<tool>.<ext>` | `.ai/src/tools/<tool>/settings.<ext>` | —                  |
 
 The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --apply` to move them. Legacy paths will be removed in 0.12.
 
@@ -519,6 +534,46 @@ If you already have tool-specific configs (`.claude/rules/`, `.cursor/rules/`, c
 | **settings.json, .mcp.json, hooks.json**                         | **Fully replaced** from their respective source files.                                                                                    |
 | **Skills, commands, agents directories**                         | Synced contents replace existing files. Extra files are **removed**.                                                                      |
 | **.gitignore**                                                   | Only the `AI SYNC GENERATED START/END` block is managed. Your other entries are safe.                                                     |
+
+### Drift detection
+
+After every successful sync, AgentSync writes `.ai/.sync-manifest` — one line per generated file with its SHA-256 hash. **Commit it to git.** On the next sync, every destination is compared against the manifest:
+
+- File untouched → sync rewrites silently (idempotent).
+- File deleted manually → sync rewrites silently.
+- File **edited** since last sync → sync **aborts** with the list of edited paths and your unsynced changes are preserved.
+
+```text
+[ERROR] Manual edits detected in 1 destination file(s) since last sync:
+      .claude/rules/core.md
+
+  These files would be silently overwritten. Choose one:
+    • Move your edits into .ai/src/, then re-run sync
+    • Re-run with --force to discard the edits and rewrite from source
+```
+
+`agentsync check` and `agentsync doctor` both surface drift, so CI catches a forgotten manifest commit before merge.
+
+### `agentsync adopt` — promote an IDE edit back into source
+
+Quickly iterating in Claude Code or Cursor and edited a generated file directly? Skip the manual `cp + sync --force` dance:
+
+```bash
+agentsync adopt .claude/rules/core.md            # interactive, with diff preview
+agentsync adopt --dry-run .claude/rules/core.md  # show plan, write nothing
+agentsync adopt --yes .claude/rules/core.md      # non-interactive (CI / scripts)
+```
+
+Resolves the destination back to its source file (`.ai/src/rules/core.md`), copies the edited content, and refreshes the manifest entry — the next `sync` is drift-free.
+
+**Refused targets** (the round-trip would corrupt your source):
+
+- Tools that inject a frontmatter header (`cursor` rules) — adopting would propagate the cursor-specific header to every other tool.
+- Tools that merge rules into a single file (`gemini`, `aider`, `cline`) — multiple sources collapsed into one dest can't be split back.
+- Tools that inline rules/skills into AGENTS.md (`codex`, `junie`).
+- Format-converted outputs (`codex` subagents → TOML, `amazonq` subagents → JSON).
+
+For these cases, edit `.ai/src/` directly. AgentSync tells you which file when it refuses.
 
 ### Disabling sync for specific tools
 

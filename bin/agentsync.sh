@@ -93,6 +93,7 @@ print_usage() {
     echo "    $(_cyan "diff")           Show user overrides vs base defaults"
     echo "    $(_cyan "resolve")        Interactively reconcile overrides with base values"
     echo "    $(_cyan "doctor")         Validate setup and surface warnings"
+    echo "    $(_cyan "adopt")          Promote a manual edit in a generated file back into .ai/src/"
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
@@ -107,6 +108,7 @@ print_usage() {
     echo "    --only <tools>    Sync only these tools (comma-separated)"
     echo "    --skip <tools>    Skip these tools (comma-separated)"
     echo "    --dry-run         Preview changes without writing"
+    echo "    --force           Overwrite destination files even if they were edited manually"
     echo ""
     echo "  $(_green "EXAMPLES")"
     echo "    agentsync init"
@@ -121,6 +123,7 @@ print_usage() {
     echo "    agentsync diff"
     echo "    agentsync doctor"
     echo "    agentsync resolve"
+    echo "    agentsync adopt .cursor/rules/core.mdc"
     echo "    agentsync sync"
     echo "    agentsync sync --only claude,cursor"
     echo "    agentsync sync --dry-run"
@@ -170,7 +173,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -193,6 +196,7 @@ main() {
         diff)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_diff "$@" ;;
         resolve)       _need yaml yaml_edit tool_resolver snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
         doctor)        _need yaml tool_resolver edit_paths doctor;     cmd_doctor ;;
+        adopt)         _need yaml tool_resolver paths logging filters file_ops prompts manifest cli_colors adopt; shift; cmd_adopt "$@" ;;
         update)        _need yaml snapshot;                            shift; cmd_update "$@" ;;
         upgrade-config) _need prompts yaml tool_resolver init;         shift; cmd_upgrade_config "$@" ;;
         release)       _need release;                                  shift; cmd_release "$@" ;;

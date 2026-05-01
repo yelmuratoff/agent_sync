@@ -38,9 +38,12 @@ source "$SCRIPT_DIR/helpers/format_conversion.sh"
 source "$SCRIPT_DIR/helpers/gitignore.sh"
 # shellcheck source=helpers/tool_resolver.sh
 source "$SCRIPT_DIR/helpers/tool_resolver.sh"
+# shellcheck source=helpers/manifest.sh
+source "$SCRIPT_DIR/helpers/manifest.sh"
 
 # Global variables
 DRY_RUN="false"
+FORCE_SYNC="false"
 ONLY_TOOLS=""
 SKIP_TOOLS=""
 SKIP_POST_SYNC="${AGENTSYNC_SKIP_POST_SYNC:-false}"
@@ -79,6 +82,7 @@ Options:
   --only <tools>    Sync only specified tools (comma-separated)
   --skip <tools>    Skip specified tools (comma-separated)
   --dry-run         Show what would be copied without making changes
+  --force           Overwrite destination files even if they were edited manually
   --help            Show this help message
 EOF
 }
@@ -153,6 +157,10 @@ parse_args() {
                 ;;
             --dry-run)
                 DRY_RUN="true"
+                shift
+                ;;
+            --force)
+                FORCE_SYNC="true"
                 shift
                 ;;
             --help|-h)
@@ -326,6 +334,7 @@ sync_tool() {
                 echo ""
                 echo "Find all rules in \`.ai/src/rules/\`."
             } >> "$dest_agents_abs"
+            manifest_record_write "$dest_agents_abs"
             log_step "Appended rule references to $(basename "$dest_agents_abs")"
         elif [[ "$DRY_RUN" == "true" ]]; then
             log_step "Would append rule references to $(basename "$dest_agents_abs") (dry-run)"
@@ -411,6 +420,7 @@ sync_tool() {
                     echo ""
                     printf '%s' "$skill_entries"
                 } >> "$skills_target_file"
+                manifest_record_write "$skills_target_file"
                 log_step "Appended skill index to $(basename "$skills_target_file")"
             fi
         elif [[ "$DRY_RUN" == "true" ]]; then
@@ -688,6 +698,34 @@ main() {
         done
     done
 
+    # Drift check: refuse to overwrite destination files edited since the last sync.
+    # Skipped on dry-run (preview-only) and bypassed by --force.
+    if [[ "$DRY_RUN" != "true" ]]; then
+        manifest_load
+        manifest_check_drift
+        if [[ ${#SYNC_DRIFT_DETECTED[@]} -gt 0 ]]; then
+            if [[ "$FORCE_SYNC" == "true" ]]; then
+                log_warning "Overwriting ${#SYNC_DRIFT_DETECTED[@]} file(s) with manual edits (--force):"
+                local rel
+                for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
+                    echo "      $rel" >&2
+                done
+            else
+                log_error "Manual edits detected in ${#SYNC_DRIFT_DETECTED[@]} destination file(s) since last sync:"
+                local rel
+                for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
+                    echo "      $rel" >&2
+                done
+                echo "" >&2
+                echo "  These files would be silently overwritten. Choose one:" >&2
+                echo "    • Move your edits into .ai/src/, then re-run sync" >&2
+                echo "    • Re-run with --force to discard the edits and rewrite from source" >&2
+                echo "" >&2
+                exit 1
+            fi
+        fi
+    fi
+
     # Second pass: sync enabled tools, cleanup disabled ones.
     for t in "${all_tools[@]}"; do
         ((TOTAL_COUNT++)) || true
@@ -707,6 +745,10 @@ main() {
             generated_paths_payload=$(printf '%s\n' "${generated_paths[@]}")
         fi
         update_gitignore "$REPO_ROOT/.gitignore" "$generated_paths_payload"
+    fi
+
+    if [[ "$DRY_RUN" != "true" ]]; then
+        manifest_write
     fi
 
     log_separator

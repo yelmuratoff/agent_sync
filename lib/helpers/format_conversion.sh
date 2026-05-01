@@ -138,6 +138,10 @@ convert_md_command_to_toml() {
         printf '%s' "$body"
         echo "\"\"\""
     } > "$dest_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest_file"
+    fi
 }
 
 # Sync a directory of markdown command files, converting each to TOML.
@@ -194,6 +198,10 @@ convert_md_agent_to_toml() {
         printf '%s' "$body"
         echo "\"\"\""
     } > "$dest_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest_file"
+    fi
 }
 
 # Sync a directory of markdown agent files, converting each to TOML.
@@ -273,6 +281,10 @@ convert_md_agent_to_amazonq_json() {
         printf '  "prompt": "%s"\n' "$(_json_escape "$body")"
         printf '}\n'
     } > "$dest_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest_file"
+    fi
 }
 
 # Sync a directory of markdown agent files, converting each to Amazon Q JSON.

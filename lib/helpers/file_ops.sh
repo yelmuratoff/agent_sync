@@ -51,6 +51,10 @@ copy_file() {
     rm -f "$dest" 2>/dev/null || true
     cp "$src" "$dest"
 
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest"
+    fi
+
     log_step "$src → $dest"
 }
 
@@ -90,6 +94,13 @@ sync_dir() {
             else
                 rm -rf "${dest:?}/$basename" 2>/dev/null || true
                 cp -r "$item" "$dest/$basename"
+                if declare -f manifest_record_write >/dev/null 2>&1; then
+                    if [[ -d "$dest/$basename" ]]; then
+                        manifest_record_tree "$dest/$basename"
+                    else
+                        manifest_record_write "$dest/$basename"
+                    fi
+                fi
                 count_copy=$((count_copy + 1))
             fi
         fi
