@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2
+
+### Fixed
+
+- **`local x="$(...)"` masking subshell exit codes in `customize` / `list`:** the `_show_payload` source-label resolution and the `cmd_list` shared-MCP hint both initialized `local` variables from a command substitution on the same line, which silently swallows the subshell's exit status (ShellCheck SC2155). Split into separate declaration + assignment so a failing color/format helper now surfaces under `set -e` instead of leaving the caller with a half-built label.
+- **Unused `label` read in `doctor` secret scan:** `_doctor_scan_file` parsed a `label` field from each secret pattern but never used it, so a malformed pattern row was harder to diagnose. Dropped the dead read; behaviour unchanged.
+
 ## 0.11.1
 
 ### Changed
