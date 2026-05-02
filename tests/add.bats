@@ -21,7 +21,7 @@ teardown() { teardown_test_project; }
     run run_agentsync add skill deploy
     [ "$status" -eq 0 ]
     [ -f ".ai/src/skills/deploy/SKILL.md" ]
-    grep -q "^name: deploy$" .ai/src/skills/deploy/SKILL.md
+    grep -q '^name: "deploy"$' .ai/src/skills/deploy/SKILL.md
     grep -q "^description:" .ai/src/skills/deploy/SKILL.md
 }
 
@@ -36,7 +36,7 @@ teardown() { teardown_test_project; }
     run run_agentsync add subagent reviewer
     [ "$status" -eq 0 ]
     [ -f ".ai/src/agents/reviewer.md" ]
-    grep -q "^name: reviewer$" .ai/src/agents/reviewer.md
+    grep -q '^name: "reviewer"$' .ai/src/agents/reviewer.md
     grep -q "^model:" .ai/src/agents/reviewer.md
 }
 
@@ -160,7 +160,7 @@ teardown() { teardown_test_project; }
 @test "add substitutes name into skill frontmatter" {
     run run_agentsync add skill my-skill
     [ "$status" -eq 0 ]
-    grep -q "^name: my-skill$" .ai/src/skills/my-skill/SKILL.md
+    grep -q '^name: "my-skill"$' .ai/src/skills/my-skill/SKILL.md
     grep -q "^# my-skill$" .ai/src/skills/my-skill/SKILL.md
 }
 

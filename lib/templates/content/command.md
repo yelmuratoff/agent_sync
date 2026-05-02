@@ -1,5 +1,6 @@
 ---
-description: [What this command does — shown in the command list]
+description: >-
+  What this command does — shown in the command list.
 argument-hint: "<optional-arg>"
 ---
 

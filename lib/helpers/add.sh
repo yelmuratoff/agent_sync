@@ -163,10 +163,16 @@ cmd_add() {
 
     mkdir -p "$(dirname "$dest")"
 
-    # Substitute {{NAME}} placeholder. Name is validated to be safe shell
+    # Substitute template placeholders. Name is validated to be safe shell
     # and regex input ([A-Za-z0-9_-]+), so sed substitution is safe here.
-    # Using | as delimiter avoids any future path-containing placeholders.
-    sed "s|{{NAME}}|$name|g" "$template_file" > "$dest"
+    # YAML frontmatter uses valid sentinel names so diagnostics can parse the
+    # template files before substitution. The skill template lives under the
+    # `content` folder, so its sentinel name matches that parent directory.
+    sed \
+        -e "s|{{NAME}}|$name|g" \
+        -e "s|^name: \"content\"$|name: \"$name\"|" \
+        -e "s|^name: \"template-agent\"$|name: \"$name\"|" \
+        "$template_file" > "$dest"
 
     local rel="$dest"
     if [[ "$dest" == "$project_dir/"* ]]; then

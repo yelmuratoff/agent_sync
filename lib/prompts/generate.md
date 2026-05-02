@@ -89,8 +89,9 @@ Format:
 
 ```markdown
 ---
-name: skill-name
-description: One imperative sentence on what the skill does + concrete trigger conditions, including phrasings the user might use without naming the domain. Stay under 1024 chars.
+name: "skill-name"
+description: >-
+  One imperative sentence on what the skill does + concrete trigger conditions, including phrasings the user might use without naming the domain. Stay under 1024 chars.
 ---
 
 # Skill Name
@@ -127,7 +128,8 @@ Format:
 
 ```markdown
 ---
-description: What this command does (shown in command list)
+description: >-
+  What this command does (shown in command list)
 argument-hint: "<optional-arg>"
 ---
 
@@ -150,8 +152,8 @@ Format:
 
 ```markdown
 ---
-name: agent-name
-description: >
+name: "agent-name"
+description: >-
   What this agent specializes in.
   USE PROACTIVELY when [trigger conditions].
 model: sonnet
@@ -244,3 +246,5 @@ Output each file with its full path as a header:
 - Skills and commands must have real commands and paths, not placeholders.
 - Settings should reflect this project's actual toolchain, not generic defaults.
 - Soften `MUST`/`NEVER`/`ALWAYS`/`CRITICAL` to `use when`/`do not`/`prefer` — modern Claude over-complies with aggressive language.
+- YAML frontmatter must be parseable. Quote `name` values (`name: "skill-name"`) and use folded block scalars for descriptions (`description: >-`) so colons, quotes, parentheses, and multilingual examples inside descriptions do not break YAML parsing.
+- Before finalizing, mentally validate every generated file: YAML frontmatter has balanced `---` fences and valid scalar syntax; JSON has no comments or trailing commas; referenced paths match the file headers.

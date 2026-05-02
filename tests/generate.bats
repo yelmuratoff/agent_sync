@@ -60,3 +60,12 @@ teardown() {
     [[ "$output" == *"agents/"* ]]
     [[ "$output" == *"settings/"* ]]
 }
+
+@test "generate prompt uses YAML-safe frontmatter examples" {
+    run run_agentsync generate "test"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'name: "skill-name"'* ]]
+    [[ "$output" == *'name: "agent-name"'* ]]
+    [[ "$output" == *"description: >-"* ]]
+    [[ "$output" == *"YAML frontmatter must be parseable"* ]]
+}

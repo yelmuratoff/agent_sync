@@ -1,6 +1,6 @@
 ---
-name: {{NAME}}
-description: >
+name: "template-agent"
+description: >-
   [What this subagent specializes in — one sentence].
   USE PROACTIVELY when [trigger conditions].
 model: sonnet
