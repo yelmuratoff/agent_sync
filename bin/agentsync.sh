@@ -17,7 +17,10 @@ _resolve_version() {
     script_dir="$(cd "$(dirname "$source")" && pwd)"
     local version_file="$script_dir/../VERSION"
     if [[ -f "$version_file" ]]; then
-        read -r VERSION < "$version_file"
+        # `read` returns 1 on EOF without trailing newline, but still assigns
+        # the partial content — accept that with `|| true` to survive `set -e`.
+        read -r VERSION < "$version_file" || true
+        [[ -n "$VERSION" ]] || VERSION="0.0.0-dev"
     else
         VERSION="0.0.0-dev"
     fi

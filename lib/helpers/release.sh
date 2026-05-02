@@ -41,8 +41,8 @@ cmd_release() {
     fi
 
     # Read current version
-    local current_version
-    read -r current_version < VERSION
+    local current_version=""
+    read -r current_version < VERSION || true
 
     # Parse semver
     local major minor patch

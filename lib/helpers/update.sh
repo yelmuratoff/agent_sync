@@ -87,7 +87,8 @@ cmd_update() {
 
     local new_version="$old_version"
     if [[ -f "$install_dir/VERSION" ]]; then
-        read -r new_version < "$install_dir/VERSION"
+        read -r new_version < "$install_dir/VERSION" || true
+        [[ -n "$new_version" ]] || new_version="$old_version"
     fi
 
     # Clear the update cache — version is now current

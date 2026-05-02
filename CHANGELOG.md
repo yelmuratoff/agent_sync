@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.2
+
+### Fixed
+
+- **`agentsync update` silently exited with code 1:** if the `VERSION` file had no trailing newline, `read -r VERSION < VERSION` returned 1 (EOF without `\n`), and `set -euo pipefail` killed the script before a single character reached the terminal — `agentsync update` looked like it was hanging or doing nothing. `bin/agentsync.sh`, `update`, and `release` now tolerate a newline-less `VERSION` and fall back to the previous value if the read fails. The repo's `VERSION` file is also rewritten with a trailing `\n` so existing installs heal on the next pull.
+
 ## 0.12.1
 
 ### Fixed
