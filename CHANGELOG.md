@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.1
+
+### Fixed
+
+- **`agentsync add` skill/subagent frontmatter:** scaffolded `SKILL.md` and `agents/<name>.md` files now emit YAML-safe frontmatter — `name` values are quoted and `description` uses a folded block scalar (`>-`). Previous templates broke YAML parsers (and downstream tooling that lints frontmatter) whenever the description contained a colon, quote, parenthesis, or multilingual example. The `add` substitution maps the new sentinel names (`"content"`, `"template-agent"`) back to the user-provided name on top of the existing `{{NAME}}` rewrite, so the templates themselves stay parseable on disk before substitution.
+- **`agentsync generate` prompt:** the AI prompt that bootstraps `.ai/src/` now instructs the model to emit the same YAML-safe frontmatter (`name: "..."`, `description: >-`) for skills, commands, and subagents, plus a final reminder to mentally validate every generated file before output. Stops the generated bundle from landing with frontmatter that fails to parse the moment a description contains punctuation.
+
 ## 0.12.0
 
 ### Added
