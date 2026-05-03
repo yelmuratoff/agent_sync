@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.3
+
+### Fixed
+
+- **`agentsync add` headings:** scaffolded rule/skill/subagent files now derive the top-level `# Heading` from the kebab-case name (`code-reviewer` → `# Code Reviewer`) instead of emitting the raw lowercase identifier (`# code-reviewer`). Matches the heading convention used by every built-in skill (`# Commit`, `# Code Review`) so freshly added files don't need a manual rename pass.
+
 ## 0.12.2
 
 ### Fixed
