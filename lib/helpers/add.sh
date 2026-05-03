@@ -163,12 +163,28 @@ cmd_add() {
 
     mkdir -p "$(dirname "$dest")"
 
+    # {{TITLE}} is the human-readable form of the name used in markdown
+    # headings: hyphens become spaces and each word is capitalized
+    # (`code-reviewer` → `Code Reviewer`). Without it, generated headings
+    # would be lowercase kebab-case, mismatching the convention used by every
+    # built-in skill (`# Commit`, `# Code Review`).
+    local title
+    title=$(printf '%s' "$name" | awk '{
+        n = split($0, parts, "-")
+        out = ""
+        for (i = 1; i <= n; i++) {
+            out = out (i > 1 ? " " : "") toupper(substr(parts[i], 1, 1)) substr(parts[i], 2)
+        }
+        print out
+    }')
+
     # Substitute template placeholders. Name is validated to be safe shell
     # and regex input ([A-Za-z0-9_-]+), so sed substitution is safe here.
     # YAML frontmatter uses valid sentinel names so diagnostics can parse the
     # template files before substitution. The skill template lives under the
     # `content` folder, so its sentinel name matches that parent directory.
     sed \
+        -e "s|{{TITLE}}|$title|g" \
         -e "s|{{NAME}}|$name|g" \
         -e "s|^name: \"content\"$|name: \"$name\"|" \
         -e "s|^name: \"template-agent\"$|name: \"$name\"|" \

@@ -14,7 +14,7 @@ teardown() { teardown_test_project; }
     run run_agentsync add rule testing
     [ "$status" -eq 0 ]
     [ -f ".ai/src/rules/testing.md" ]
-    grep -q "^# testing$" .ai/src/rules/testing.md
+    grep -q "^# Testing$" .ai/src/rules/testing.md
 }
 
 @test "add skill creates .ai/src/skills/<name>/SKILL.md" {
@@ -121,7 +121,7 @@ teardown() { teardown_test_project; }
     run run_agentsync add --force rule testing
     [ "$status" -eq 0 ]
     ! grep -q "custom content" .ai/src/rules/testing.md
-    grep -q "^# testing$" .ai/src/rules/testing.md
+    grep -q "^# Testing$" .ai/src/rules/testing.md
 }
 
 @test "add --force works with -f short flag" {
@@ -161,7 +161,7 @@ teardown() { teardown_test_project; }
     run run_agentsync add skill my-skill
     [ "$status" -eq 0 ]
     grep -q '^name: "my-skill"$' .ai/src/skills/my-skill/SKILL.md
-    grep -q "^# my-skill$" .ai/src/skills/my-skill/SKILL.md
+    grep -q "^# My Skill$" .ai/src/skills/my-skill/SKILL.md
 }
 
 # ── add mcp ───────────────────────────────────────────────────────────────────

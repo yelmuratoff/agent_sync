@@ -4,7 +4,7 @@ description: >-
   One imperative sentence on what this skill does + concrete trigger conditions. Be pushy — list contexts including ones where the user doesn't name the domain ("even when phrased as 'X' or 'Y'"). Pack relevant keywords. Stay under 1024 characters.
 ---
 
-# {{NAME}}
+# {{TITLE}}
 
 [One line: what this skill does and when the agent should invoke it.]
 
