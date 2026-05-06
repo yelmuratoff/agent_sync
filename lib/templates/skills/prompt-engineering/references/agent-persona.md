@@ -27,15 +27,15 @@ Pick one. Don't list all three "as appropriate" — that's no guidance.
 
 Per-tool guidance. Vague tool descriptions cause vague usage.
 
-- Which tool to **prefer** for which class of action ("use `rg` over `grep`", "use the dedicated `git` tool, never raw shell for git commands").
+- Which tool to **prefer** for which class of action ("use `rg` over `grep`", "route every git operation through the dedicated `git` tool rather than raw shell").
 - When to **parallelize** ("if multiple reads have no dependencies, batch them in one parallel call").
 - When to **escalate to human** ("ask before running destructive commands or pushing to main").
-- What to **never do** ("never use `git reset --hard` or `git checkout --` unless explicitly approved").
+- **Hard stops** — irreversible actions that need explicit user approval. Phrase as gates: "ask before `git reset --hard` or `git checkout --`". Reserve "never do X" wording for actions where the wrong path is genuinely tempting and the positive form would lose information.
 
 ### 4. Editing / output constraints
 
 - File-format defaults (ASCII unless the file already uses Unicode; trailing newlines; encoding).
-- What the agent must **not** touch (unrelated dirty changes in the worktree, generated files, lockfiles).
+- Scope of edits — list what stays untouched ("leave unrelated dirty worktree changes alone; treat generated files and lockfiles as read-only").
 - Patch / diff style if relevant (`apply_patch`, unified diff, full-file rewrite).
 - Type-safety / lint posture ("changes must pass build and type-check; avoid `as any`").
 

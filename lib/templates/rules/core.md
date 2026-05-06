@@ -2,24 +2,24 @@
 
 ## Changes
 
-- Change only what's needed for the task. Don't refactor unrelated code.
-- No new abstractions for one-off use — three similar lines beat a premature helper.
-- Remove dead code; don't comment it out.
+- Change only what the task requires. Leave unrelated code as-is.
+- Wait for real duplication before extracting a helper — three similar lines beat a premature abstraction.
+- Delete dead code outright and rely on git for history.
 
 ## Errors
 
-- Use the project's typed exceptions. Never throw raw strings.
-- Don't catch-and-ignore. Either handle the failure or let it propagate.
+- Raise the project's typed exceptions instead of raw strings.
+- Handle failures explicitly — either recover or let the exception propagate.
 - Validate at system boundaries (user input, external APIs); trust internal calls.
 
 ## Tests
 
 - Test business logic and error paths. Skip framework internals.
-- Tests must be deterministic — no real network, no randomness, no time-based sleeps.
+- Keep tests deterministic — local fixtures only, no real network, no randomness, no time-based sleeps.
 - Name tests by behavior verified, not by method called.
 
 ## Security
 
-- No hardcoded secrets, API keys, or credentials.
-- Never log tokens, passwords, or PII.
-- Use the project's secure storage for sensitive values.
+- Keep secrets, API keys, and credentials out of source. Load them at runtime from the project's secret store.
+- Keep tokens, passwords, and PII out of logs.
+- Store sensitive values via the project's secure storage primitive.

@@ -2,10 +2,10 @@
 
 ## Config-Driven Sync Engine
 
-- All tool behavior is declared in YAML configs (`.ai/src/tools/*.yaml`). The `sync_tool()` function in `lib/sync.sh` reads `targets.*` from YAML and delegates to generic helpers. Don't hardcode tool names, paths, or formats in sync logic.
-- Source paths resolve through `resolve_source_override()` → project `agent_sync.yaml` → global `config.yaml`. Never hardcode `.ai/src/` paths directly — use the `SOURCE_*` variables set in `_resolve_source_paths()`.
-- Default values (`enabled`, `cleanup`) come from `config.yaml` → `defaults:` section, read into `DEFAULT_ENABLED` / `DEFAULT_CLEANUP`. Don't scatter default values across helpers.
-- Tool-specific format differences are expressed through YAML target options (`extension`, `header`, `merge_to_file`, `inline_into_agents`, `prepend_agents`, `append_imports`). Sync logic reads these and routes to the right helper — not via `if [[ "$tool_name" == "cursor" ]]`.
+- Declare all tool behavior in YAML configs (`.ai/src/tools/*.yaml`). `sync_tool()` in `lib/sync.sh` reads `targets.*` from YAML and delegates to generic helpers — keep tool names, paths, and formats out of sync logic itself.
+- Resolve source paths through `resolve_source_override()` → project `agent_sync.yaml` → global `config.yaml`. Reference the `SOURCE_*` variables set by `_resolve_source_paths()` rather than literal `.ai/src/` paths.
+- Read defaults (`enabled`, `cleanup`) from `config.yaml` → `defaults:` into `DEFAULT_ENABLED` / `DEFAULT_CLEANUP`, then propagate from there. Keep defaults centralized.
+- Express tool-specific format differences through YAML target options (`extension`, `header`, `merge_to_file`, `inline_into_agents`, `prepend_agents`, `append_imports`). Sync logic reads these options and routes to the right helper — extend by adding an option, not an `if [[ "$tool_name" == "cursor" ]]` branch.
 
 ## Module Boundaries
 
@@ -32,9 +32,9 @@ lib/templates/             → Defaults for `agentsync init`. Never used at sync
 lib/prompts/               → Prompt templates for `agentsync generate`.
 ```
 
-- **Don't put business logic in `bin/agentsync.sh`** — it's a router only.
-- **Don't add tool-specific `if/case` blocks in `lib/sync.sh`** — use YAML target declarations and generic helpers.
-- **Don't duplicate logic between `sync.sh` and `check.sh`** — extract shared helpers into `lib/helpers/`.
+- **Keep `bin/agentsync.sh` as a router** — it parses CLI args and delegates; business logic belongs in `lib/helpers/`.
+- **Drive `lib/sync.sh` from YAML target declarations** — extend behavior by adding YAML options and generic helpers, not by branching on tool name.
+- **Share logic between `sync.sh` and `check.sh` through helpers in `lib/helpers/`** — both commands stay aligned by calling the same code.
 
 ## How Sync Works (Data Flow)
 
@@ -46,23 +46,23 @@ lib/prompts/               → Prompt templates for `agentsync generate`.
 ## Path Safety
 
 - `resolve_dest_path()` rejects paths outside `REPO_ROOT_CANONICAL` — prevents path traversal.
-- `resolve_source_path()` validates against both `REPO_ROOT_CANONICAL` and `DEFAULT_REPO_ROOT` — no reading arbitrary files.
-- All path resolution uses `normalize_absolute_path()` (lexical) + `canonicalize_with_existing_ancestor()` — no `realpath`, no `readlink -f`.
+- `resolve_source_path()` validates against both `REPO_ROOT_CANONICAL` and `DEFAULT_REPO_ROOT`, keeping reads inside trusted roots.
+- Resolve paths through `normalize_absolute_path()` (lexical) + `canonicalize_with_existing_ancestor()`. These exist so the codebase stays free of `realpath` and `readlink -f`.
 
 ## Zero External Dependencies
 
-- No `yq`, `jq`, `python`, `node`, `perl`. Pure Bash + coreutils.
-- The custom YAML parser (`yaml.sh`) handles `key: value` and dot-notation nesting. Don't extend it to handle arrays or multiline blocks without strong justification.
-- No `eval` anywhere in the codebase — YAML values are used via pattern matching and parameter expansion only.
+- Use pure Bash + coreutils. The codebase stays free of `yq`, `jq`, `python`, `node`, and `perl` by design.
+- Keep the custom YAML parser (`yaml.sh`) scoped to `key: value` and dot-notation nesting. Arrays and multiline blocks need a strong justification before extending the parser.
+- Read YAML values via pattern matching and parameter expansion. The codebase has zero uses of `eval` and stays that way for security.
 
 ## Idempotency
 
 - `agentsync sync` must produce identical output on repeated runs. No timestamps, no ordering changes, no platform-dependent sorting.
 - `agentsync check` verifies this — run it after any change to sync logic.
 
-## Anti-Patterns
+## Discipline
 
-- Don't hardcode version numbers — read from `VERSION` file.
-- Don't store state between syncs. Every run reads config fresh.
-- Don't add inline options (`inline_into_agents`, `prepend_agents`) without documenting them in the `agentsync` skill and `_TEMPLATE.yaml`.
-- Don't bypass `parse_yaml_value()` to read YAML — inline `grep | sed` parsing will diverge from the parser's quoting/comment handling.
+- Read version numbers from the `VERSION` file rather than embedding them in scripts.
+- Keep every sync run stateless — read config fresh each time.
+- Document new inline options (`inline_into_agents`, `prepend_agents`, etc.) in the `agentsync` skill and `_TEMPLATE.yaml` as part of the same change that introduces them.
+- Read YAML through `parse_yaml_value()` so quoting and comment handling stay consistent across the codebase.

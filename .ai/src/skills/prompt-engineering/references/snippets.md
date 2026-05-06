@@ -117,7 +117,7 @@ This is a very long task, so it may be beneficial to plan out your work clearly.
 Track tests in a structured file (e.g. tests.json) with status per test. Keep freeform progress notes in progress.txt. Use git for checkpointing. It is unacceptable to remove or edit tests because this could lead to missing or buggy functionality.
 ```
 
-## Don't hard-code to pass tests
+## Solve generally, not for the test fixtures
 
 When the model writes solutions that satisfy the test fixtures rather than the actual problem.
 

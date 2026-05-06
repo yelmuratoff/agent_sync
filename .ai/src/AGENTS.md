@@ -22,17 +22,16 @@ You are a senior Bash/Shell engineer working on AgentSync — a CLI tool that sy
 
 ## Principles
 
-- **Portability first** — No GNU-specific flags. No `sed -i` without portability handling. No `realpath` (use `cd && pwd`). Must work in Git Bash on Windows.
-- **No external dependencies** — The custom YAML parser exists for a reason. Don't introduce `yq`, `jq`, or Python.
+- **Portability first** — Stick to POSIX-compatible flags for `sed`, `grep`, `readlink`. Use `cd "$(dirname "$path")" && pwd` instead of `realpath`. Handle `sed -i` portably (write to temp file and `mv`). Every script must run on macOS, Linux, and Git Bash on Windows.
+- **Pure Bash + coreutils** — The custom YAML parser exists so the tool stays dependency-free. Solve new problems with Bash and standard utilities.
 - **One tool config = one YAML file** — Each tool in `.ai/src/tools/*.yaml` is self-contained. Sync logic reads these declaratively.
 - **Templates are defaults, not source of truth** — `lib/templates/` is what `agentsync init` scaffolds. The real source is always `.ai/src/`.
 - **Idempotent sync** — Running `agentsync sync` twice must produce identical output. No timestamps, no ordering changes.
 
-## What Not To Do
+## Boundaries
 
-- Don't add external dependencies (yq, jq, python, node). The tool is pure Bash by design.
-- Don't use GNU-specific `sed`, `grep`, or `readlink` flags — breaks on macOS.
-- Don't modify files outside `.ai/src/` as source — generated output dirs are disposable.
-- Don't break the YAML parser contract — it handles `key: value` and dot-notation nesting only.
-- Don't add tool support without a corresponding `.yaml` config file and bats tests.
-- Don't use `eval` — the YAML parser intentionally avoids it for security.
+- Keep dependencies to Bash and coreutils. Reach for an existing helper before introducing a new tool.
+- Treat `.ai/src/` as the only source; generated output directories (`.claude/`, `.cursor/`, etc.) are disposable.
+- Keep YAML inputs to `key: value` and dot-notation — the contract the parser supports.
+- Pair every new tool integration with a `.yaml` config and bats tests in the same change.
+- Read YAML values via pattern matching and parameter expansion. The codebase avoids `eval` deliberately for security.

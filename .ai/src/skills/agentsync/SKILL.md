@@ -51,11 +51,11 @@ The command refuses to overwrite existing files; pass `--force` (or `-f`) to rep
 The agent's identity. Every sentence should change behavior.
 
 - **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
-- **Include the stack** — Plus what NOT to use when the agent might reasonably reach for it (e.g., "no Redux", "no Material UI").
+- **Include the stack** — Name the libraries the agent should reach for. When a wrong default is genuinely tempting (e.g., the project uses Zustand but Redux is the obvious guess), call it out explicitly so the agent doesn't reinvent it.
 - **What the product optimizes for** — 2–4 lines of business context that shape tradeoffs. Skip marketing copy.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
 - **Commands** — Real install/dev/build/lint/test commands the project uses.
-- **What NOT to do** — Constraints are often more useful than instructions.
+- **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase positively when practical; reserve `do not` for cases where the wrong action is genuinely tempting.
 - 40–70 lines. No generic filler.
 
 ## Writing Rules
@@ -64,7 +64,8 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 
 - **One concern per file** — `testing.md`, `security.md`. Not `everything.md`.
 - **Imperative and specific** — "Use `snake_case` for DB columns" not "Follow naming conventions".
-- **Constraints, not tutorials** — Say what to do and what not to do. Don't explain concepts.
+- **Constraints, not tutorials** — Tell the agent what behavior to produce. Skip concept explanations the model already knows.
+- **Prefer positive instructions** — Per Anthropic's prompt-engineering guidance, "respond in flowing prose" works better than "don't use bullet points". Phrase rules as what to do; reserve explicit `do not` for genuinely tempting wrong actions where the positive form would lose information.
 - **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
 
 ## Writing Skills — The Most Important Part

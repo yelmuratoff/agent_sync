@@ -4,7 +4,7 @@
 
 - Tests use [bats-core](https://github.com/bats-core/bats-core) — `.bats` files in `tests/`.
 - Shared helpers live in `tests/test_helper.bash`. Use `setup_test_project` / `teardown_test_project` for temp dirs.
-- Run `AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN"` via the `run_agentsync` helper — never test against the installed version.
+- Run the in-tree binary via the `run_agentsync` helper (`AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN"`) so tests exercise the working copy, not the globally installed version.
 
 ## Test Structure
 
@@ -18,7 +18,7 @@
 - Test names describe behavior: `@test "sync: Claude CLAUDE.md exists"`, not `@test "test_claude"`.
 - Use `[ -f ... ]` and `grep -q` for assertions — bats fails on non-zero exit codes.
 - Always clean up temp dirs in `teardown` or `teardown_file`.
-- Don't test against real GitHub or network resources.
+- Keep tests hermetic — exercise local fixtures only, with no network or real GitHub calls.
 
 ## When Adding a New Tool
 

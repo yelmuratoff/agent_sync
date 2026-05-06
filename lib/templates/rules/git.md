@@ -3,7 +3,7 @@
 ## Commits
 
 - Match the project's existing commit style (check `git log --oneline -10`). If none is established, default to Conventional Commits: `<type>: <subject>` with `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
-- One logical change per commit. Don't mix unrelated work.
+- One logical change per commit. Split unrelated work into separate commits.
 - Subject in imperative mood, ≤72 chars. Body explains *why*, not *what* — skip the body when the subject says enough.
 
 ## Branches
@@ -14,10 +14,10 @@
 ## Pull Requests
 
 - Link the related ticket or issue in the description.
-- Don't force-push to shared branches without coordination.
-- Don't bypass `--no-verify` or pre-commit hooks to make CI green — fix the failure.
+- Coordinate before force-pushing a shared branch; prefer additive commits while others may be reviewing.
+- Resolve hook or CI failures at the source rather than passing `--no-verify` — a green CI built on bypassed checks lies.
 
-## What Never Goes In
+## Keep Out of History
 
-- Generated artifacts, lockfile binaries, secrets, `.env*` files.
-- Use `.gitignore` for environment-specific or generated output.
+- Generated artifacts, lockfile binaries, secrets, `.env*` files belong outside the repo.
+- Reach for `.gitignore` to fence off environment-specific or generated output.

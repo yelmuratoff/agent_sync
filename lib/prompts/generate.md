@@ -21,7 +21,8 @@ These come from the agentskills.io best-practices guide and Anthropic prompt-eng
 - **Procedures over declarations.** Teach how to approach a class of problems, not the answer to one specific instance. "Read the schema, then join on the `_id` foreign key convention" generalizes; "join `orders` to `customers` on `customer_id`" doesn't.
 - **Defaults, not menus.** Pick one tool/library/approach and mention alternatives briefly. "Use `pdfplumber`; fall back to `pdf2image` for scanned PDFs" beats listing four equal options.
 - **Match specificity to fragility.** Be prescriptive on fragile sequence-sensitive ops ("run exactly: `python migrate.py --verify --backup`"). Be descriptive on flexible work ("look for SQL injection, weak auth, race conditions") and let the agent's judgment fill in.
-- **Rule of three for skills.** Don't create a skill until you've manually done the workflow at least three times. Earlier than that, you don't yet know its shape — and a poorly-scoped skill that loads on every task is worse than no skill.
+- **Rule of three for skills.** Wait until you've manually done a workflow three times before turning it into a skill. Earlier than that, the shape isn't clear yet — a poorly-scoped skill that loads on every task is worse than no skill.
+- **Prefer positive instructions over prohibitions.** Per Anthropic's prompt-engineering guidance, models follow "respond in flowing prose" more reliably than "don't use bullet points". Phrase rules and skills in terms of what to do; reserve explicit negation for cases where the prohibited action is genuinely tempting and the positive form would lose information.
 - **Soften aggressive language.** Modern Claude (Opus 4.6+) over-complies with `MUST` / `NEVER` / `ALWAYS` / `CRITICAL`. Prefer "use when…", "do not", "prefer X". Save emphasis for the genuinely fragile rules.
 
 ## What to generate
@@ -31,12 +32,12 @@ These come from the agentskills.io best-practices guide and Anthropic prompt-eng
 The main file describing who the AI agent is. Be specific to this project:
 
 - Role (e.g., "Senior React/TypeScript Engineer", "Backend Go Developer")
-- Tech stack summary — include what NOT to use when there's a real risk of the agent reaching for it (e.g., "no Redux", "no styled-components")
+- Tech stack summary — name the libraries the agent should reach for. When a wrong default is genuinely tempting (e.g., the project uses Zustand but Redux is the obvious guess), call it out explicitly so the agent doesn't reinvent it.
 - What the product optimizes for — 2–4 lines of business context that shape implementation tradeoffs (e.g., "B2B analytics dashboard, primary goal: reduce time-to-insight"). Skip marketing copy and origin stories.
 - Approach: how the agent should work in this codebase (study → plan → implement → verify)
 - Commands — the actual install/dev/build/lint/test commands the project uses. Only include what's real and current.
 - Key principles specific to this project
-- What the agent must never do
+- Boundaries the agent must respect — phrase as scope limits and required behaviors ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`") rather than a list of `Don't`s
 
 40–70 lines. Every sentence should change behavior. No generic filler.
 
@@ -66,13 +67,16 @@ Format:
 
 ## Section
 
-- Specific imperative constraint.
-- Another constraint.
+- Specific imperative constraint phrased as what to do.
+- Another constraint, also positive.
 
-## Anti-Patterns
+## Discipline
 
-- What not to do.
+- Boundary or guardrail framed as required behavior.
+- Reserve explicit "do not X" for cases where the wrong action is genuinely tempting and a positive rewrite would lose information.
 ```
+
+Phrase rules positively whenever practical. "Use the project's typed exceptions" lands better than "don't throw raw strings"; "Keep generated artifacts out of commits" beats "never commit generated artifacts". Models follow positive instructions more reliably than prohibitions.
 
 ### 3. `.ai/src/skills/` — On-Demand Recipes
 
@@ -238,13 +242,14 @@ Output each file with its full path as a header:
 ## Critical rules
 
 - Be specific to THIS project. Use real file paths, real commands, real patterns.
-- If you don't see evidence of something in the code, don't write a rule about it.
+- Ground every rule in evidence from the code. If the pattern isn't visible somewhere in the repo, leave it out.
 - 5 specific rules > 20 vague rules. Quality over quantity.
-- Don't restate language defaults, framework documentation, or general programming wisdom — the agent already knows.
-- Don't create skills for workflows you can't show happen 3+ times in this codebase.
-- Don't create agents for domains that don't exist here.
-- Skills and commands must have real commands and paths, not placeholders.
-- Settings should reflect this project's actual toolchain, not generic defaults.
+- Skip language defaults, framework documentation, and general programming wisdom — the agent already knows them.
+- Limit skills to workflows you can show happen 3+ times in this codebase.
+- Limit agents to domains that actually exist in this project.
+- Use real commands and paths in skills and commands; placeholders signal the file isn't ready.
+- Tune settings to this project's actual toolchain, not generic defaults.
+- Phrase rules and skills positively wherever you can — "use the project's typed exceptions" beats "never throw raw strings". Reserve `do not` for cases where the wrong action is genuinely tempting and the positive form would lose information.
 - Soften `MUST`/`NEVER`/`ALWAYS`/`CRITICAL` to `use when`/`do not`/`prefer` — modern Claude over-complies with aggressive language.
 - YAML frontmatter must be parseable. Quote `name` values (`name: "skill-name"`) and use folded block scalars for descriptions (`description: >-`) so colons, quotes, parentheses, and multilingual examples inside descriptions do not break YAML parsing.
 - Before finalizing, mentally validate every generated file: YAML frontmatter has balanced `---` fences and valid scalar syntax; JSON has no comments or trailing commas; referenced paths match the file headers.
