@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0
+
+### Changed
+
+- **Templates and prompts rewritten in positive form:** every rule template, skill template, and the `agentsync generate` prompt (`lib/templates/AGENTS.md`, `lib/templates/rules/*`, `lib/templates/skills/agentsync/SKILL.md`, `lib/templates/skills/prompt-engineering/{SKILL.md,references/*}`, `lib/prompts/generate.md`) now phrase constraints as required behaviors instead of `Don't` lists, `## Anti-Patterns`, or `## What Not To Do` sections. Aligned with Anthropic's prompt-engineering guidance — Claude Opus 4.6+/4.7 follow positive instructions ("respond in flowing prose") more reliably than prohibitions ("don't use bullet points"), and over-comply with aggressive `MUST/NEVER/CRITICAL` framing. Section headers map predictably (`## Anti-Patterns` → `## Discipline`, `## What Not to Commit` → `## Keep Out of Commits`, `## What Never Goes In` → `## Keep Out of History`), and the bullet rewrites preserve the same constraints in imperative-positive form. `agentsync generate` and the `agentsync` skill itself now teach this pattern, so freshly bootstrapped projects inherit it.
+
+### Added
+
+- **`prompt-engineering` skill — Opus 4.7 specifics:** the Claude entry under `Tool-specific notes` expanded from a single line into a structured sub-section covering effort levels (`low / medium / high / xhigh / max`) with defaults for coding and agentic work, the `thinking: {type: "adaptive"}` syntax that replaces deprecated `budget_tokens`, subagent-spawning behavior changes on 4.7, tool-use undertriggering, the more-direct tone shift, the persistent cream/serif/terracotta frontend default and how to override it, and the deprecation of prefilled assistant messages on 4.6+. Lets maintainers tune prompts that were authored against earlier Opus versions without re-reading the full Anthropic guide.
+- **`prompt-engineering` skill — three new snippets** in `references/snippets.md`:
+  - `Frontend variety — propose options before building`: replaces the lost `temperature` knob for design variation on Opus 4.7 (which has a persistent default house style) by having the model propose 4 distinct directions before committing.
+  - `Subagent control`: dual-direction guidance for steering subagent fan-out — reining in 4.6's over-spawning on trivial tasks, and prompting 4.7 (which spawns fewer by default) to delegate when it should.
+  - `Multi-context-window workflow`: extends the existing state-tracking snippet with concrete patterns from Anthropic's agentic guidance — `init.sh` setup script, structured `tests.json`, freeform `progress.txt`, git checkpointing, and the fresh-context recovery sequence (`pwd` → progress notes → tests → git log → integration test) before resuming work.
+
 ## 0.12.3
 
 ### Fixed
