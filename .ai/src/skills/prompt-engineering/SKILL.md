@@ -9,7 +9,7 @@ A workflow and toolbox for writing prompts that steer modern LLMs reliably — s
 
 ## Bundled references (load on demand)
 
-- **`references/snippets.md`** — read **when you need a copy-paste prompt fragment** for a recurring concern: anti-overengineering, parallel tool calls, default-to-action / do-not-act, investigate-before-answering, code-review coverage, frontend aesthetics, persistence across context windows, reversibility/safety, verbosity, long-document grounding. ~20 vetted blocks.
+- **`references/snippets.md`** — read **when you need a copy-paste prompt fragment** for a recurring concern: anti-overengineering, parallel tool calls, default-to-action / do-not-act, investigate-before-answering, code-review coverage, frontend aesthetics, frontend variety / propose-options, subagent control, persistence across context windows, multi-context state tracking, reversibility/safety, verbosity, long-document grounding. ~20 vetted blocks.
 - **`references/metaprompting.md`** — read **when a prompt under-performs and the cause is unclear**: full metaprompting template, filtering procedure for the model's suggestions, when to use vs. skip.
 - **`references/agent-persona.md`** — read **when designing or auditing the system prompt of an autonomous agent**: identity, autonomy posture, tool-use rules, editing constraints, full Friendly and Pragmatic personality blocks, final-message format, plan discipline.
 
@@ -88,7 +88,14 @@ Before shipping a prompt, check:
 
 ## Tool-specific notes
 
-- **Claude (Opus 4.6+/4.7)** — interprets instructions literally; state scope explicitly. Uses adaptive thinking — tune via `effort`, not by over-prompting. Dial back "MUST/ALWAYS/CRITICAL" — it over-triggers. Prefers XML tags.
+- **Claude (Opus 4.6+/4.7)** — interprets instructions literally; state scope explicitly ("apply to every section, not just the first"). Prefers XML tags. Dial back `MUST/ALWAYS/CRITICAL` — it over-triggers. Key levers:
+  - **`effort`** — `low / medium / high / xhigh / max`. Default to `xhigh` for coding and agentic work, minimum `high` for intelligence-sensitive tasks. `max` may overthink; use sparingly. At `low/medium`, 4.7 strictly scopes work to what was asked — raise effort first when reasoning looks shallow, prompt-tweak only after.
+  - **Adaptive thinking** — `thinking: {type: "adaptive"}` paired with `effort` replaces extended thinking with `budget_tokens` (deprecated on 4.6+). Set `max_tokens: 64000` at `high+`/`xhigh`. To dampen over-eager thinking: *"Extended thinking adds latency and should only be used when it will meaningfully improve answer quality. When in doubt, respond directly."*
+  - **Subagents** — 4.7 spawns fewer than 4.6 by default. Steer when needed (see `subagent_control` in `references/snippets.md`).
+  - **Tools** — 4.7 reasons more, calls tools less. To raise tool usage, lift `effort` to `high`/`xhigh` first; describe explicitly when/why to use each tool only if that fails.
+  - **Tone** — 4.7 is more direct and opinionated than 4.6, with fewer emoji and less validation-forward phrasing. For warmer voice: *"Use a warm, collaborative tone. Acknowledge the user's framing before answering."*
+  - **Frontend default** — 4.7 leans cream `#F4F1EA` + serif (Georgia/Fraunces/Playfair) + terracotta accent. Reads well for editorial/hospitality, off for dashboards/fintech/dev tools. Override by specifying a concrete palette + typeface, or have the model propose 4 options first (see `frontend_propose_options` in `references/snippets.md`).
+  - **Prefilled assistant messages** — deprecated on 4.6+. Use structured outputs, XML output tags, or direct format instructions instead.
 - **OpenAI GPT-5 / Codex** — uses `instructions` + `input` roles; pin production prompts to a specific model snapshot; build evals alongside prompts. Reasoning models: prefer goal-only prompts over step-by-step instructions. For `gpt-5.3-codex`, persist the `phase` field on assistant items (commentary vs. final_answer) — dropping it degrades performance.
 - **Gemini** — responds well to the full component template (Objective → Instructions → Constraints → Context → Output format → Examples → Recap). Native Thinking: avoid explicit step-by-step.
 - **Agent rules / skills / commands (this repo)** — rules are always-on constraints (imperative, 20–50 lines, one topic). Skills are on-demand recipes with a triggering description. Commands are one-workflow prompts. See the `agentsync` skill for AgentSync file format and scaffolding.

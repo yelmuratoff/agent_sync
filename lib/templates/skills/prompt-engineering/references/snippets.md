@@ -99,6 +99,28 @@ NEVER use generic AI-generated aesthetics like overused font families (Inter, Ro
 </frontend_aesthetics>
 ```
 
+## Frontend variety — propose options before building
+
+When you want different visual directions across runs (replaces `temperature` for variety on Opus 4.7, which has a persistent default cream/serif house style).
+
+```text
+Before building, propose 4 distinct visual directions tailored to this brief (each as: bg hex / accent hex / typeface — one-line rationale). Ask the user to pick one, then implement only that direction.
+```
+
+Pair with `<frontend_aesthetics>` when the brief is editorial/portfolio. Skip both for fintech/healthcare/dashboard briefs and specify a concrete palette instead — generic instructions like "make it clean and minimal" tend to shift the model to a different fixed palette, not produce variety.
+
+## Subagent control
+
+When 4.7 spawns subagents for trivial work (or when 4.6 over-spawns for code exploration that grep would handle).
+
+```text
+Use subagents when tasks can run in parallel, require isolated context, or involve independent workstreams that don't need to share state. For simple tasks, sequential operations, single-file edits, or tasks where you need to maintain context across steps, work directly rather than delegating.
+
+Do not spawn a subagent for work you can complete directly in a single response (e.g. refactoring a function you can already see). Spawn multiple subagents in the same turn when fanning out across items or reading many files.
+```
+
+Inverse — when you *want* more subagent fan-out on 4.7 (which spawns fewer than 4.6 by default): explicitly instruct it to delegate, raise `effort` to `xhigh`, or list the patterns where delegation is desirable.
+
 ## Persistence across context windows
 
 When long agentic tasks stop early as the model "wraps up" near the context limit.
@@ -116,6 +138,21 @@ This is a very long task, so it may be beneficial to plan out your work clearly.
 
 Track tests in a structured file (e.g. tests.json) with status per test. Keep freeform progress notes in progress.txt. Use git for checkpointing. It is unacceptable to remove or edit tests because this could lead to missing or buggy functionality.
 ```
+
+## Multi-context-window workflow
+
+For tasks that span more than one context window — use `init.sh`, structured state files, and let Claude rediscover state from the filesystem instead of relying on compaction.
+
+```text
+This task may span multiple context windows. Use a structured workflow:
+
+1. Set up first. Create `init.sh` to start servers, run tests, and run linters in one command. Write the test list to `tests.json` with status per test. Keep freeform notes in `progress.txt`.
+2. Commit incrementally. Use git for checkpointing. Each context window should end with a clean working tree or a clearly labeled WIP commit.
+3. On a fresh context window: call `pwd`, then read `progress.txt`, `tests.json`, and the recent git log. Run `init.sh` and a fundamental integration test before implementing new features.
+4. Treat tests as load-bearing. Removing or weakening a test to make it pass is unacceptable — it can hide missing or buggy functionality.
+```
+
+Pair with `persistence_across_context_windows` when the agent harness compacts context, and with `reflect_after_tool_use` for the planning loop.
 
 ## Solve generally, not for the test fixtures
 
@@ -199,6 +236,6 @@ If you create any temporary new files, scripts, or helper files for iteration, c
 ## Gotchas when using snippets
 
 - Don't stack contradictory snippets — `default-to-action` and `do-not-act-before-instructions` cancel each other.
-- On Claude Opus 4.6+, soften `MUST` / `NEVER` / `CRITICAL` to `should` / `do not` — the model now over-complies with aggressive language.
+- On Claude Opus 4.6+ (including 4.7), soften `MUST` / `NEVER` / `CRITICAL` to `should` / `do not` — these models over-comply with aggressive language. 4.7 in particular interprets instructions literally, so explicit scope ("apply to every section, not just the first") often matters more than emphasis.
 - Drop the `<frontend_aesthetics>` block on dashboard / fintech / enterprise briefs — it pushes toward editorial aesthetics and reads wrong there.
 - The verbosity-reducer fights against `state-tracking` and `persistence` snippets — pick one direction, not both.
