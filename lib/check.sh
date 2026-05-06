@@ -18,13 +18,16 @@ fi
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/agent_sync_check.XXXXXX")"
 SYNC_LOG="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_sync.XXXXXX")"
-trap 'rm -rf "$TEMP_ROOT"; rm -f "$SYNC_LOG"' EXIT
+TAR_ERR="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_tar.XXXXXX")"
+trap 'rm -rf "$TEMP_ROOT"; rm -f "$SYNC_LOG" "$TAR_ERR"' EXIT
 
 echo "Checking AgentSync configuration synchronization..."
 
 # Copy project to a temporary workspace without .git metadata.
-if ! (cd "$REPO_ROOT" && tar --exclude='.git' -cf - .) | (cd "$TEMP_ROOT" && tar -xf -); then
+# stderr is captured so benign xattr warnings (BSD tar on macOS) stay quiet on success.
+if ! (cd "$REPO_ROOT" && tar --exclude='.git' -cf - . 2>"$TAR_ERR") | (cd "$TEMP_ROOT" && tar -xf -); then
     echo "❌ Failed to prepare temporary workspace for check"
+    [[ -s "$TAR_ERR" ]] && cat "$TAR_ERR" >&2
     exit 1
 fi
 
