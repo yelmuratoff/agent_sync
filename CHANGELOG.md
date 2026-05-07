@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+
+- **Commenting guidance baked into init templates:** `lib/templates/rules/comments.md` (always-on rule) and `lib/templates/skills/comments/SKILL.md` (on-demand skill) now ship with `agentsync init`, so freshly bootstrapped projects inherit a single language-agnostic policy on when to comment and what to leave out. The rule frames the default as "code over commentary" — make the code self-explanatory first, then comment only the _why_ a reader can't see (hidden constraints, external quirks, workarounds, surprises). The skill layers in two contrasting code blocks (narration / AI-thought-trail anti-pattern → contract-doc-plus-quirk pattern) and an `Edge cases` list covering apologies-in-code, task/PR/caller references, untracked TODOs, line-by-line code translation, decorative banners, and commented-out blocks. Both files are written in imperative-positive form consistent with 0.13.0's template rewrite, so Claude Opus 4.6+/4.7 follows them more reliably than the equivalent `Don't` lists. Addresses the recurring failure mode where Opus leaves `// Step 1:`, `// loop through users`, `// AI thought:` narration scattered through generated code.
+
 ## 0.13.0
 
 ### Changed
