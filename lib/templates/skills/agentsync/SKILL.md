@@ -179,13 +179,32 @@ For tools without separate rules/skills directories, use inline options:
 
 `agentsync refresh` walks the shipped templates (rules, skills, commands, agents) and compares each file against your `.ai/src/`. Use it after upgrading the CLI to inherit newly added rules/skills without re-running `init`.
 
-- New files (in templates, missing locally) are offered for adding.
-- Modified files (present locally with a different content) show a unified diff so you can update or skip per file. Default action on Enter is **skip** — your local edits are not overwritten unless you explicitly accept.
-- Files in your `.ai/src/` that aren't part of the templates (your custom rules/skills) are left alone.
+It uses **three-way diff** via `.ai/.template-manifest` (written by `init` and updated on every refresh): the manifest records the template hash at scaffold/last-refresh time, so refresh can tell whether you've touched a file since the last sync.
+
+- **Auto-update (silent)**: file you haven't touched + template moved → applied without a prompt.
+- **NEW (prompt)**: file present in templates, never seen locally — offered for adding. Default Enter is **skip**; skipping records a manifest entry so the file isn't offered again (use `--include-deleted` to revisit).
+- **CONFLICT (prompt with diff)**: both your version and the template diverged from the recorded baseline. Default Enter is **skip**; your local edits are not overwritten unless you type `[u]pdate`.
+- **DELETED (silent)**: you removed a file locally that was once scaffolded → treated as an intentional decline. Pass `--include-deleted` to revisit.
+- **USER_EDITED_NO_CHANGE (silent)**: you edited locally, template hasn't moved → not a conflict, your version stays.
+- **Custom files (silent)**: anything in your `.ai/src/` that isn't in the templates is your own and is left alone.
+
+Persistent overrides in `.ai/agent_sync.yaml` silence specific templates forever:
+
+```yaml
+template_overrides:
+  declined:        # always-skip; never offered
+    - rules/some-rule.md
+  pinned:          # ignore template updates; keep your version even when it diverges
+    - rules/my-version.md
+```
+
+Other behaviors:
+
 - Scope by default = only categories that already have a subdirectory in your `.ai/src/`; pass `--only rules,skills,commands,agents` to opt into a category you don't have yet.
 - AGENTS.md is excluded by default (almost always heavily customized); `--include-agents-md` surfaces it.
-- `--dry-run` prints the plan without writing. `--yes` adds new files and skips conflicts non-interactively (CI-friendly; conflicts are never auto-accepted).
+- `--dry-run` prints the plan without writing. `--yes` applies auto-updates and adds new files non-interactively; conflicts are always skipped under `--yes` (CI-friendly).
 - Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they're handled by `customize` / `simplify` / `resolve`.
+- Commit `.ai/.template-manifest` to git so the team shares the same baseline; otherwise different developers will see different conflict sets.
 
 ## Gotchas
 

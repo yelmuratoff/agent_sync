@@ -746,5 +746,14 @@ HELP
     enabled_newline=$(echo "$tool_list" | tr ' ' '\n' | sed '/^$/d')
 
     _init_create_project_config "$target_dir" "$enabled_newline"
+
+    # Baseline the template manifest so the next `agentsync refresh` can do
+    # three-way diffs and only nag on real conflicts.
+    if [[ -n "$templates_dir" ]] && declare -F template_manifest_heal_from_match >/dev/null 2>&1; then
+        AGENTSYNC_REPO_ROOT="$target_dir" template_manifest_load
+        AGENTSYNC_REPO_ROOT="$target_dir" template_manifest_heal_from_match "$templates_dir" "$ai_dir/src"
+        AGENTSYNC_REPO_ROOT="$target_dir" template_manifest_write
+    fi
+
     _init_print_summary "$ai_dir" "$tool_list" "$payload_lines" "$detect_source"
 }

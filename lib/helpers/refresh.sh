@@ -1,35 +1,55 @@
 #!/usr/bin/env bash
 # agentsync refresh — pull updated rule/skill/command/subagent templates
-# into an existing .ai/src/, with per-file diff and approve/skip.
+# into an existing .ai/src/, with three-way diff (template_old vs template_new
+# vs user_current) so files the user hasn't touched auto-update silently and
+# only true conflicts require interactive review.
 #
 # Scope: source content only (rules, skills, commands, agents). AGENTS.md is
 # off by default (almost always heavily customized). Tool configs (settings,
 # mcp, hooks, tools) are intentionally excluded — they have their own
 # customize/simplify/resolve flow.
 #
-# Mental model: walk lib/templates/ and compare each file against .ai/src/.
-#   * exists locally + matches → unchanged (silent)
-#   * exists locally + differs → conflict (diff shown; user picks)
-#   * missing locally          → new (offered for adding)
-#   * exists locally, NOT in templates → user's custom content; left alone
+# Three-way decision logic (per template file):
+#   * declined override (agent_sync.yaml)        → ignore entirely (silent)
+#   * pinned override (agent_sync.yaml)          → ignore template changes (silent)
+#   * file missing locally + not in manifest     → NEW       (offer to add)
+#   * file missing locally + in manifest         → DELETED   (silent unless --include-deleted)
+#   * file matches current template              → UNCHANGED (silent; manifest healed)
+#   * user untouched (current == manifest_old)
+#     and template moved (new != manifest_old)   → AUTO_UPDATE (silent apply)
+#   * template static (new == manifest_old)
+#     but user edited locally                    → silent (their custom version)
+#   * both diverged from manifest_old            → CONFLICT (diff + prompt)
+#   * no manifest entry at all + user differs    → CONFLICT (no baseline → manual)
+#
+# When the manifest is missing (project predates v2 of refresh), the logic
+# degrades to two-way diff and every divergence is treated as a CONFLICT.
 
-# Categories considered by refresh. Keep in sync with init's --content tokens
-# and the lib/templates/ layout. AGENTS.md is handled separately under a flag.
+# ── Static configuration ─────────────────────────────────────────────────────
+
 _REFRESH_CATEGORIES_VALID="rules skills commands agents subagents"
 _REFRESH_CATEGORIES_DEFAULT="rules skills commands agents"
 
-# Populated by _refresh_collect_changes. Scoped at file level for readability;
-# each entry is "<rel-path>|<absolute-template-path>" (NEW/CONFLICT) or just
-# "<rel-path>" (UNCHANGED).
+# ── Globals populated by _refresh_collect_changes ───────────────────────────
+# Each entry is one of:
+#   "<rel-path>|<absolute-template-path>|<template-hash>"   for NEW/CONFLICT/AUTO_UPDATE/DELETED
+#   "<rel-path>"                                             for UNCHANGED
 NEW_FILES=()
 CONFLICT_FILES=()
+AUTO_UPDATE_FILES=()
+DELETED_FILES=()
 UNCHANGED_FILES=()
+
+# Loaded from agent_sync.yaml: template_overrides.{declined,pinned}
+DECLINED_OVERRIDES=()
+PINNED_OVERRIDES=()
 
 cmd_refresh() {
     local repo_root="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
     local dry_run=false
     local assume_yes=false
     local include_agents_md=false
+    local include_deleted=false
     local only_flag=""
 
     while [[ $# -gt 0 ]]; do
@@ -37,6 +57,7 @@ cmd_refresh() {
             --dry-run)            dry_run=true; shift ;;
             --yes|-y)             assume_yes=true; shift ;;
             --include-agents-md)  include_agents_md=true; shift ;;
+            --include-deleted)    include_deleted=true; shift ;;
             --only)
                 [[ $# -lt 2 ]] && { echo "$(_red "Error"): --only requires a value" >&2; return 1; }
                 only_flag="$2"; shift 2 ;;
@@ -72,13 +93,27 @@ cmd_refresh() {
     local categories
     categories=$(_refresh_resolve_scope "$only_flag" "$repo_root/$_SRC_BASE") || return 1
 
+    # Persist any AGENTSYNC_REPO_ROOT we infer so manifest helpers see the same root.
+    AGENTSYNC_REPO_ROOT="$repo_root"
+    export AGENTSYNC_REPO_ROOT
+
+    template_manifest_load
+    local has_manifest=false
+    [[ ${#TEMPLATE_MANIFEST_KEYS[@]} -gt 0 ]] && has_manifest=true
+
+    _refresh_load_overrides "$repo_root"
+
     NEW_FILES=()
     CONFLICT_FILES=()
+    AUTO_UPDATE_FILES=()
+    DELETED_FILES=()
     UNCHANGED_FILES=()
     _refresh_collect_changes "$templates_dir" "$repo_root" "$categories" "$include_agents_md"
 
     local new_count=${#NEW_FILES[@]}
     local conflict_count=${#CONFLICT_FILES[@]}
+    local auto_count=${#AUTO_UPDATE_FILES[@]}
+    local deleted_count=${#DELETED_FILES[@]}
     local unchanged_count=${#UNCHANGED_FILES[@]}
 
     echo ""
@@ -86,22 +121,44 @@ cmd_refresh() {
     echo ""
     echo "  $(_dim "Templates:") $templates_dir"
     echo "  $(_dim "Project:")   $repo_root/$_SRC_BASE"
-    echo "  $(_dim "Scope:")     $(echo "$categories" | tr ' ' ',')$([[ "$include_agents_md" == "true" ]] && echo ",AGENTS.md")"
+    local scope_label
+    scope_label=$(echo "$categories" | tr ' ' ',')
+    [[ "$include_agents_md" == "true" ]] && scope_label="$scope_label,AGENTS.md"
+    echo "  $(_dim "Scope:")     $scope_label"
+    if [[ "$has_manifest" == "false" ]]; then
+        echo "  $(_dim "Manifest:")  $(_yellow "none — falling back to two-way diff")"
+    fi
     echo ""
 
-    if (( new_count == 0 && conflict_count == 0 )); then
+    local has_visible_deleted=false
+    if [[ "$include_deleted" == "true" ]] && (( deleted_count > 0 )); then
+        has_visible_deleted=true
+    fi
+
+    if (( new_count == 0 && conflict_count == 0 && auto_count == 0 )) && [[ "$has_visible_deleted" != "true" ]]; then
         echo "  $(_green "Already up to date!") $unchanged_count file(s) match the current templates."
+        if (( deleted_count > 0 )); then
+            echo "  $(_dim "$deleted_count file(s) previously declined; pass --include-deleted to revisit.")"
+        fi
+        # Heal manifest with current matches even if no other change is needed.
+        _refresh_heal_unchanged "$templates_dir" "$repo_root/$_SRC_BASE"
+        if [[ "$dry_run" != "true" ]]; then
+            template_manifest_write
+        fi
         echo ""
         return 0
     fi
 
     echo "  $(_green "Summary:")"
-    (( new_count > 0 ))       && echo "    $(_green "+") $new_count new template(s) — not in your .ai/src/"
-    (( conflict_count > 0 ))  && echo "    $(_yellow "~") $conflict_count modified — your version differs from the template"
+    (( new_count > 0 ))      && echo "    $(_green "+") $new_count new template(s)"
+    (( auto_count > 0 ))     && echo "    $(_cyan "↑") $auto_count auto-update(s) — you hadn't touched them locally"
+    (( conflict_count > 0 )) && echo "    $(_yellow "~") $conflict_count conflict(s) — your version differs from the template"
+    [[ "$has_visible_deleted" == "true" ]] && \
+        echo "    $(_dim "?") $deleted_count previously declined — pass --include-deleted to revisit"
     (( unchanged_count > 0 )) && echo "    $(_dim "·") $unchanged_count unchanged"
     echo ""
 
-    _refresh_list_proposed
+    _refresh_list_proposed "$has_visible_deleted"
 
     if [[ "$dry_run" == "true" ]]; then
         echo "  $(_yellow "Dry run") — no files written."
@@ -109,25 +166,74 @@ cmd_refresh() {
         return 0
     fi
 
-    if ! is_tty && [[ "$assume_yes" != "true" ]]; then
+    if ! is_tty && [[ "$assume_yes" != "true" ]] && (( new_count + conflict_count > 0 )); then
         echo "  $(_red "Error"): Cannot run interactively (not a TTY)." >&2
-        echo "  Use $(_cyan "--yes") to accept new files (conflicts always skipped non-interactively)." >&2
+        echo "  Use $(_cyan "--yes") to add new files and apply auto-updates" >&2
+        echo "  (conflicts are always skipped non-interactively)." >&2
         echo "  Use $(_cyan "--dry-run") to preview." >&2
         return 1
     fi
 
-    local added=0 updated=0 skipped=0 cancelled=false
+    local added=0 updated=0 auto_applied=0 skipped=0 cancelled=false
 
-    if (( new_count > 0 )); then
-        local entry
+    # Auto-updates always apply silently — by definition the user hadn't touched them.
+    if (( auto_count > 0 )); then
+        local entry rel src t_new dest
+        for entry in "${AUTO_UPDATE_FILES[@]}"; do
+            rel="${entry%%|*}"
+            local rest="${entry#*|}"
+            src="${rest%|*}"
+            t_new="${rest##*|}"
+            dest="$repo_root/$_SRC_BASE/$rel"
+            _refresh_copy "$src" "$dest"
+            template_manifest_record "$rel" "$t_new"
+            echo "  $(_cyan "↑") $rel  $(_dim "(auto-updated; you hadn't touched it)")"
+            auto_applied=$((auto_applied + 1))
+        done
+    fi
+
+    if [[ "$has_visible_deleted" == "true" ]]; then
+        local entry rel src t_new dest
+        for entry in "${DELETED_FILES[@]}"; do
+            [[ "$cancelled" == "true" ]] && break
+            rel="${entry%%|*}"
+            local rest="${entry#*|}"
+            src="${rest%|*}"
+            t_new="${rest##*|}"
+            dest="$repo_root/$_SRC_BASE/$rel"
+            if [[ "$assume_yes" == "true" ]]; then
+                # Restoring deleted files non-interactively is too aggressive — skip.
+                echo "  $(_dim "?") $rel $(_dim "(previously declined — skipped under --yes; run interactively)")"
+                skipped=$((skipped + 1))
+                continue
+            fi
+            local choice
+            choice=$(_refresh_prompt_deleted "$rel" "$src")
+            case "$choice" in
+                a)  _refresh_copy "$src" "$dest"
+                    template_manifest_record "$rel" "$t_new"
+                    echo "    $(_green "restored.")"
+                    added=$((added + 1)) ;;
+                s)  echo "    $(_dim "still declined.")"
+                    skipped=$((skipped + 1)) ;;
+                q)  cancelled=true ;;
+            esac
+        done
+    fi
+
+    if (( new_count > 0 )) && [[ "$cancelled" != "true" ]]; then
+        local entry rel src t_new dest
         for entry in "${NEW_FILES[@]}"; do
             [[ "$cancelled" == "true" ]] && break
-            local rel="${entry%%|*}"
-            local src="${entry#*|}"
-            local dest="$repo_root/$_SRC_BASE/$rel"
+            rel="${entry%%|*}"
+            local rest="${entry#*|}"
+            src="${rest%|*}"
+            t_new="${rest##*|}"
+            dest="$repo_root/$_SRC_BASE/$rel"
 
             if [[ "$assume_yes" == "true" ]]; then
                 _refresh_copy "$src" "$dest"
+                template_manifest_record "$rel" "$t_new"
                 echo "  $(_green "+") $rel"
                 added=$((added + 1))
                 continue
@@ -137,9 +243,14 @@ cmd_refresh() {
             choice=$(_refresh_prompt_new "$rel" "$src")
             case "$choice" in
                 a)  _refresh_copy "$src" "$dest"
+                    template_manifest_record "$rel" "$t_new"
                     echo "    $(_green "added.")"
                     added=$((added + 1)) ;;
-                s)  echo "    $(_dim "skipped.")"
+                s)  # Skip-as-decline: record the manifest entry so the file
+                    # never reappears as NEW. The user can revisit with
+                    # --include-deleted.
+                    template_manifest_record "$rel" "$t_new"
+                    echo "    $(_dim "declined (will not be offered again — use --include-deleted to revisit).")"
                     skipped=$((skipped + 1)) ;;
                 q)  cancelled=true ;;
             esac
@@ -147,12 +258,14 @@ cmd_refresh() {
     fi
 
     if (( conflict_count > 0 )) && [[ "$cancelled" != "true" ]]; then
-        local entry
+        local entry rel src t_new dest
         for entry in "${CONFLICT_FILES[@]}"; do
             [[ "$cancelled" == "true" ]] && break
-            local rel="${entry%%|*}"
-            local src="${entry#*|}"
-            local dest="$repo_root/$_SRC_BASE/$rel"
+            rel="${entry%%|*}"
+            local rest="${entry#*|}"
+            src="${rest%|*}"
+            t_new="${rest##*|}"
+            dest="$repo_root/$_SRC_BASE/$rel"
 
             if [[ "$assume_yes" == "true" ]]; then
                 echo "  $(_yellow "~") $rel $(_dim "(conflict — skipped; run interactively to review)")"
@@ -164,21 +277,33 @@ cmd_refresh() {
             choice=$(_refresh_prompt_conflict "$rel" "$src" "$dest")
             case "$choice" in
                 u)  _refresh_copy "$src" "$dest"
+                    template_manifest_record "$rel" "$t_new"
                     echo "    $(_yellow "updated.")"
                     updated=$((updated + 1)) ;;
-                s)  echo "    $(_dim "skipped.")"
+                s)  # Don't update manifest on skip — keeps the conflict visible
+                    # next refresh, signalling "you still have an unreconciled
+                    # divergence". To silence permanently, add to
+                    # template_overrides.pinned in agent_sync.yaml.
+                    echo "    $(_dim "skipped.")"
                     skipped=$((skipped + 1)) ;;
                 q)  cancelled=true ;;
             esac
         done
     fi
 
+    # Heal manifest with everything that already matches the current template.
+    # This is what migrates a project from "no manifest" (v1 era) to a baselined
+    # one without forcing the user to re-accept a wall of files.
+    _refresh_heal_unchanged "$templates_dir" "$repo_root/$_SRC_BASE"
+
+    template_manifest_write
+
     echo ""
     if [[ "$cancelled" == "true" ]]; then
         echo "  $(_yellow "Cancelled.") Files already applied are kept."
     fi
-    echo "  $(_green "Done.") Added: $added · Updated: $updated · Skipped: $skipped · Unchanged: $unchanged_count"
-    if (( added + updated > 0 )); then
+    echo "  $(_green "Done.") Added: $added · Auto-updated: $auto_applied · Updated: $updated · Skipped: $skipped · Unchanged: $unchanged_count"
+    if (( added + auto_applied + updated > 0 )); then
         echo ""
         echo "  Next: $(_cyan "agentsync sync") to distribute the updates to enabled tools."
     fi
@@ -187,7 +312,6 @@ cmd_refresh() {
 
 # ── Path / scope helpers ─────────────────────────────────────────────────────
 
-# Locate lib/templates/ alongside the loaded helpers.
 _refresh_find_templates() {
     local system_dir
     system_dir=$(resolve_system_dir 2>/dev/null) || return 1
@@ -233,7 +357,6 @@ _refresh_resolve_scope() {
             echo "Valid: rules, skills, commands, agents (or subagents)" >&2
             return 1
         fi
-        # Dedupe.
         [[ " $out " == *" $tok "* ]] || out="${out:+$out }$tok"
     done
 
@@ -244,9 +367,42 @@ _refresh_resolve_scope() {
     echo "$out"
 }
 
+# Read template_overrides.{declined,pinned} from agent_sync.yaml. Both are
+# optional lists of rel paths (e.g. "rules/foo.md"). Read-only in v2 — users
+# edit the YAML directly to mark a template as ignored.
+_refresh_load_overrides() {
+    local repo_root="$1"
+    DECLINED_OVERRIDES=()
+    PINNED_OVERRIDES=()
+
+    local config="$repo_root/.ai/agent_sync.yaml"
+    [[ -f "$config" ]] || config="$repo_root/agent_sync.yaml"
+    [[ -f "$config" ]] || return 0
+
+    local item
+    while IFS= read -r item; do
+        [[ -z "$item" ]] && continue
+        DECLINED_OVERRIDES+=("$item")
+    done < <(parse_yaml_list "$config" "template_overrides.declined" 2>/dev/null || true)
+
+    while IFS= read -r item; do
+        [[ -z "$item" ]] && continue
+        PINNED_OVERRIDES+=("$item")
+    done < <(parse_yaml_list "$config" "template_overrides.pinned" 2>/dev/null || true)
+}
+
+_refresh_in_array() {
+    local needle="$1"; shift
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
 # ── Diff collection ──────────────────────────────────────────────────────────
 
-# Walk templates_dir and populate NEW_FILES / CONFLICT_FILES / UNCHANGED_FILES.
+# Walk templates_dir and populate the global *_FILES arrays.
 _refresh_collect_changes() {
     local templates_dir="$1"
     local repo_root="$2"
@@ -255,10 +411,9 @@ _refresh_collect_changes() {
     local user_base="$repo_root/$_SRC_BASE"
 
     if [[ "$include_agents_md" == "true" ]] && [[ -f "$templates_dir/AGENTS.md" ]]; then
-        _refresh_compare_file "$templates_dir/AGENTS.md" "$user_base/AGENTS.md" "AGENTS.md"
+        _refresh_classify "$templates_dir/AGENTS.md" "$user_base/AGENTS.md" "AGENTS.md"
     fi
 
-    # Flat directories (rules, commands, agents).
     local cat
     for cat in rules commands agents; do
         [[ " $categories " == *" $cat "* ]] || continue
@@ -268,34 +423,84 @@ _refresh_collect_changes() {
         for f in "$tdir"/*.md; do
             [[ -f "$f" ]] || continue
             rel="$cat/$(basename "$f")"
-            _refresh_compare_file "$f" "$user_base/$rel" "$rel"
+            _refresh_classify "$f" "$user_base/$rel" "$rel"
         done
     done
 
-    # Skills are nested (skill/SKILL.md plus optional references/*.md).
     if [[ " $categories " == *" skills "* ]] && [[ -d "$templates_dir/skills" ]]; then
         local f rel
         while IFS= read -r -d '' f; do
             rel="${f#"$templates_dir/"}"
-            _refresh_compare_file "$f" "$user_base/$rel" "$rel"
+            _refresh_classify "$f" "$user_base/$rel" "$rel"
         done < <(find "$templates_dir/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null | LC_ALL=C sort -z)
     fi
 }
 
-_refresh_compare_file() {
+# Three-way classification for one (template, user) pair.
+_refresh_classify() {
     local src="$1" dest="$2" rel="$3"
-    if [[ ! -f "$dest" ]]; then
-        NEW_FILES+=("$rel|$src")
-    elif cmp -s "$src" "$dest"; then
-        UNCHANGED_FILES+=("$rel")
-    else
-        CONFLICT_FILES+=("$rel|$src")
+
+    if _refresh_in_array "$rel" ${DECLINED_OVERRIDES[@]+"${DECLINED_OVERRIDES[@]}"}; then
+        return 0  # silent
     fi
+
+    local t_new
+    t_new=$(template_manifest_hash "$src") || return 0
+
+    local t_old
+    t_old=$(template_manifest_lookup "$rel" 2>/dev/null) || t_old=""
+
+    if [[ ! -f "$dest" ]]; then
+        if [[ -n "$t_old" ]]; then
+            DELETED_FILES+=("$rel|$src|$t_new")
+        else
+            NEW_FILES+=("$rel|$src|$t_new")
+        fi
+        return 0
+    fi
+
+    local u_cur
+    u_cur=$(template_manifest_hash "$dest") || return 0
+
+    if [[ "$u_cur" == "$t_new" ]]; then
+        UNCHANGED_FILES+=("$rel")
+        return 0
+    fi
+
+    if _refresh_in_array "$rel" ${PINNED_OVERRIDES[@]+"${PINNED_OVERRIDES[@]}"}; then
+        # Pinned: user wants their own version, ignore template changes.
+        return 0
+    fi
+
+    if [[ -z "$t_old" ]]; then
+        CONFLICT_FILES+=("$rel|$src|$t_new")
+        return 0
+    fi
+
+    if [[ "$u_cur" == "$t_old" ]]; then
+        AUTO_UPDATE_FILES+=("$rel|$src|$t_new")
+        return 0
+    fi
+
+    if [[ "$t_old" == "$t_new" ]]; then
+        # Template hasn't moved since last refresh; user just edited locally.
+        return 0
+    fi
+
+    CONFLICT_FILES+=("$rel|$src|$t_new")
+}
+
+# Heal the manifest with hashes for files that already match the current
+# template. Lets v1-era projects get a baseline on their first v2 refresh
+# without surfacing a wall of conflicts.
+_refresh_heal_unchanged() {
+    template_manifest_heal_from_match "$1" "$2"
 }
 
 # ── Output helpers ───────────────────────────────────────────────────────────
 
 _refresh_list_proposed() {
+    local include_deleted="$1"
     local entry
     if (( ${#NEW_FILES[@]} > 0 )); then
         echo "  $(_green "New:")"
@@ -304,10 +509,24 @@ _refresh_list_proposed() {
         done
         echo ""
     fi
+    if (( ${#AUTO_UPDATE_FILES[@]} > 0 )); then
+        echo "  $(_cyan "Auto-update:") $(_dim "(your version matches the previous template; safe to update)")"
+        for entry in "${AUTO_UPDATE_FILES[@]}"; do
+            echo "    $(_cyan "↑") ${entry%%|*}"
+        done
+        echo ""
+    fi
     if (( ${#CONFLICT_FILES[@]} > 0 )); then
-        echo "  $(_yellow "Conflicts:") $(_dim "(your version differs from the template)")"
+        echo "  $(_yellow "Conflicts:") $(_dim "(both your version and the template diverged from the recorded baseline)")"
         for entry in "${CONFLICT_FILES[@]}"; do
             echo "    $(_yellow "~") ${entry%%|*}"
+        done
+        echo ""
+    fi
+    if [[ "$include_deleted" == "true" ]] && (( ${#DELETED_FILES[@]} > 0 )); then
+        echo "  $(_dim "Previously declined:")"
+        for entry in "${DELETED_FILES[@]}"; do
+            echo "    $(_dim "?") ${entry%%|*}"
         done
         echo ""
     fi
@@ -320,8 +539,7 @@ _refresh_copy() {
 }
 
 # ── Interactive prompts ──────────────────────────────────────────────────────
-# All UI goes to stderr; only the chosen action ('a'/'s'/'u'/'q') reaches stdout
-# so callers can capture it via `$(...)`.
+# UI goes to stderr; only the chosen action ('a'/'s'/'u'/'q') reaches stdout.
 
 _refresh_prompt_new() {
     local rel="$1" src="$2"
@@ -363,6 +581,26 @@ _refresh_prompt_conflict() {
     done
 }
 
+_refresh_prompt_deleted() {
+    local rel="$1" src="$2"
+    while true; do
+        echo "" >&2
+        printf "  %s %s  %s\n" "$(_dim "? RESTORE:")" "$(_cyan "$rel")" "$(_dim "(previously declined)")" >&2
+        printf "    [%s]dd  [%s]kip  [v]iew  [q]uit  > " "$(_green "a")" "$(_yellow "s")" >&2
+        local reply=""
+        read -r reply </dev/tty || reply=""
+        reply=$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')
+        reply="${reply:-s}"
+        case "$reply" in
+            a|add)    echo "a"; return 0 ;;
+            s|skip)   echo "s"; return 0 ;;
+            v|view)   _refresh_show_new "$src" >&2 ;;
+            q|quit)   echo "q"; return 0 ;;
+            *)        echo "    $(_dim "(unknown choice — try a, s, v, q)")" >&2 ;;
+        esac
+    done
+}
+
 _refresh_show_new() {
     local src="$1"
     echo ""
@@ -381,7 +619,6 @@ _refresh_show_diff() {
     echo "  $(_dim "──── diff: yours → template ────")"
     echo ""
     if command -v diff >/dev/null 2>&1; then
-        # diff -u returns 1 when files differ — expected here, swallow it.
         diff -u --label "yours" --label "template" "$user" "$tmpl" || true
     else
         echo "  $(_red "(diff command not available)")"
@@ -401,9 +638,11 @@ _refresh_usage() {
 
   $(_green "DESCRIPTION")
     Compares each shipped template (rules, skills, commands, agents) against
-    your local .ai/src/. New templates are offered for adding; modified files
-    show a diff so you can update or skip per file. Files in .ai/src/ that
-    aren't part of the templates (your custom content) are left alone.
+    your local .ai/src/ using a three-way diff (template-old vs template-new
+    vs your current file) when a template manifest is present. Files you
+    haven't touched auto-update silently; only true conflicts require review.
+    Files in .ai/src/ that aren't part of the templates (your custom content)
+    are left alone.
 
   $(_green "OPTIONS")
     --only <csv>           Categories to consider: rules, skills, commands, agents
@@ -412,16 +651,27 @@ _refresh_usage() {
                            you don't have yet.
     --include-agents-md    Also offer updates to AGENTS.md (off by default —
                            almost always heavily customized).
+    --include-deleted      Re-offer files you previously declined (skipped) so
+                           they can be restored.
     --dry-run              Print the plan without writing anything.
-    -y, --yes              Add new files; skip conflicts (no prompts).
-                           Required in non-interactive contexts (CI, pipes).
+    -y, --yes              Apply auto-updates and add new files; skip conflicts
+                           (no prompts). Required in non-interactive contexts.
     -h, --help             Show this help.
+
+  $(_green "PERSISTENT OVERRIDES")
+    Edit .ai/agent_sync.yaml to silence specific templates forever:
+
+      template_overrides:
+        declined:        # always-skip; never offered
+          - rules/some-rule.md
+        pinned:          # ignore template updates; keep your version
+          - rules/my-version.md
 
   $(_green "EXAMPLES")
     agentsync refresh
     agentsync refresh --only rules,skills
     agentsync refresh --dry-run
-    agentsync refresh --yes               # CI-friendly: add new files only
-    agentsync refresh --include-agents-md # also review AGENTS.md updates
+    agentsync refresh --yes               # CI-friendly: auto-update + add new
+    agentsync refresh --include-deleted   # revisit previously declined files
 HELP
 }
