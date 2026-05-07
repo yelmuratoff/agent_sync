@@ -184,6 +184,7 @@ agentsync <command> [options]
 | `init [dir]`         |       | Create `.ai/` structure with starter templates                         |
 | `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`) |
 | `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)               |
+| `refresh`            |       | Pull new template files into existing `.ai/src/` (three-way diff)      |
 | `adopt <dest>`       |       | Promote a manual edit in a generated file back into `.ai/src/`         |
 | `doctor`             |       | Validate setup and surface drift / config warnings                     |
 | `generate [context]` | `gen` | Print AI prompt for project-specific config generation                 |
