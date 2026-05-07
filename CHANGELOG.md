@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0
+
+### Added
+
+- **`agentsync refresh` — pull template updates into an existing `.ai/src/`:** new command that walks the shipped templates (rules, skills, commands, agents) and compares each file against the project's `.ai/src/`. New templates are offered for adding; modified files show a unified diff so the user can update or skip per file. Files in `.ai/src/` that aren't part of the templates (the user's custom rules/skills) are left alone. Closes the long-standing gap where users had no path to inherit template additions (e.g. the `comments` rule/skill from 0.14.0) or rewrites (e.g. the positive-form rewrite from 0.13.0) without re-running `init` from scratch — `init` refuses on existing trees by design, and `import` only knows how to pull from external bundles, not from the locally installed templates. Behavior is safety-first throughout: default action on Enter is **skip** (never auto-accept a conflict), `--yes` adds new files but skips conflicts (CI-friendly; conflicts must be reviewed manually), non-TTY without `--yes` errors with a hint, and the default scope is auto-detected from existing subdirectories so refresh respects the categories the user originally chose at `init --content`. AGENTS.md is excluded by default (almost always heavily customized; opt-in via `--include-agents-md`). Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they have their own `customize` / `simplify` / `resolve` flow. Flags: `--only <csv>` to scope to specific categories (or opt into a category not yet in the tree), `--dry-run` to preview the plan, `--yes` for non-interactive use, `--include-agents-md` to surface AGENTS.md, `--help`. Documented in the `agentsync` skill template under "Pulling new template content into an existing project". 18 bats tests cover the full matrix (clean tree, conflict, --dry-run, --only, --include-agents-md, scope auto-detection, custom-files preservation, idempotency, non-TTY error, unknown values, `--only=value` syntax, nested skill references).
+
 ## 0.14.0
 
 ### Added
