@@ -101,6 +101,7 @@ print_usage() {
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
     echo "    $(_cyan "import")         Import config from GitHub, archive, or directory"
+    echo "    $(_cyan "refresh")        Pull new template files into existing .ai/src/"
     echo "    $(_cyan "update")         Update AgentSync to the latest version"
     echo "    $(_cyan "upgrade-config") Re-pin agentsync_version in agent_sync.yaml"
     echo "    $(_cyan "release")        Bump version, tag, and push (maintainer)"
@@ -135,6 +136,9 @@ print_usage() {
     echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
     echo "    agentsync export"
     echo "    agentsync import https://github.com/user/repo"
+    echo "    agentsync refresh"
+    echo "    agentsync refresh --only rules,skills"
+    echo "    agentsync refresh --dry-run"
     echo ""
     echo "  $(_green "DOCS")"
     _dim  "    https://github.com/yelmuratoff/agent"; echo ""
@@ -176,7 +180,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -189,6 +193,7 @@ main() {
         generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
         export)        _need yaml export;                              shift; cmd_export "$@" ;;
         import)        _need import;                                   shift; cmd_import "$@" ;;
+        refresh)       _need yaml export prompts refresh;               shift; cmd_refresh "$@" ;;
         enable)        _need prompts yaml yaml_edit tool_resolver edit_paths enable; shift; cmd_enable "$@" ;;
         disable)       _need yaml yaml_edit tool_resolver enable;      shift; cmd_disable "$@" ;;
         add)           _need add;                                      shift; cmd_add "$@" ;;

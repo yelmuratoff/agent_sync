@@ -175,6 +175,18 @@ For tools without separate rules/skills directories, use inline options:
 
 **When running `agentsync update`, `resolve`, or `simplify`, or when investigating stale-override / upstream-drift problems, read [`references/maintenance.md`](references/maintenance.md)** for full file format, command semantics, idempotency rules, comment-preservation gotcha, and recommended cadence.
 
+## Pulling new template content into an existing project
+
+`agentsync refresh` walks the shipped templates (rules, skills, commands, agents) and compares each file against your `.ai/src/`. Use it after upgrading the CLI to inherit newly added rules/skills without re-running `init`.
+
+- New files (in templates, missing locally) are offered for adding.
+- Modified files (present locally with a different content) show a unified diff so you can update or skip per file. Default action on Enter is **skip** — your local edits are not overwritten unless you explicitly accept.
+- Files in your `.ai/src/` that aren't part of the templates (your custom rules/skills) are left alone.
+- Scope by default = only categories that already have a subdirectory in your `.ai/src/`; pass `--only rules,skills,commands,agents` to opt into a category you don't have yet.
+- AGENTS.md is excluded by default (almost always heavily customized); `--include-agents-md` surfaces it.
+- `--dry-run` prints the plan without writing. `--yes` adds new files and skips conflicts non-interactively (CI-friendly; conflicts are never auto-accepted).
+- Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they're handled by `customize` / `simplify` / `resolve`.
+
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
