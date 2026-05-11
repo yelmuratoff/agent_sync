@@ -1,6 +1,6 @@
 ---
 name: humanizer
-description: Rewrite text so it reads like a real human wrote it, or generate long-form prose (blog posts, essays, articles, newsletters, social posts, op-eds, short stories) in that same plain, grounded voice. Strips common AI tells, including em dashes, semicolons, framing colons, inflated vocabulary (utilize, leverage, delve, tapestry, robust), contrastive negation, significance inflation, forced triads, sycophantic openers, and chatbot closers. Trigger whenever the user asks to humanize, de-AI, or de-slop text, even with casual phrasing like "make this less AI-sounding," "fix the AI vibe," or Russian equivalents (очеловечь, перепиши по-человечески, убери AI-стиль). Also trigger when the user asks Claude to write a prose deliverable they will publish or share, like an article, blog post, essay, newsletter, or short story. Do not use for code, casual chat replies, or technical documentation.
+description: Rewrite text so it reads like a real human wrote it, or generate long-form prose (blog posts, essays, articles, newsletters, social posts, op-eds, short stories) in that same plain, grounded voice. Strips common AI tells, including em dashes, semicolons, framing colons, inflated vocabulary (utilize, leverage, delve, tapestry, robust), contrastive negation, significance inflation, forced triads, sycophantic openers, and chatbot closers. Trigger whenever the user asks to humanize, de-AI, or de-slop text, even with casual phrasing like "make this less AI-sounding," "fix the AI vibe," or equivalent phrasing in any language. Also trigger when the user asks Claude to write a prose deliverable they will publish or share, like an article, blog post, essay, newsletter, or short story. Do not use for code, casual chat replies, or technical documentation.
 ---
 
 # Humanizer
@@ -42,19 +42,7 @@ Use short, common words. Replace inflated vocabulary with plain alternatives. So
 - "pivotal" / "crucial" / "paramount" get cut, or replaced once with "important" if absolutely needed
   Cut or rewrite around these AI-favorite words entirely: delve, tapestry, landscape (when used abstractly), realm, interplay, intricacies, furthermore, moreover, consequently, additionally, underscore, showcase, testament, enduring, vibrant, seamless, robust, groundbreaking, nestled, breathtaking, renowned, synergy, holistic, multifaceted, garner, foster, harness, elevate.
 
-For Russian text, the same trap shows up with different words. The most reliable AI tells in Russian prose:
-
-- данный → этот
-- является → это, or just cut and restructure the sentence
-- осуществить / осуществлять → сделать, провести, выполнить
-- в рамках → в, по, для
-- представляет собой → это
-- таким образом → значит, то есть, or cut
-- в свою очередь → cut, almost always filler
-- следует отметить → cut and just state the thing
-- безусловно → cut, hollow intensifier
-- ключевой / важнейший → главный, or cut
-  For any other language, apply the principle: spot the inflated, abstract, or fancy-sounding word and swap it for its plain everyday equivalent in that language.
+The same trap shows up in every language with different vocabulary. The principle is universal: when a word sounds inflated, abstract, official, or fancy compared to how a person would actually say the thing, swap it for the plain everyday equivalent in whatever language the piece is in. Trust your ear over any specific list.
 
 ## Rhythm
 
@@ -119,3 +107,7 @@ Only then return the result.
 Return only the rewritten or generated text, in the same language as the input or the user's request. No preamble, no explanation, no closing remark.
 
 Default to delivering the text inline in the chat reply, not as a separate file. The user is usually tuning the voice and needs to see the result immediately, react to it, and iterate. Only save to a markdown file if the piece is genuinely long (roughly 1500+ words, like a full essay or a short story) or if the user explicitly asks for a file.
+
+## Reference
+
+`references/wikipedia_signs_of_ai_writing.md` is a condensed field guide of AI-writing tells (significance inflation, superficial-analysis participles, AI vocabulary, copula substitution, negative parallelisms, false ranges, inline-header lists, knowledge-cutoff disclaimers, and so on). It expands on the patterns named above with trigger-word lists and short examples. Consult it when a draft has a pattern that does not match anything in this file, or when the user asks why a specific phrase reads as AI.
