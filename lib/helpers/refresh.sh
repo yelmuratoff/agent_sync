@@ -18,9 +18,16 @@
 #   * user untouched (current == manifest_old)
 #     and template moved (new != manifest_old)   → AUTO_UPDATE (silent apply)
 #   * template static (new == manifest_old)
-#     but user edited locally                    → silent (their custom version)
+#     but user edited locally                    → silent (their custom version;
+#                                                  --review surfaces it)
 #   * both diverged from manifest_old            → CONFLICT (diff + prompt)
 #   * no manifest entry at all + user differs    → CONFLICT (no baseline → manual)
+#
+# When the user picks `[s]kip` on a CONFLICT, we record manifest_new for that
+# path. On the next refresh the file lands in the "template static" branch and
+# stays silent until a newer template ships, at which point it surfaces as a
+# fresh CONFLICT. `agentsync refresh --review` forces every silent divergence
+# to surface so the user can revisit earlier skip decisions.
 #
 # When the manifest is missing (project predates v2 of refresh), the logic
 # degrades to two-way diff and every divergence is treated as a CONFLICT.
@@ -40,6 +47,16 @@ AUTO_UPDATE_FILES=()
 DELETED_FILES=()
 UNCHANGED_FILES=()
 
+# Count of files where the user's content differs from the current template
+# but the manifest already records the current template hash — typically a
+# prior `[s]kip` on a conflict, occasionally a local edit since the last
+# refresh. Used to surface a discoverable hint about --review on no-op runs.
+SILENTLY_KEPT_COUNT=0
+
+# When true, _refresh_classify treats SILENTLY_KEPT entries as CONFLICTs so
+# the user can revisit them. Set from --review.
+REFRESH_REVIEW_MODE=false
+
 # Loaded from agent_sync.yaml: template_overrides.{declined,pinned}
 DECLINED_OVERRIDES=()
 PINNED_OVERRIDES=()
@@ -50,6 +67,7 @@ cmd_refresh() {
     local assume_yes=false
     local include_agents_md=false
     local include_deleted=false
+    local review=false
     local only_flag=""
 
     while [[ $# -gt 0 ]]; do
@@ -58,6 +76,7 @@ cmd_refresh() {
             --yes|-y)             assume_yes=true; shift ;;
             --include-agents-md)  include_agents_md=true; shift ;;
             --include-deleted)    include_deleted=true; shift ;;
+            --review)             review=true; shift ;;
             --only)
                 [[ $# -lt 2 ]] && { echo "$(_red "Error"): --only requires a value" >&2; return 1; }
                 only_flag="$2"; shift 2 ;;
@@ -108,6 +127,8 @@ cmd_refresh() {
     AUTO_UPDATE_FILES=()
     DELETED_FILES=()
     UNCHANGED_FILES=()
+    SILENTLY_KEPT_COUNT=0
+    REFRESH_REVIEW_MODE="$review"
     _refresh_collect_changes "$templates_dir" "$repo_root" "$categories" "$include_agents_md"
 
     local new_count=${#NEW_FILES[@]}
@@ -140,6 +161,9 @@ cmd_refresh() {
         if (( deleted_count > 0 )); then
             echo "  $(_dim "$deleted_count file(s) previously declined; pass --include-deleted to revisit.")"
         fi
+        if (( SILENTLY_KEPT_COUNT > 0 )) && [[ "$review" != "true" ]]; then
+            echo "  $(_dim "$SILENTLY_KEPT_COUNT file(s) differ from the shipped template (local edits or earlier skips); pass --review to revisit.")"
+        fi
         # Heal manifest with current matches even if no other change is needed.
         _refresh_heal_unchanged "$templates_dir" "$repo_root/$_SRC_BASE"
         if [[ "$dry_run" != "true" ]]; then
@@ -155,6 +179,9 @@ cmd_refresh() {
     (( conflict_count > 0 )) && echo "    $(_yellow "~") $conflict_count conflict(s) — your version differs from the template"
     [[ "$has_visible_deleted" == "true" ]] && \
         echo "    $(_dim "?") $deleted_count previously declined — pass --include-deleted to revisit"
+    if (( SILENTLY_KEPT_COUNT > 0 )) && [[ "$review" != "true" ]]; then
+        echo "    $(_dim "·") $SILENTLY_KEPT_COUNT silently kept (local edits or earlier skips) — pass --review to revisit"
+    fi
     (( unchanged_count > 0 )) && echo "    $(_dim "·") $unchanged_count unchanged"
     echo ""
 
@@ -280,11 +307,14 @@ cmd_refresh() {
                     template_manifest_record "$rel" "$t_new"
                     echo "    $(_yellow "updated.")"
                     updated=$((updated + 1)) ;;
-                s)  # Don't update manifest on skip — keeps the conflict visible
-                    # next refresh, signalling "you still have an unreconciled
-                    # divergence". To silence permanently, add to
-                    # template_overrides.pinned in agent_sync.yaml.
-                    echo "    $(_dim "skipped.")"
+                s)  # Record manifest at t_new so the skip is remembered: the
+                    # divergence stays silent on future refreshes until a
+                    # newer template ships (at which point we resurface it).
+                    # `agentsync refresh --review` lets the user revisit
+                    # explicitly. For an unconditional pin, the user can add
+                    # the path to template_overrides.pinned in agent_sync.yaml.
+                    template_manifest_record "$rel" "$t_new"
+                    echo "    $(_dim "skipped (remembered — agentsync refresh --review to revisit).")"
                     skipped=$((skipped + 1)) ;;
                 q)  cancelled=true ;;
             esac
@@ -483,7 +513,18 @@ _refresh_classify() {
     fi
 
     if [[ "$t_old" == "$t_new" ]]; then
-        # Template hasn't moved since last refresh; user just edited locally.
+        # Template hasn't moved since the manifest was recorded. Two ways we
+        # land here:
+        #   1. User edited locally and no new template has shipped since.
+        #   2. User previously hit `[s]kip` on a conflict — we recorded the
+        #      template hash at that time, so on subsequent refreshes the
+        #      divergence stays silent until a newer template ships.
+        # Default: silent. --review forces it to surface so users can revisit
+        # their earlier decision (or audit local edits against the templates).
+        SILENTLY_KEPT_COUNT=$((SILENTLY_KEPT_COUNT + 1))
+        if [[ "$REFRESH_REVIEW_MODE" == "true" ]]; then
+            CONFLICT_FILES+=("$rel|$src|$t_new")
+        fi
         return 0
     fi
 
@@ -651,15 +692,27 @@ _refresh_usage() {
                            you don't have yet.
     --include-agents-md    Also offer updates to AGENTS.md (off by default —
                            almost always heavily customized).
-    --include-deleted      Re-offer files you previously declined (skipped) so
-                           they can be restored.
+    --include-deleted      Re-offer files you previously declined and removed
+                           from disk so they can be restored.
+    --review               Resurface every local divergence from the shipped
+                           templates, including conflicts you previously
+                           [s]kipped. Use this to revisit earlier decisions
+                           or audit local edits.
     --dry-run              Print the plan without writing anything.
     -y, --yes              Apply auto-updates and add new files; skip conflicts
                            (no prompts). Required in non-interactive contexts.
     -h, --help             Show this help.
 
+  $(_green "REMEMBERED SKIPS")
+    Picking $(_yellow "[s]kip") on a conflict records the current template hash in
+    .ai/.template-manifest. The divergence stays silent on future refreshes
+    until a newer template ships (at which point it resurfaces automatically
+    so you can review the new change). Pass $(_cyan "--review") at any time to
+    revisit your skips explicitly.
+
   $(_green "PERSISTENT OVERRIDES")
-    Edit .ai/agent_sync.yaml to silence specific templates forever:
+    Edit .ai/agent_sync.yaml to silence specific templates forever (this is
+    stronger than $(_yellow "[s]kip") — even new template versions stay hidden):
 
       template_overrides:
         declined:        # always-skip; never offered
@@ -673,5 +726,6 @@ _refresh_usage() {
     agentsync refresh --dry-run
     agentsync refresh --yes               # CI-friendly: auto-update + add new
     agentsync refresh --include-deleted   # revisit previously declined files
+    agentsync refresh --review            # revisit conflicts you skipped
 HELP
 }

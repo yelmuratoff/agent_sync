@@ -47,6 +47,8 @@ _drop_manifest_prefix() {
     [[ "$output" == *"--include-agents-md"* ]]
     [[ "$output" == *"--include-deleted"* ]]
     [[ "$output" == *"--dry-run"* ]]
+    [[ "$output" == *"--review"* ]]
+    [[ "$output" == *"REMEMBERED SKIPS"* ]]
     [[ "$output" == *"PERSISTENT OVERRIDES"* ]]
 }
 
@@ -323,4 +325,76 @@ EOF
     [ "$status" -eq 0 ]
     [ -f .ai/.template-manifest ]
     grep -q $'^rules/core.md\t' .ai/.template-manifest
+}
+
+# ── remembered skips / --review ──────────────────────────────────────────────
+# A "previously skipped conflict" is recorded by writing the current template
+# hash into the manifest for the user's diverged file. The manifest entry that
+# init creates already records the current template hash — so editing a user
+# file is enough to reproduce the post-skip state.
+
+@test "refresh: silently-kept divergence does not surface without --review" {
+    echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    # Up-to-date branch fires; no conflict listed for core.md.
+    [[ "$output" == *"Already up to date"* ]]
+    [[ "$output" != *"~ rules/core.md"* ]]
+    # User's edit is preserved.
+    grep -q "USER LOCAL EDIT" .ai/src/rules/core.md
+}
+
+@test "refresh: --review surfaces silently-kept divergence in dry-run" {
+    echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
+    run run_agentsync refresh --review --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"rules/core.md"* ]]
+    [[ "$output" == *"onflict"* ]]
+    [[ "$output" == *"Dry run"* ]]
+    # Dry run must not modify the file.
+    grep -q "USER LOCAL EDIT" .ai/src/rules/core.md
+}
+
+@test "refresh: --review with --yes surfaces but preserves user's edit" {
+    echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
+    run run_agentsync refresh --review --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"rules/core.md"* ]]
+    # --yes never overwrites conflicts; user's edit is preserved.
+    grep -q "USER LOCAL EDIT" .ai/src/rules/core.md
+}
+
+@test "refresh: up-to-date summary hints at --review when files differ silently" {
+    # Absorb any NEW files init left behind so we land on the up-to-date branch.
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Already up to date"* ]]
+    [[ "$output" == *"--review"* ]]
+}
+
+@test "refresh: up-to-date summary omits the --review hint when nothing differs" {
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Already up to date"* ]]
+    [[ "$output" != *"pass --review"* ]]
+}
+
+@test "refresh: pinned override still wins over --review" {
+    cat >> .ai/agent_sync.yaml <<'EOF'
+
+template_overrides:
+  pinned:
+    - rules/core.md
+EOF
+    echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
+    run run_agentsync refresh --review --yes
+    [ "$status" -eq 0 ]
+    # Pinned files don't surface even under --review.
+    [[ "$output" != *"~ rules/core.md"* ]]
+    grep -q "USER LOCAL EDIT" .ai/src/rules/core.md
 }
