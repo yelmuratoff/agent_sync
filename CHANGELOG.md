@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.0
+
+### Changed
+
+- **`agentsync refresh` — `[s]kip` on a conflict is now remembered:** 0.16.0 left `[s]kip` on a CONFLICT deliberately unrecorded, so every subsequent refresh re-prompted for the same file until the user resolved or pinned it. In practice, that meant a tree with a handful of intentionally diverged rules surfaced the same wall of conflicts on every refresh — friction that pushed users toward editing `template_overrides.pinned` by hand to silence the noise. `[s]kip` now records the current template hash in `.ai/.template-manifest`, so the divergence stays silent on future refreshes until a newer template ships (at which point the conflict resurfaces automatically against the new content — you never lose visibility of a real update). The post-skip confirmation reads `skipped (remembered — agentsync refresh --review to revisit)` so the new behavior is discoverable from the prompt itself. `template_overrides.pinned` in `agent_sync.yaml` remains the stronger, unconditional pin (never resurfaces, even when the template moves) — `[s]kip` is now the lightweight "remember until something changes" choice that handles the common case.
+
+### Added
+
+- **`agentsync refresh --review` — revisit remembered skips and local edits:** new flag that resurfaces every local divergence from the shipped templates, including conflicts you previously `[s]kipped` and files you've edited locally since the last refresh. Use it to revisit earlier decisions ("did I really mean to skip that?"), audit local edits against the upstream templates, or sweep through divergences in batch. `template_overrides.pinned` still wins — pinned files stay silent even under `--review`, so the YAML override remains the definitive way to opt out forever. Pairs with the new "skip is remembered" behavior: on a normal refresh, silently-kept files don't clutter the summary; on a `--review` refresh, they're listed as conflicts with the same `[u]pdate / [s]kip / [v]iew / [q]uit` prompts. Under `--yes`, surfaced conflicts are reported but never overwritten — keeps the existing CI-safety guarantee that `--yes` never makes a destructive choice on a divergence.
+- **`agentsync refresh` summary hint when files differ silently:** the summary block (and the `Already up to date!` no-op message) now appends `· N silently kept (local edits or earlier skips) — pass --review to revisit` whenever the classifier finds files that match the manifest baseline but diverge from the template. Makes the new flag discoverable without forcing users to read `--help`, and quietly nudges users who have accumulated local edits to do an audit pass.
+
 ## 0.17.0
 
 ### Added
