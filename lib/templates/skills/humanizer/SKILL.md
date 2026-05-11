@@ -56,7 +56,7 @@ React to the material when the tone allows it. A short aside, an honest note of 
 
 When any of the following show up in a draft, rewrite. State the actual point plainly.
 
-Contrastive negation ("It's not X, it's Y," "Not just X, but Y," "Not X, not Y, but Z") becomes one positive sentence that says the point directly.
+Contrastive negation ("Not X, but Y," "It's not X, it's Y," "Not just X, but Y," "Not X, not Y, but Z") becomes one positive sentence that says the point directly. The same shape works in any language — the giveaway is the negated half existing only as a setup for the affirmative half. Write the affirmative half on its own.
 
 Faux reframes ("more than just X," "goes beyond Y," "represents more than just") become a plain statement of what the thing actually is.
 

@@ -136,13 +136,15 @@ LLMs avoid plain "is/are/has" and reach for fancier verbs of being. One 2023 stu
 
 ## Negative parallelisms
 
-Performative "not X, but Y" constructions, used to sound balanced or insightful.
+Performative "not X, but Y" constructions, used to sound balanced or insightful. The negated half exists only to set up the affirmative half, which adds nothing the affirmative half could not say on its own.
 
-**Watch for:** Not only X but Y, It's not just X, it's Y, Not X, not Y, just Z, X is not Y, but Z, no X, no Y, just Z.
+**Watch for:** Not X, but Y, Not only X but Y, It's not X, it's Y, It's not just X, it's Y, Not X, not Y, just Z, X is not Y, but Z, no X, no Y, just Z, and any extended enumeration of negations leading to a single affirmation (neither A, nor B, nor C — but D).
 
-**Example:** "The self-portrait is not a mirror but a portal: not a representation of self, but a mechanism for its reinvention."
+**Example:** "The self-portrait is not a mirror but a portal: not a representation of self, but a mechanism for its reinvention." Or the shorter, blanker form: "It's not a phone. It's a lifestyle."
 
-**Fix:** One positive sentence stating the actual point.
+**Shape to recognise across languages:** any sentence that spends a clause negating one thing in order to assert another, especially when the negated thing is a strawman no real reader would have proposed. The pattern is the *shape*, not the specific connectors.
+
+**Fix:** One positive sentence stating the actual point. If the contrast is genuinely informative — a real, common misconception that needs correcting — keep it; if it is rhetorical scaffolding, cut it.
 
 ## Performative rhetorical question pairs
 
