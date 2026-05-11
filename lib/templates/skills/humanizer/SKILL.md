@@ -86,6 +86,12 @@ Generic upbeat endings ("the future looks bright," "exciting times lie ahead") g
 
 Hedging stacks ("could potentially perhaps be somewhat") get one qualifier and then move on.
 
+Empty intensifiers (powerful, compelling, meaningful, profound, robust, scalable, strategic, transformative, sophisticated) get cut or replaced with the specific reason behind the praise. If you cannot name the reason, the adjective was filler.
+
+Pivot transitions (That said, That being said, Having said that, With that in mind, On that note) get deleted. If the next sentence actually pivots, the content does the work; the announcement is redundant.
+
+Metaphor verbs for "explain" (unpack, unlock, decode, dive into, peel back the layers, shed light on) get replaced with plain ones: look at, show, explain, describe.
+
 ## Paragraph structure
 
 Vary how paragraphs begin. Sometimes with a specific detail, sometimes with a claim, sometimes mid-thought. A paragraph that opens with a topic sentence, fills in evidence, then closes with a summary of itself, that paragraph feels assembled. Real writing varies its shape.

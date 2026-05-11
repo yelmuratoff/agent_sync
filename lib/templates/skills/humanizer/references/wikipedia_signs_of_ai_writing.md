@@ -88,6 +88,16 @@ Press-release language that creeps in even when no promotional interest exists.
 
 **Fix:** Cut the adjectives. State what is actually there.
 
+## Empty intensifiers and corporate fluency
+
+Adjectives and adverbs that gesture at importance, depth, or quality without committing to a specific reason. The Promotional section covers the tourist-brochure register (vibrant, breathtaking, nestled). This covers the boardroom-deck register: words that sound serious and competent and mean almost nothing.
+
+**Watch for:** powerful, compelling, meaningful, profound, deeply, profoundly, robust, scalable, comprehensive, strategic, dynamic, sophisticated, optimal, holistic, transformative, impactful, leading, premier, advanced, intelligent, mission-critical, best-in-class, world-class, next-generation, end-to-end, value-driven, results-oriented.
+
+**Example:** "A powerful, sophisticated approach that delivers compelling, transformative insights across our comprehensive strategic framework."
+
+**Fix:** For every adjective, ask "in what concrete way?" If you can name the way, replace the adjective with the way ("an approach that cuts the loop time from three hours to twenty minutes"). If you cannot, cut the adjective.
+
 ## Vague authority / weasel attribution
 
 Attributing claims to unnamed groups to lend credibility.
@@ -120,7 +130,7 @@ Every language has its own cluster of these — the words that sound a register 
 
 Sentence-modifying adverbs used to sound thoughtful without adding meaning. Real writers use them rarely and on purpose. LLMs sprinkle them as fluency glue.
 
-**Watch for:** ultimately, fundamentally, essentially, critically, importantly, notably, significantly, arguably, undoubtedly, indeed, crucially, primarily, largely, broadly speaking, in essence, at its core.
+**Watch for:** ultimately, fundamentally, essentially, critically, importantly, notably, significantly, arguably, undoubtedly, indeed, crucially, primarily, largely, broadly speaking, in essence, at its core, interestingly, remarkably, curiously, surprisingly, what's striking is, perhaps most importantly.
 
 **Fix:** Cut the adverb. If the sentence still reads, it was filler. If the sentence breaks, the adverb was hiding a missing argument — write the argument instead.
 
@@ -264,6 +274,26 @@ Older-model habit of inserting safety-flavored disclaimers about variability or 
 
 **Fix:** Just state the thing. If a caveat is real, say it directly without the meta-framing.
 
+## Pivot transitions
+
+Sentence-opening phrases that announce a turn without doing any of the work of turning. The AI's favourite glue between paragraphs and ideas.
+
+**Watch for:** That said, That being said, Having said that, With that being said, On that note, With that in mind, To that end, In light of this, By the same token, On the flip side, On the other hand (when there is no real other hand), All that said.
+
+**Example:** "AI tools are useful for first drafts. That being said, they require careful editing. Having said that, the productivity gains are real."
+
+**Fix:** Delete the transition phrase. If the next sentence really does pivot, the pivot is in the content. Announcing it adds nothing. If after deletion the paragraph stops flowing, the issue is that the two ideas were not actually connected, and the cure is a rewrite rather than a transition word.
+
+## Metaphor verbs for "explain"
+
+Pet "explanation" verbs that AI reaches for in place of plain *examine, show, describe, look at,* or *explain*. Each carries a faintly performed sense of effort or discovery.
+
+**Watch for:** unpack, unlock, decode, dive into, dive deeper, take a closer look at, peel back the layers, explore (in the metaphorical sense), unravel, uncover, shed light on, distill, navigate (figurative).
+
+**Example:** "Let's unpack the key insights and unlock the deeper meaning behind the data, peeling back the layers to shed light on what really matters."
+
+**Fix:** "Look at," "show," "explain," "describe." Plain verbs do the job. Reserve the metaphor verbs for when there is a real metaphor in play (peeling back actual layers of paint, unlocking an actual locked thing).
+
 ## Hedging stacks
 
 Piling qualifiers on top of qualifiers so a claim survives any possible objection. The result reads as evasive and weightless.
@@ -284,7 +314,7 @@ A paragraph of sentences all roughly the same length and shape. No short jabs, n
 
 The closing sentence that gestures vaguely at a bright future, expanding horizons, or exciting possibilities, without naming anything concrete.
 
-**Watch for:** the future looks bright, exciting times lie ahead, the possibilities are endless, only time will tell, one thing is certain, as we move forward, the journey continues, the best is yet to come.
+**Watch for:** the future looks bright, exciting times lie ahead, the possibilities are endless, only time will tell, one thing is certain, as we move forward, the journey continues, the best is yet to come, at the end of the day, when all is said and done, in the end.
 
 **Fix:** End on a concrete detail or a specific open question. If you cannot find one, the piece is already done — just stop.
 
@@ -295,6 +325,24 @@ Closing a section or piece by restating what the reader just read.
 **Watch for:** In summary, In conclusion, Overall, To summarize, As discussed above.
 
 **Fix:** Delete. End on the last real sentence.
+
+## Fiction-AI tropes
+
+A separate cluster of tells that appears when LLMs generate short stories, scene-style writing, or narrative passages inside non-fiction. Worth recognising as a family because they cluster: where you find one, the others tend to follow.
+
+**Generated character names.** Slightly fantasy-flavoured, often alliterative or with unusual but pronounceable consonants. Recurrent defaults include *Elara Voss, Kaelan Thorne, Lyra Whisperwind, Seraphina, Aric, Maren*. The names sound made-up because they were — not from any real cultural pool, just plausible-sounding phonemes.
+
+**Foreshadowing winks.** "Little did she know..." / "She didn't know it yet, but..." / "If she had known what was coming..." The narrator stepping in to telegraph the future.
+
+**Sensory clichés as scene-setting.** *The whisper of the leaves. Dancing shadows. The air was thick with possibility. Her eyes held untold stories. A silence that spoke volumes. The world seemed to hold its breath.* Each is a placeholder for an observation the model did not actually make.
+
+**Over-figurative "as if" and "as though".** Almost every action or description carrying a second figurative layer: "She paused, as if weighing centuries of meaning." Used once or twice it works; used four times a paragraph it becomes the dominant prose smell.
+
+**Universalising closers.** Endings that pull back from the specific story to a vague universal truth: "And in that moment, she understood." / "Some stories don't end. They just become someone else's beginning." / "Perhaps that was the lesson all along."
+
+**The "name + sensory + emotion" sentence rhythm.** "Maren felt the cold settle into her bones, a familiar ache that whispered of long winters past." Repeated as the default sentence shape until every paragraph hums the same melody.
+
+**Fix:** Replace invented names with concrete ones that read like an actual person's name in the world of the story. Replace sensory clichés with one specific observed detail (not "the whisper of leaves" but "the leaves made a dry rattle, like paper being crumpled at a distance"). Cut "little did she know" entirely. Let events unfold without narrator commentary. Vary sentence shape paragraph to paragraph. End on the last concrete image, not a moral.
 
 ## Prompt refusal residue
 
@@ -310,12 +358,14 @@ When humanizing, scan the draft for these in order. Each one usually requires a 
 
 1. Em dashes, semicolons, framing colons, mid-paragraph bold.
 2. First sentence: context-establishing opener, cliché-metaphor opener, definition-style lead, or pseudo-inclusive "whether X or Y." If yes, rewrite the opening before anything else.
-3. AI-vocabulary cluster (delve, tapestry, landscape, robust, vibrant, etc.) and abstract-adverb filler (ultimately, fundamentally, essentially).
-4. Significance inflation and participial tags.
-5. Negative parallelisms, forced triads, false ranges, performative rhetorical question pairs.
-6. Promotional adjectives and copula substitution (serves as, stands as, boasts).
-7. Hedging stacks and "it's important to note."
-8. Chatbot conversational scaffolding ("Let's explore", "But here's the thing"), sycophantic openers, chatbot closers, section summaries, generic upbeat endings.
-9. Knowledge-cutoff disclaimers.
-10. Inline-header vertical lists, unnecessary mini-tables, emoji decoration, title case headings.
-11. Final pass: read the paragraphs aloud in your head and listen for monotone rhythm. Break it with a short sentence or a long one.
+3. AI-vocabulary cluster (delve, tapestry, landscape, robust, vibrant), empty intensifiers (powerful, compelling, transformative), and abstract-adverb filler (ultimately, fundamentally, interestingly).
+4. Metaphor verbs for "explain" (unpack, unlock, dive into) — replace with plain ones.
+5. Significance inflation and participial tags.
+6. Negative parallelisms ("Not X, but Y" and family), forced triads, false ranges, performative rhetorical question pairs.
+7. Promotional adjectives and copula substitution (serves as, stands as, boasts).
+8. Hedging stacks, "it's important to note," and pivot transitions ("That said," "Having said that").
+9. Chatbot conversational scaffolding ("Let's explore," "But here's the thing"), sycophantic openers, chatbot closers, section summaries, generic upbeat endings.
+10. Knowledge-cutoff disclaimers.
+11. Inline-header vertical lists, unnecessary mini-tables, emoji decoration, title case headings.
+12. For fiction: invented fantasy names, "little did she know," sensory-cliché scene-setting, over-figurative "as if," universalising closers.
+13. Final pass: read the paragraphs aloud in your head and listen for monotone rhythm. Break it with a short sentence or a long one.
