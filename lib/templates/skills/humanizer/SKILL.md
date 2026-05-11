@@ -120,9 +120,9 @@ Default to delivering the text inline in the chat reply, not as a separate file.
 
 ## Bundled script: typographic cleanup
 
-`scripts/strip-ai-chars` is a small deterministic utility that handles the character-level half of the work without any LLM rewriting. It strips invisible, zero-width, and bidi-formatting characters that LLMs sometimes embed (including the tag-character range used for steganographic watermarks), normalises em dashes, en dashes, curly quotes, guillemets, and ellipses to ASCII, converts non-breaking spaces to regular spaces, and trims trailing whitespace. It does not touch wording, sentence structure, or meaning.
+`scripts/strip-ai-chars` is a small deterministic utility that handles the character-level half of the work without any LLM rewriting. It does not touch wording, sentence structure, or meaning.
 
-It reads stdin and writes stdout. Invoke it via the Bash tool, resolving the path relative to this skill bundle:
+Reads stdin, writes stdout. Invoke it via the Bash tool, resolving the path relative to this skill bundle:
 
     bash scripts/strip-ai-chars < input.txt
     printf '%s' "$text" | bash scripts/strip-ai-chars
@@ -131,7 +131,7 @@ It depends only on `perl`, which is present on macOS, every Linux distribution, 
 
 When to use it:
 
-- The user asks for character-level cleanup only — stripping watermarks, fixing curly quotes, normalising dashes — without prose changes. Run the script, return its output, do nothing else.
-- As a fast pre-pass before semantic rewriting. Pipe the input through the script first so invisible watermarks and fancy punctuation are gone, then apply the prose rewrite on the cleaned text.
+- The user asks for character-level cleanup only — stripping watermarks, fixing curly quotes, normalising dashes, removing decorative symbols — without prose changes. Run the script, return its output, do nothing else.
+- As a fast pre-pass before semantic rewriting. Pipe the input through the script first so invisible watermarks, fancy punctuation, and decorative symbols are gone, then apply the prose rewrite on the cleaned text.
 
 If the user's intent is unclear (typographic only vs. full rewrite), ask once before running. The two modes serve different needs and are not interchangeable.
