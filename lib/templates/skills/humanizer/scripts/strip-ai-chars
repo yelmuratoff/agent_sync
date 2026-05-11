@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# strip-ai-chars: deterministic typographic cleanup.
+#
+# Strips invisible / zero-width / bidi-formatting characters that LLMs
+# sometimes embed (including the tag-character range used for steganographic
+# watermarks), normalises curly quotes / em-dashes / ellipses to ASCII,
+# converts non-breaking spaces, and trims trailing whitespace. Does not
+# alter wording, sentence structure, or meaning.
+#
+# Reads stdin, writes stdout.
+#
+#   bash strip-ai-chars < input.txt > clean.txt
+#   pbpaste | bash strip-ai-chars | pbcopy
+#
+# Requires perl, which ships with macOS, every Linux distribution, and
+# Git Bash on Windows.
+#
+# Ported and consolidated from https://github.com/Nordth/humanize-ai-lib (MIT).
+
+set -euo pipefail
+
+exec perl -CSDA -pe '
+  s/[\x{0000}-\x{0008}\x{000E}-\x{001B}\x{007F}-\x{009F}\x{00AD}\x{0600}-\x{0604}\x{06DD}\x{070F}\x{180E}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{206F}\x{FEFF}\x{FFF9}-\x{FFFB}\x{110BD}\x{1D173}-\x{1D17A}\x{E0001}\x{E0020}-\x{E007F}]//g;
+  s/\x{00A0}/ /g;
+  s/[\x{2013}\x{2014}\x{2015}]/-/g;
+  s/[\x{201C}\x{201D}\x{201E}\x{00AB}\x{00BB}]/"/g;
+  s/[\x{2018}\x{2019}\x{02BC}]/\x27/g;
+  s/\x{2026}/.../g;
+  s/[ \t\x0B\f]+$//;
+'
