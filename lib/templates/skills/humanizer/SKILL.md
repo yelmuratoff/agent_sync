@@ -120,18 +120,8 @@ Default to delivering the text inline in the chat reply, not as a separate file.
 
 ## Bundled script: typographic cleanup
 
-`scripts/strip-ai-chars` is a small deterministic utility that handles the character-level half of the work without any LLM rewriting. It does not touch wording, sentence structure, or meaning.
+`scripts/strip-ai-chars.sh` is a deterministic stdin-to-stdout filter. It strips invisible / zero-width / bidi-formatting / tag-character watermarks, removes decorative symbols not on any keyboard (math alphanumerics, arrows, math operators, box drawing, enclosed alphanumerics, dingbat bullets), normalises curly quotes / dashes / ellipsis / NBSP to ASCII, and trims trailing whitespace. Preserves every script's letters, emoji, and common symbols (✓ ✗ ★ ❤ ™ № etc.). Does not change wording. Requires `perl` (ships on macOS, Linux, Git Bash on Windows).
 
-Reads stdin, writes stdout. Invoke it via the Bash tool, resolving the path relative to this skill bundle:
+    bash scripts/strip-ai-chars.sh < input.txt
 
-    bash scripts/strip-ai-chars < input.txt
-    printf '%s' "$text" | bash scripts/strip-ai-chars
-
-It depends only on `perl`, which is present on macOS, every Linux distribution, and Git Bash on Windows.
-
-When to use it:
-
-- The user asks for character-level cleanup only — stripping watermarks, fixing curly quotes, normalising dashes, removing decorative symbols — without prose changes. Run the script, return its output, do nothing else.
-- As a fast pre-pass before semantic rewriting. Pipe the input through the script first so invisible watermarks, fancy punctuation, and decorative symbols are gone, then apply the prose rewrite on the cleaned text.
-
-If the user's intent is unclear (typographic only vs. full rewrite), ask once before running. The two modes serve different needs and are not interchangeable.
+Use it when the user wants typographic-only cleanup (return its output verbatim, no prose changes) or as a pre-pass before semantic rewriting. If intent is unclear, ask once.
