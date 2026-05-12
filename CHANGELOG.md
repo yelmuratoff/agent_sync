@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.19.0
+
+### Removed
+
+- **Aider, Augment Code, and Continue support dropped:** the three lowest-traffic tool integrations are gone — `lib/templates/tools/{aider,augment,continue}.yaml`, the matching `lib/templates/settings/{aider,continue}.yaml` base settings, the auto-detect markers in `agentsync init`, the README tool table rows, the conversion-matrix rows, the knowledge index sections, and the bats assertions all removed. Rationale: market data through April–May 2026 shows Aider sitting on a small terminal-only niche, Continue having pivoted away from rules-as-files toward CI checks (so its sync surface no longer matches the AgentSync model), and Augment serving an enterprise-only compliance audience that doesn't bootstrap via `curl | bash`. Maintaining all three was costing ~15–20% of the per-release tool-config surface for a sliver of real users. Existing projects with `aider`, `augment`, or `continue` entries in `.ai/src/tools/` will see those tools silently skipped on the next `sync` — no error, just no output written. Users who still want one of these tools can keep their tool YAML in `.ai/src/tools/` (the sync engine is config-driven and will continue to honour a project-local file), or copy the last shipped version from git history (`git show 0.18.0:lib/templates/tools/aider.yaml`) into their own project as a custom integration.
+
+### Changed
+
+- **Rule and skill templates rewritten for clarity:** `lib/templates/AGENTS.md`, `lib/templates/rules/{comments,core,git}.md`, and most of `lib/templates/skills/*/SKILL.md` (agentsync, comments, commit, debug, humanizer, prompt-engineering, refactor, review) trimmed and sharpened — same constraints, shorter lines, tighter examples, fewer redundant "what to avoid" lists collapsed into single positive-form statements. Surfaces via `agentsync refresh` on existing projects (the manifest will offer the updated files); new projects pick up the refined content automatically on `agentsync init`. No behavioural change in the sync engine.
+
 ## 0.18.0
 
 ### Changed
