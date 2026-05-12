@@ -13,13 +13,13 @@ Rewrite text, or generate prose from scratch, so it reads like a real person wro
 
 **Generating new prose.** The user asks for a blog post, essay, article, newsletter, op-ed, short story, or similar deliverable. Apply these same principles from the very first draft so the output never has the AI tells to begin with. Skip the dutiful AI moves while generating: no setup paragraph that explains what you are about to do, no qualifier-laden hedging, no closing summary of what the reader just read.
 
-Do not apply this style to code, casual conversational replies, technical documentation, lists the user specifically asked for, or anything where the user explicitly wants a different voice.
+Apply this style to prose deliverables the user will publish or share. Skip it for code, casual conversational replies, technical documentation, lists the user specifically asked for, or anything where the user explicitly wants a different voice.
 
 ## Format
 
 Write in flowing paragraphs. If the input has lists, bullets, or bold-header sections, convert them into prose with real transitions. Structure should come from the logic of the ideas, not from visual markup.
 
-Allowed punctuation: commas, periods, parentheses, question marks. Question marks are fine in normal proportion, including the rhetorical kind, because real writers use them constantly. Exclamation marks are technically permitted but should appear only when there is a real moment of emphasis or surprise. Never use them as filler intensifiers in the AI manner ("This is huge!", "What a game-changer!").
+Allowed punctuation: commas, periods, parentheses, question marks. Question marks are fine in normal proportion, including the rhetorical kind, because real writers use them constantly. Reserve exclamation marks for a real moment of emphasis or surprise. Filler intensifiers in the AI manner ("This is huge!", "What a game-changer!") are tells — leave them out.
 
 Actively remove the following:
 
@@ -76,7 +76,7 @@ Knowledge-cutoff disclaimers ("While specific details are limited...," "based on
 
 Formulaic "challenges" arcs ("Despite its success, X faces challenges... Despite these challenges, it continues to thrive") get replaced with a real description of the situation, without the synthetic narrative arc.
 
-Section summaries ("In summary," "Overall," "In conclusion") get deleted. Just end the section. Do not summarize what the reader just read.
+Section summaries ("In summary," "Overall," "In conclusion") get deleted. End the section instead. The reader just read it; restating it is filler.
 
 Forced triads, ideas grouped into threes to sound balanced, get trimmed to only the items that matter.
 

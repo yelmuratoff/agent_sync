@@ -78,7 +78,7 @@ The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand 
 
 **When creating or editing a skill in `.ai/src/skills/<name>/`, read [`references/writing-skills.md`](references/writing-skills.md)** — it covers the full agentskills.io spec, frontmatter constraints, structure templates, calibration principles (procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility), reusable patterns (Gotchas, Templates, Checklists, Validation loops, Plan-validate-execute), and the iteration loop with evals.
 
-**Rule of three:** don't create a skill for everything. Three manual repetitions, *then* a skill.
+**Rule of three:** wait for three manual repetitions before creating a skill — earlier than that, the shape is still unclear.
 
 ## Writing Commands
 
@@ -120,7 +120,7 @@ Guidelines:
 
 - Restrict `tools` to what the agent actually needs. Read-only agents shouldn't have Write.
 - Use `model: sonnet` or `model: haiku` for focused tasks to save cost.
-- Only create agents for distinct specializations — don't duplicate what skills already do.
+- Create agents for distinct specializations. When a workflow already fits a skill, use the skill.
 
 ## Settings & Permissions
 
@@ -182,6 +182,6 @@ For tools without separate rules/skills directories, use inline options:
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
-- Don't create overlapping skills — if two skills could trigger on the same task, merge them or make descriptions mutually exclusive.
+- Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
 - Commands and agents only work in tools that support them (Claude, Gemini for commands; Claude, Copilot for agents).
 - Settings and MCP files are per-tool — each tool has its own format.

@@ -211,6 +211,6 @@ Other behaviors:
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
-- Don't create overlapping skills — if two skills could trigger on the same task, merge them or make descriptions mutually exclusive.
+- Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
 - Commands and agents only work in tools that support them (Claude, Gemini for commands; Claude, Copilot for agents).
 - Settings and MCP files are per-tool — each tool has its own format.

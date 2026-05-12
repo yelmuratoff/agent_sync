@@ -20,7 +20,7 @@ Prepare a new AgentSync release: bump VERSION, update CHANGELOG.md, commit.
    - Match the tone and format of existing entries.
 6. **Update VERSION** — Write the new version number to `VERSION` (no `v` prefix, no trailing newline).
 7. **Commit** — `git add VERSION CHANGELOG.md && git commit -m "release: vX.Y.Z"`.
-8. **Don't push** — CI handles the rest:
+8. **Leave the push to the user** — CI handles the rest:
    - `auto-tag.yaml` creates the git tag when VERSION changes on `main`.
    - `release.yaml` creates the GitHub Release using the CHANGELOG section as release notes.
 
@@ -41,9 +41,9 @@ Prepare a new AgentSync release: bump VERSION, update CHANGELOG.md, commit.
 
 ## Gotchas
 
-- Don't add a `v` prefix to the VERSION file — it's just `0.4.3`, not `v0.4.3`.
-- Don't create git tags manually — `auto-tag.yaml` does this when VERSION changes on main.
-- Don't push directly — let the user review the commit first.
+- Write the VERSION file as `0.4.3`, never `v0.4.3` — the `v` prefix breaks the auto-tag workflow.
+- Leave git tag creation to CI. `auto-tag.yaml` runs when VERSION changes on `main`.
+- Stop after the commit — let the user review before pushing.
 - CHANGELOG entries extracted by CI use `awk` with exact `## X.Y.Z` matching — the version header must be `## X.Y.Z` with no extra text.
-- The `agentsync release` CLI command exists but is for maintainer use with interactive confirmation. The AI workflow should just edit files and commit.
-- Don't include internal refactors that have no user-visible effect in the CHANGELOG.
+- The `agentsync release` CLI command exists for maintainer use with interactive confirmation. The AI workflow edits files and commits.
+- Keep CHANGELOG entries to user-visible changes. Internal refactors with no behavioural effect stay out.

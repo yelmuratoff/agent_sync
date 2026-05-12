@@ -19,7 +19,7 @@ Write a commit message that follows the project's conventions and clearly explai
    - **First line**: imperative mood, under 72 chars (e.g., `fix: prevent duplicate API calls on rapid tap`).
    - **Body** (if needed): blank line, then explain *why*, not *what*.
    - Match the project's commit style (conventional commits, prefixes, etc.).
-5. Stage only relevant files. Don't `git add .` blindly — exclude generated files, secrets, unrelated changes.
+5. Stage relevant files by name. `git add .` sweeps in generated files, secrets, and unrelated work.
 6. Create the commit.
 
 ## Commit Prefixes (conventional commits)
@@ -33,7 +33,7 @@ Write a commit message that follows the project's conventions and clearly explai
 
 ## Gotchas
 
-- Don't amend the previous commit unless explicitly asked — create a new commit instead.
-- Don't include unrelated changes in the same commit. One logical change per commit.
-- Don't commit `.env`, credentials, or generated lock files unless the project expects it.
-- If a pre-commit hook fails, fix the issue and create a NEW commit — don't use `--no-verify`.
+- Create a new commit rather than amending the previous one — reach for `--amend` only on explicit user request.
+- One logical change per commit. Split unrelated work into separate commits.
+- Leave `.env`, credentials, and generated lock files out of the index unless the project tracks them on purpose.
+- When a pre-commit hook fails, fix the cause and create a new commit. Reach for `--no-verify` only when the user explicitly authorizes it.

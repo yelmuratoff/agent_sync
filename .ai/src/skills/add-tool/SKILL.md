@@ -37,6 +37,6 @@ Add a new AI coding tool to AgentSync so `agentsync sync` distributes instructio
 - Every tool has quirks. Read the tool's docs for where it expects instruction files.
 - Some tools share output paths (e.g., Copilot uses `.github/`). Check for collisions with existing tools.
 - The custom YAML parser doesn't support arrays or multiline YAML blocks — keep tool configs flat.
-- Don't forget to add the tool to `lib/helpers/list.sh` so `agentsync list` shows it.
+- Register the tool in `lib/helpers/list.sh` so `agentsync list` includes it.
 - Tool names must be lowercase and match the YAML filename (e.g., `claude.yaml` → tool name `claude`).
 - The `example/` directory output is gitignored — after adding a tool, run sync in `example/` to verify output.
