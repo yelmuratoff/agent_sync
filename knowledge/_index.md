@@ -187,23 +187,6 @@ Settings & CLI:
 2. https://junie.jetbrains.com/docs/junie-cli-usage.html
 3. https://junie.jetbrains.com/docs/junie-ide-plugin.html
 
-## Aider
-
-Conventions:
-
-1. https://aider.chat/docs/usage/conventions.html
-
-Configuration:
-
-1. https://aider.chat/docs/config.html
-2. https://aider.chat/docs/config/aider_conf.html
-3. https://aider.chat/docs/config/options.html
-
-In-chat commands & modes:
-
-1. https://aider.chat/docs/usage/commands.html
-2. https://aider.chat/docs/usage/modes.html
-
 ## Cline
 
 Rules:
@@ -226,31 +209,6 @@ CLI & configuration:
 2. https://docs.cline.bot/cline-cli/configuration
 3. https://docs.cline.bot/cline-cli/interactive-mode
 
-## Continue
-
-Rules:
-
-1. https://docs.continue.dev/customize/deep-dives/rules
-2. https://docs.continue.dev/guides/configuring-models-rules-tools
-
-Prompts / commands:
-
-1. https://docs.continue.dev/customize/deep-dives/prompts
-
-Agent mode:
-
-1. https://docs.continue.dev/ide-extensions/agent/how-to-customize
-
-Config (config.yaml):
-
-1. https://docs.continue.dev/reference
-
-MCP:
-
-1. https://docs.continue.dev/customize/deep-dives/mcp
-2. https://docs.continue.dev/customize/mcp-tools
-3. https://docs.continue.dev/reference/continue-mcp
-
 ## Zed
 
 Rules:
@@ -270,18 +228,6 @@ Settings:
 MCP:
 
 1. https://zed.dev/docs/ai/mcp
-
-## Augment Code
-
-Rules & guidelines:
-
-1. https://docs.augmentcode.com/setup-augment/guidelines
-
-MCP:
-
-1. https://docs.augmentcode.com/setup-augment/mcp
-2. https://docs.augmentcode.com/context-services/mcp/overview
-3. https://docs.augmentcode.com/cli/integrations
 
 ## Amazon Q Developer
 

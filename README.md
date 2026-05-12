@@ -322,12 +322,9 @@ targets:
 | **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, agents (MD→TOML), hooks.json                                           |
 | **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
 | **JetBrains Junie**    | `junie.yaml`       | guidelines.md, rules/, +inlined skills index                                                               |
-| **Aider**              | `aider.yaml`       | CONVENTIONS.md (prepend AGENTS.md + merged rules), +inlined skills index                                   |
 | **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, +inlined skills index                                                         |
 | **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index                                                      |
-| **Augment Code**       | `augment.yaml`     | 00-context.md, .augment/rules/, +inlined skills index                                                      |
 | **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index                                           |
-| **Continue**           | `continue.yaml`    | .continuerules (prepend AGENTS.md + merged rules), +inlined skills index                                   |
 | **Google Antigravity** | `antigravity.yaml` | GEMINI.md, rules (trigger frontmatter), skills, workflows (commands)                                       |
 
 ## Format Conversions
@@ -339,12 +336,12 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor                                                |
 | Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                                               |
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                                              |
-| Rules `.md`    | Single merged file                               | Aider, Zed, Continue                                  |
+| Rules `.md`    | Single merged file                               | Zed                                                   |
 | Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini                                         |
 | Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini                                         |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Augment, Aider, Zed, Continue |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q, Augment                              |
-| AGENTS.md      | Prepended before merged rules                    | Aider, Zed, Continue                                  |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Zed                           |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q                                       |
+| AGENTS.md      | Prepended before merged rules                    | Zed                                                   |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                                            |
 | Commands `.md` | `.prompt.md`                                     | Copilot                                               |
 | Agents `.md`   | `.agent.md`                                      | Copilot                                               |
@@ -570,7 +567,7 @@ Resolves the destination back to its source file (`.ai/src/rules/core.md`), copi
 **Refused targets** (the round-trip would corrupt your source):
 
 - Tools that inject a frontmatter header (`cursor` rules) — adopting would propagate the cursor-specific header to every other tool.
-- Tools that merge rules into a single file (`gemini`, `aider`, `cline`) — multiple sources collapsed into one dest can't be split back.
+- Tools that merge rules into a single file (`gemini`, `cline`) — multiple sources collapsed into one dest can't be split back.
 - Tools that inline rules/skills into AGENTS.md (`codex`, `junie`).
 - Format-converted outputs (`codex` subagents → TOML, `amazonq` subagents → JSON).
 

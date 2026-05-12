@@ -193,12 +193,9 @@ _init_detect_enabled_tools() {
         "codex|$root/.codex|$root/AGENTS.md"
         "windsurf|$root/.windsurf|$root/.windsurfrules"
         "junie|$root/.junie"
-        "aider|$root/CONVENTIONS.md|$root/.aider.conf.yml"
         "cline|$root/.clinerules"
         "amazonq|$root/.amazonq"
-        "augment|$root/.augment"
         "zed|$root/.zed|$root/.rules"
-        "continue|$root/.continue|$root/.continuerules"
         "antigravity|$root/.antigravity"
     )
 

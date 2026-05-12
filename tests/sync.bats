@@ -18,7 +18,7 @@ setup_file() {
 
     # Tests assert sync output for these tools — enable explicitly.
     # init defaults all tools to disabled; users opt in per project.
-    enable_tools claude cursor copilot windsurf gemini codex amazonq zed continue junie antigravity
+    enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity
 
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
 }
@@ -168,10 +168,6 @@ setup() {
 
 @test "sync: Zed settings.json exists" {
     [ -f ".zed/settings.json" ]
-}
-
-@test "sync: Continue config.yaml exists" {
-    [ -f ".continue/config.yaml" ]
 }
 
 # ── Tool-specific assertions for less-common tools ───────────────────────────

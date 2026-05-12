@@ -57,16 +57,15 @@ teardown() {
     [ ! -f ".claude/hooks.json" ]
 }
 
-@test "base fallback works for settings across all template types (json/yaml/toml)" {
+@test "base fallback works for settings across template types (json/toml)" {
     run_agentsync init --no-detect >/dev/null
-    enable_tools gemini codex continue
+    enable_tools gemini codex
 
     run run_agentsync sync
     [ "$status" -eq 0 ]
 
     [ -f ".gemini/settings.json" ]         # json base
     [ -f ".codex/config.toml" ]            # toml base
-    [ -f ".continue/config.yaml" ]         # yaml base
 }
 
 @test "removing an override after sync restores base on next sync" {
