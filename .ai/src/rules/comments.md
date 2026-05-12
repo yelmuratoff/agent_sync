@@ -24,7 +24,7 @@ Read the line without the comment. If a competent reader still understands the c
 
 ## Examples
 
-```ts
+```
 // Sharper name beats a narrating comment:
 - // check if user is an adult
 - if (user.age >= 18) { ... }
@@ -48,7 +48,7 @@ Read the line without the comment. If a competent reader still understands the c
 +  * Synchronizes user records with the remote backend.
 +  * Throws SyncError on network failure or malformed payload.
 +  */
-+ async function syncUsers(): Promise<void> { ... }
++ async function syncUsers() { ... }
 ```
 
 Unused code belongs in git history rather than in commented-out blocks. Task numbers, PR references, and caller lists belong in the commit message rather than in the source.

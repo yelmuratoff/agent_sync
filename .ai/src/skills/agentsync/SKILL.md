@@ -51,10 +51,8 @@ The command refuses to overwrite existing files; pass `--force` (or `-f`) to rep
 The agent's identity. Every sentence should change behavior.
 
 - **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
-- **Include the stack** — Name the libraries the agent should reach for. When a wrong default is genuinely tempting (e.g., the project uses Zustand but Redux is the obvious guess), call it out explicitly so the agent doesn't reinvent it.
-- **What the product optimizes for** — 2–4 lines of business context that shape tradeoffs. Skip marketing copy.
+- **Include the stack** — The agent needs to know what it's working with.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
-- **Commands** — Real install/dev/build/lint/test commands the project uses.
 - **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase positively when practical; reserve `do not` for cases where the wrong action is genuinely tempting.
 - 40–70 lines. No generic filler.
 
@@ -78,7 +76,7 @@ The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand 
 
 **When creating or editing a skill in `.ai/src/skills/<name>/`, read [`references/writing-skills.md`](references/writing-skills.md)** — it covers the full agentskills.io spec, frontmatter constraints, structure templates, calibration principles (procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility), reusable patterns (Gotchas, Templates, Checklists, Validation loops, Plan-validate-execute), and the iteration loop with evals.
 
-**Rule of three:** wait for three manual repetitions before creating a skill — earlier than that, the shape is still unclear.
+**Rule of three:** don't create a skill for everything. Three manual repetitions, *then* a skill.
 
 ## Writing Commands
 
@@ -120,7 +118,7 @@ Guidelines:
 
 - Restrict `tools` to what the agent actually needs. Read-only agents shouldn't have Write.
 - Use `model: sonnet` or `model: haiku` for focused tasks to save cost.
-- Create agents for distinct specializations. When a workflow already fits a skill, use the skill.
+- Only create agents for distinct specializations — don't duplicate what skills already do.
 
 ## Settings & Permissions
 
@@ -176,6 +174,37 @@ For tools without separate rules/skills directories, use inline options:
 `agentsync simplify` drops user-override fields that already match the current base, surfacing only true divergences. Dry-run by default; `--apply` to write, `-y` to auto-delete emptied files.
 
 **When running `agentsync update`, `resolve`, or `simplify`, or when investigating stale-override / upstream-drift problems, read [`references/maintenance.md`](references/maintenance.md)** for full file format, command semantics, idempotency rules, comment-preservation gotcha, and recommended cadence.
+
+## Pulling new template content into an existing project
+
+`agentsync refresh` walks the shipped templates (rules, skills, commands, agents) and compares each file against your `.ai/src/`. Use it after upgrading the CLI to inherit newly added rules/skills without re-running `init`.
+
+It uses **three-way diff** via `.ai/.template-manifest` (written by `init` and updated on every refresh): the manifest records the template hash at scaffold/last-refresh time, so refresh can tell whether you've touched a file since the last sync.
+
+- **Auto-update (silent)**: file you haven't touched + template moved → applied without a prompt.
+- **NEW (prompt)**: file present in templates, never seen locally — offered for adding. Default Enter is **skip**; skipping records a manifest entry so the file isn't offered again (use `--include-deleted` to revisit).
+- **CONFLICT (prompt with diff)**: both your version and the template diverged from the recorded baseline. Default Enter is **skip**; your local edits are not overwritten unless you type `[u]pdate`.
+- **DELETED (silent)**: you removed a file locally that was once scaffolded → treated as an intentional decline. Pass `--include-deleted` to revisit.
+- **USER_EDITED_NO_CHANGE (silent)**: you edited locally, template hasn't moved → not a conflict, your version stays.
+- **Custom files (silent)**: anything in your `.ai/src/` that isn't in the templates is your own and is left alone.
+
+Persistent overrides in `.ai/agent_sync.yaml` silence specific templates forever:
+
+```yaml
+template_overrides:
+  declined:        # always-skip; never offered
+    - rules/some-rule.md
+  pinned:          # ignore template updates; keep your version even when it diverges
+    - rules/my-version.md
+```
+
+Other behaviors:
+
+- Scope by default = only categories that already have a subdirectory in your `.ai/src/`; pass `--only rules,skills,commands,agents` to opt into a category you don't have yet.
+- AGENTS.md is excluded by default (almost always heavily customized); `--include-agents-md` surfaces it.
+- `--dry-run` prints the plan without writing. `--yes` applies auto-updates and adds new files non-interactively; conflicts are always skipped under `--yes` (CI-friendly).
+- Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they're handled by `customize` / `simplify` / `resolve`.
+- Commit `.ai/.template-manifest` to git so the team shares the same baseline; otherwise different developers will see different conflict sets.
 
 ## Gotchas
 

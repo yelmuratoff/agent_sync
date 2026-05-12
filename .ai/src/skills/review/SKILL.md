@@ -44,4 +44,4 @@ Systematically review changes for correctness, security, and maintainability.
 - Skip style nitpicks that a formatter or linter would catch — those are noise.
 - Review what's there, not what you would have written. The author's approach stands unless it has a concrete flaw.
 - Resolve every blocking issue before approving — politeness is not a reason to ship a known bug.
-- Read the full PR, not just the latest commit — bugs often hide in earlier commits.
+- Check the full PR, not just the latest commit — bugs often hide in earlier commits.
