@@ -155,6 +155,90 @@ _dedupe_make_parent_child_identical() {
     [ "$charlie_pos" -lt "$root_pos" ]
 }
 
+@test "dedupe honors shared.path across git boundary" {
+    # Single-project mode: child has its own .git so walk-up alone would stop
+    # at its own root. Declaring shared.path makes the parent explicit and
+    # dedupe must use it without --against.
+    local outer="$TEST_PROJECT/outer"
+    local inner="$outer/inner"
+    mkdir -p "$outer"
+    (
+        cd "$outer"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    echo "shared" > "$outer/.ai/src/rules/shared.md"
+
+    mkdir -p "$inner"
+    (
+        cd "$inner"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    cp "$outer/.ai/src/rules/shared.md" "$inner/.ai/src/rules/shared.md"
+    cat >> "$inner/.ai/agent_sync.yaml" <<'EOF'
+
+shared:
+  path: "../"
+  inherit: rules
+EOF
+
+    run bash -c "cd '$inner' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' dedupe --yes"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"(from shared.path)"* ]]
+    [ ! -f "$inner/.ai/src/rules/shared.md" ]
+}
+
+@test "dedupe --workspace honors per-project shared.path across git boundaries" {
+    # Workspace fan-out: two sub-projects both declare shared.path. One shares
+    # .git with parent (walk-up would have worked anyway), the other has its
+    # own .git (walk-up would miss it). Both must dedupe.
+    local root="$TEST_PROJECT/root"
+    mkdir -p "$root"
+    ( cd "$root" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    echo "shared" > "$root/.ai/src/rules/shared.md"
+
+    # samerepo: no own .git, walk-up would find parent.
+    mkdir -p "$root/samerepo"
+    ( cd "$root/samerepo" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    cp "$root/.ai/src/rules/shared.md" "$root/samerepo/.ai/src/rules/shared.md"
+    cat >> "$root/samerepo/.ai/agent_sync.yaml" <<'EOF'
+
+shared:
+  path: "../"
+  inherit: rules
+EOF
+
+    # ownrepo: has its own .git — without shared.path, walk-up stops here.
+    mkdir -p "$root/ownrepo"
+    (
+        cd "$root/ownrepo"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    cp "$root/.ai/src/rules/shared.md" "$root/ownrepo/.ai/src/rules/shared.md"
+    cat >> "$root/ownrepo/.ai/agent_sync.yaml" <<'EOF'
+
+shared:
+  path: "../"
+  inherit: rules
+EOF
+
+    run bash -c "cd '$root' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' dedupe --workspace --yes"
+    [ "$status" -eq 0 ]
+    # Both children must have their dupe removed.
+    [ ! -f "$root/samerepo/.ai/src/rules/shared.md" ]
+    [ ! -f "$root/ownrepo/.ai/src/rules/shared.md" ]
+    # Parent's file is untouched.
+    [ -f "$root/.ai/src/rules/shared.md" ]
+}
+
 @test "dedupe --help prints usage" {
     run run_agentsync dedupe --help
     [ "$status" -eq 0 ]

@@ -26,6 +26,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/paths.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/template_manifest.sh"
 # shellcheck source=yaml_edit.sh
 source "$(dirname "${BASH_SOURCE[0]}")/yaml_edit.sh"
+# shellcheck source=shared.sh
+source "$(dirname "${BASH_SOURCE[0]}")/shared.sh"
 
 # Walk the shipped templates and load every relative path into a lookup set.
 # Used to classify duplicates as "template-derived" (eligible for
@@ -227,10 +229,8 @@ _dedupe_run_one() {
     fi
 
     local parent_src=""
+    local parent_origin=""
     if [[ -n "$parent_override" ]]; then
-        # Accept either a project root (we descend into .ai/src/) or a path
-        # that is already the .ai/src/ directory. Check the project-root form
-        # first so that an explicit .ai/src/ symlink target still resolves.
         if [[ -d "$parent_override/.ai/src" ]]; then
             parent_src=$(cd "$parent_override/.ai/src" && pwd)
         elif [[ -d "$parent_override" ]] && [[ "$(basename "$parent_override")" == "src" ]]; then
@@ -242,8 +242,17 @@ _dedupe_run_one() {
             echo "$(_red "Error"): --against path does not exist: $parent_override" >&2
             return 1
         fi
+        parent_origin="explicit"
     else
-        parent_src=$(find_parent_ai_src "$repo_root" 2>/dev/null) || parent_src=""
+        local config_path
+        config_path=$(_dedupe_config_path "$repo_root")
+        parent_src=$(shared_parent_src "$config_path" "$repo_root" 2>/dev/null) || parent_src=""
+        if [[ -n "$parent_src" ]]; then
+            parent_origin="shared"
+        else
+            parent_src=$(find_parent_ai_src "$repo_root" 2>/dev/null) || parent_src=""
+            [[ -n "$parent_src" ]] && parent_origin="walk"
+        fi
     fi
 
     if [[ -z "$parent_src" ]]; then
@@ -261,7 +270,9 @@ _dedupe_run_one() {
         return 0
     fi
 
-    echo "  $(_dim "Parent:") ${parent_src}"
+    local origin_hint=""
+    [[ "$parent_origin" == "shared" ]] && origin_hint=" $(_dim "(from shared.path)")"
+    echo "  $(_dim "Parent:") ${parent_src}${origin_hint}"
     echo "  $(_dim "Identical:") ${id_count}  $(_dim "Divergent:") ${dv_count}"
     echo ""
 

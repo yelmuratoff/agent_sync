@@ -182,30 +182,36 @@ shared_cleanup_overlay() {
 # `.ai/src/` directory. Read-only — does not build the overlay, just locates
 # the declared parent.
 #
-# Returns 1 (and echoes nothing) when: no PROJECT_CONFIG_PATH, no shared.path,
-# parent path missing, parent has no .ai/src/, or parent resolves to this
-# project itself.
+# Returns 1 (and echoes nothing) when: no config path, no shared.path, parent
+# path missing, parent has no .ai/src/, or parent resolves to this project.
 #
-# Used by `doctor` so an explicit `shared.path` overrides the git-bounded
-# walk-up. The two parent-resolution paths are intentionally asymmetric:
-# walk-up is bounded by the git boundary because it's auto-detection;
-# `shared.path` is an explicit user declaration and must work the same way
-# overlay does at sync time — across repo boundaries.
+# Used by `doctor` and `dedupe` so an explicit `shared.path` overrides the
+# git-bounded walk-up. The two parent-resolution paths are intentionally
+# asymmetric: walk-up is bounded by the git boundary because it's
+# auto-detection; `shared.path` is an explicit user declaration and must work
+# the same way overlay does at sync time — across repo boundaries.
 #
-# Usage: shared_parent_src  → echoes absolute path or returns 1
+# Both args optional; default to PROJECT_CONFIG_PATH / REPO_ROOT globals
+# (doctor's call site). `dedupe --workspace` fans out across projects and
+# passes explicit args to avoid mutating globals per iteration.
+#
+# Usage: shared_parent_src [config_path] [repo_root]  → absolute path | rc 1
 shared_parent_src() {
-    [[ -n "${PROJECT_CONFIG_PATH:-}" ]] || return 1
-    [[ -f "$PROJECT_CONFIG_PATH" ]] || return 1
+    local config_path="${1:-${PROJECT_CONFIG_PATH:-}}"
+    local repo_root="${2:-${REPO_ROOT:-$(pwd)}}"
+
+    [[ -n "$config_path" ]] || return 1
+    [[ -f "$config_path" ]] || return 1
 
     local raw_path
-    raw_path=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "shared.path")
+    raw_path=$(parse_yaml_value "$config_path" "shared.path")
     [[ -z "$raw_path" ]] && return 1
 
     local parent_root
     if [[ "$raw_path" == /* ]]; then
         parent_root="$raw_path"
     else
-        parent_root="${REPO_ROOT:-$(pwd)}/$raw_path"
+        parent_root="$repo_root/$raw_path"
     fi
     [[ -d "$parent_root" ]] || return 1
     parent_root=$(cd "$parent_root" && pwd)
@@ -219,8 +225,8 @@ shared_parent_src() {
     [[ -n "$parent_src" ]] || return 1
 
     # Reject self-reference — sync also rejects this; matching it here keeps
-    # doctor from comparing a tree to itself.
-    [[ "$parent_src" == "${REPO_ROOT:-}/.ai/src" ]] && return 1
+    # callers from comparing a tree to itself.
+    [[ "$parent_src" == "$repo_root/.ai/src" ]] && return 1
 
     echo "$parent_src"
 }
