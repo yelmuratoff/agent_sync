@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.2
+
+### Fixed
+
+- **`agentsync dedupe` now honors `shared.path` symmetric with `doctor` 0.20.1:** in a monorepo where some sub-projects have their own `.git`, `dedupe` without `--against` silently skipped them because git-bounded walk-up stopped at their boundary. The `--workspace` mode doesn't accept per-project `--against`, so the workaround was a manual `cd subproj && dedupe --against ../` fan-out that defeats the point of `--workspace`. After 0.20.1, users could rely on `doctor` to catch governance drift across the whole workspace, but their natural next step — clean it up with `dedupe` — fell back into the asymmetry that `doctor` had just escaped. `dedupe` now resolves the parent via `shared.path` first (matching how the sync-time overlay and `doctor` already cross repo boundaries), and falls back to git-bounded walk-up only when `shared:` isn't declared. `--against` keeps winning over both. The "Parent:" line gains a `(from shared.path)` hint when the override took effect, mirroring `doctor`'s output. Applies to both single-project and `--workspace` modes — `--workspace` in particular now correctly dedupes every sub-project that declared `shared.path` regardless of git topology.
+
+- **`agentsync doctor` no longer flags `.agent/` as legacy when Google Antigravity is enabled:** doctor's `Tool outputs` section unconditionally treated `.agent/` (singular) as the pre-v0.6 monolithic layout that needed cleanup. But `.agent/` is also Google Antigravity's current canonical output directory — same path, completely different meaning. With antigravity enabled, the false-positive advisory pollutes `OK with N advisory(ies)` summaries and conditions users to ignore the entire section. The check now skips when `antigravity` is in `tools.enabled`; without it, the legacy detection works as before.
+
+- **`agentsync migrate` no longer destroys Google Antigravity output:** the same `.agent/` collision had a more dangerous form on the migrate side — `migrate --apply --yes` would delete the directory because `_migrate_has_legacy_agent_dir` returned true regardless of tool enablement. A user running migrate in a script after enabling Antigravity would erase live tool output silently. Migrate now applies the same enablement check as doctor: with antigravity enabled, `.agent/` is treated as managed output and left alone; with antigravity disabled, the existing legacy detection and cleanup paths still run. As a corollary, `_migrate_prepare_context` now resolves `PROJECT_CONFIG_PATH` (the same way `_doctor_prepare_context` does) so the enablement check can actually read the project config — previously migrate was missing this setup entirely, which silently broke any helper that depended on it.
+
 ## 0.20.1
 
 ### Fixed
