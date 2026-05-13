@@ -206,6 +206,33 @@ Other behaviors:
 - Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they're handled by `customize` / `simplify` / `resolve`.
 - Commit `.ai/.template-manifest` to git so the team shares the same baseline; otherwise different developers will see different conflict sets.
 
+`agentsync refresh --status` prints the current declined breakdown without prompting — useful when many overrides have accumulated. The list is split into **Persistent** (entries in `template_overrides.declined`) and **Local** (entries in `.template-manifest` whose file is missing on disk).
+
+## Workspaces and shared content
+
+A parent project at `workspace/.ai/src/` with sub-projects below — each with its own `.git` and `.ai/src/` — is supported. Two patterns to manage content shared between layers; pick whichever fits the use case better. They compose, but typically you'll pick one per category.
+
+**Declarative inheritance — `shared:` in `agent_sync.yaml`.** The child names a parent path plus the categories it inherits:
+
+```yaml
+shared:
+  path: "../"
+  inherit: rules,skills,commands,agents
+```
+
+At sync time, AgentSync builds a transient shadow `.ai/src/` (child files first, then parent fillers; child wins on path collisions) and points `SOURCE_*` at it. Sync then walks the shadow tree, so every enabled tool — including ones without parent-loading semantics (Codex, Cursor, Junie, Cline, Amazon Q) — receives the inherited content materialised into its own output. The shadow tree never touches disk outside `$TMPDIR` and is torn down via an `EXIT` trap. **Inherited files do not enter the child's `.template-manifest`** — refresh continues to consider only the child's own files; the parent owns its content.
+
+**Interactive cleanup — `agentsync dedupe`.** When the child has copy-paste duplicates of parent files in its own `.ai/src/`, dedupe surfaces them by hash:
+
+- Identical hash → `[d]elete / [k]eep / [v]iew` prompt. Deletion writes a `template_overrides.declined` entry when the file is a shipped template (so refresh won't re-offer it).
+- Different hash → diff shown, decision left to the human; dedupe never auto-resolves a divergence.
+
+Modes: default walks up to the nearest parent `.ai/src/` (bounded by the git repository boundary so it never escapes the current repo); `--against PATH` accepts an explicit `.ai/src/` or project root; `--workspace` runs across every nested `.ai/` below cwd in bottom-up alphabetical order.
+
+**Detection — `agentsync doctor`.** Doctor's "Cross-project" section flags identical-hash duplicates as advisories and divergent files as info. Rules and skills with `category: governance` in their frontmatter are upgraded to advisories when divergent, with explicit "likely a mistake, not an override" framing. All cross-project findings are exit-code-0 advisories — visible during interactive runs, invisible to CI. Combine with `agentsync sync --workspace` for batch syncs across the tree.
+
+**`category:` frontmatter.** Optional field on any rule/skill/command/agent. Today only `governance` carries behavior; `domain`, `workspace`, `project` are recorded but currently informational. Add it to a file when divergence between parent and child would be a mistake, not a deliberate override.
+
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.).

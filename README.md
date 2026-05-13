@@ -80,6 +80,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
   - [Drift detection](#drift-detection)
   - [`agentsync adopt` — promote an IDE edit back into source](#agentsync-adopt--promote-an-ide-edit-back-into-source)
   - [Disabling sync for specific tools](#disabling-sync-for-specific-tools)
+- [Workspaces — nested AgentSync projects](#workspaces--nested-agentsync-projects)
 - [Development](#development)
 - [Uninstall](#uninstall)
 
@@ -179,20 +180,22 @@ AgentSync supports two source layouts:
 agentsync <command> [options]
 ```
 
-| Command              | Alias | Description                                                            |
-| -------------------- | ----- | ---------------------------------------------------------------------- |
-| `init [dir]`         |       | Create `.ai/` structure with starter templates                         |
-| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`) |
-| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)               |
-| `refresh`            |       | Pull new template files into existing `.ai/src/` (three-way diff)      |
-| `adopt <dest>`       |       | Promote a manual edit in a generated file back into `.ai/src/`         |
-| `doctor`             |       | Validate setup and surface drift / config warnings                     |
-| `generate [context]` | `gen` | Print AI prompt for project-specific config generation                 |
-| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout                       |
-| `list`               | `ls`  | Show configured tools and status                                       |
-| `update`             |       | Self-update via git pull (auto-check every 24h)                        |
-| `version`            | `-v`  | Print version                                                          |
-| `help`               | `-h`  | Show help                                                              |
+| Command              | Alias | Description                                                                                    |
+| -------------------- | ----- | ---------------------------------------------------------------------------------------------- |
+| `init [dir]`         |       | Create `.ai/` structure with starter templates                                                 |
+| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`, `--workspace`)          |
+| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
+| `refresh`            |       | Pull new template files into existing `.ai/src/` (three-way diff; `--status` to list declined) |
+| `dedupe`             |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
+| `migrate`            |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
+| `adopt <dest>`       |       | Promote a manual edit in a generated file back into `.ai/src/`                                 |
+| `doctor`             |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
+| `generate [context]` | `gen` | Print AI prompt for project-specific config generation                                         |
+| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout                                               |
+| `list`               | `ls`  | Show configured tools and status                                                               |
+| `update`             |       | Self-update via git pull (auto-check every 24h)                                                |
+| `version`            | `-v`  | Print version                                                                                  |
+| `help`               | `-h`  | Show help                                                                                      |
 
 ### Sync options
 
@@ -202,6 +205,7 @@ agentsync sync --only claude,cursor   # Only specified tools
 agentsync sync --skip gemini          # All except specified
 agentsync sync --dry-run              # Preview without writing
 agentsync sync --force                # Overwrite even if dest files were edited manually
+agentsync sync --workspace            # Run sync in every .ai/ below cwd (bottom-up alphabetical)
 ```
 
 ### Generate
@@ -331,21 +335,21 @@ targets:
 
 AgentSync auto-converts between formats during sync:
 
-| Source format  | Target format                                    | Used by                                               |
-| -------------- | ------------------------------------------------ | ----------------------------------------------------- |
-| Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor                                                |
-| Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                                               |
-| Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                                              |
-| Rules `.md`    | Single merged file                               | Zed                                                   |
-| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini                                         |
-| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini                                         |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Zed                           |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q                                       |
-| AGENTS.md      | Prepended before merged rules                    | Zed                                                   |
-| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                                            |
-| Commands `.md` | `.prompt.md`                                     | Copilot                                               |
-| Agents `.md`   | `.agent.md`                                      | Copilot                                               |
-| Agents `.md`   | `.toml` (developer_instructions field)           | Codex                                                 |
+| Source format  | Target format                                    | Used by                     |
+| -------------- | ------------------------------------------------ | --------------------------- |
+| Rules `.md`    | `.mdc` + YAML frontmatter                        | Cursor                      |
+| Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                     |
+| Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                    |
+| Rules `.md`    | Single merged file                               | Zed                         |
+| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini               |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini               |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Zed |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q             |
+| AGENTS.md      | Prepended before merged rules                    | Zed                         |
+| Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                  |
+| Commands `.md` | `.prompt.md`                                     | Copilot                     |
+| Agents `.md`   | `.agent.md`                                      | Copilot                     |
+| Agents `.md`   | `.toml` (developer_instructions field)           | Codex                       |
 
 You write everything in Markdown. AgentSync handles the rest.
 
@@ -458,6 +462,8 @@ agentsync migrate --apply -y  # non-interactive — accepts MCP consolidation by
 ```
 
 `migrate` moves each legacy file to `.ai/src/tools/<tool>/<resource>.<ext>`. When every `.ai/src/mcp/*.json` is byte-identical, it offers to collapse them into the shared `.ai/src/mcp.json`; if they differ, they migrate per-tool. Existing files at the target are never overwritten — such collisions are skipped with a warning so you resolve them by hand. Empty source directories are cleaned up on success.
+
+`migrate` also detects the pre-v0.6 monolithic `.agent/` (singular, no `s`) layout — a single directory holding `AGENTS.md`, `workflows/`, `rules/`, `skills/` without per-tool separation. The current engine doesn't recognise it, so `sync --cleanup` never sweeps it. Dry-run lists the contents; `--apply --yes` removes the directory. Detection runs alongside the flat-layout move logic, so a single `migrate --apply --yes` cleans up both in one pass.
 
 ## Path Overrides
 
@@ -587,6 +593,36 @@ Or exclude it at sync time:
 ```bash
 agentsync sync --skip cursor
 ```
+
+## Workspaces — nested AgentSync projects
+
+A parent project at `workspace/.ai/src/` with sub-projects below (`workspace/foo/.ai/src/`, `workspace/bar/.ai/src/`) is supported as a first-class workflow. Two patterns to manage shared content between the layers:
+
+**Pattern A — declarative inheritance via `shared:`.** Each child project declares which categories it inherits from the parent. At sync time, AgentSync builds a transient shadow `.ai/src/` (child + parent fillers, child wins on collisions) and materialises the result into every enabled tool's output — works for tools without parent-loading (Codex, Cursor, JetBrains Junie) and tools with it (Claude Code) equally. Inherited files are never written into the child's `.ai/src/`; they live only in the shadow tree during a single sync run.
+
+```yaml
+# child/.ai/agent_sync.yaml
+shared:
+  path: "../"
+  inherit: rules,skills,commands,agents
+```
+
+**Pattern B — interactive cleanup via `dedupe`.** When child and parent both have the same source file (a copy-paste duplicate), `dedupe` compares them by hash:
+
+```bash
+agentsync dedupe                  # walk up to nearest parent .ai/src/ (bounded by git boundary)
+agentsync dedupe --against ../    # explicit parent path
+agentsync dedupe --workspace      # bottom-up alphabetical fan-out across every nested .ai/
+agentsync dedupe --yes            # non-interactive: delete identical-hash dupes, leave divergent
+```
+
+Identical-hash files become a `[d]elete / [k]eep / [v]iew` prompt; for shipped templates the deletion also writes a `template_overrides.declined` entry so `refresh` won't re-offer the file. Divergent files (same path, different content) show a diff and leave the decision to the human — dedupe never auto-resolves a divergence.
+
+**Detection — `agentsync doctor`.** Doctor walks up to the nearest parent `.ai/src/` (same boundary as dedupe) and flags identical-hash duplicates as advisories and divergent files as info. Rules and skills marked with `category: governance` in their frontmatter are upgraded to advisories when divergent, with explicit "likely a mistake, not an override" framing. All cross-project findings are exit-code-0 advisories — visible during interactive runs, invisible to CI gates, so pre-commit hooks running `doctor` don't break on workspace techdebt.
+
+**Workspace-wide sync.** `agentsync sync --workspace` runs `sync` in every AgentSync-managed `.ai/` below cwd, bottom-up alphabetical (deeper paths first; siblings sorted by `LC_ALL=C` for reproducibility). Continues past per-project failures; reports max exit code at the end. All other sync options (`--only`, `--skip`, `--dry-run`, `--force`) forward to each per-project invocation.
+
+The walk-up logic stops at the start's git repository boundary, so a child project with its own `.git` never picks up an unrelated parent `.ai/src/` from above the boundary.
 
 ## Development
 
