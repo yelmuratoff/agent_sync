@@ -398,3 +398,49 @@ EOF
     [[ "$output" != *"~ rules/core.md"* ]]
     grep -q "USER LOCAL EDIT" .ai/src/rules/core.md
 }
+
+# ── --status and declined-list visibility ─────────────────────────────────────
+
+@test "refresh --status prints persistent declined list" {
+    cat >> .ai/agent_sync.yaml <<'EOF'
+
+template_overrides:
+  declined:
+    - rules/core.md
+    - rules/git.md
+EOF
+    run run_agentsync refresh --status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Declined templates"* ]]
+    [[ "$output" == *"Persistent"* ]]
+    [[ "$output" == *"rules/core.md"* ]]
+    [[ "$output" == *"rules/git.md"* ]]
+}
+
+@test "refresh --status prints 'Nothing declined' when list is empty" {
+    run run_agentsync refresh --status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Declined templates"* ]]
+    [[ "$output" == *"Nothing declined"* ]]
+}
+
+@test "refresh up-to-date output splits persistent vs local declined counts" {
+    # Baseline first so refresh has a stable manifest.
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+
+    cat >> .ai/agent_sync.yaml <<'EOF'
+
+template_overrides:
+  declined:
+    - rules/core.md
+EOF
+    # Simulate a local-declined: file recorded in manifest but missing on disk.
+    rm -f .ai/src/rules/comments.md
+
+    run run_agentsync refresh --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Persistently declined"* ]]
+    [[ "$output" == *"Locally declined"* ]]
+    [[ "$output" == *"--status for the full list"* ]]
+}

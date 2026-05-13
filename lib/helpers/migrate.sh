@@ -110,6 +110,33 @@ _migrate_move_one() {
     applied_count=$((applied_count + 1))
 }
 
+# Detect the pre-v0.6 monolithic layout: a sibling `.agent/` directory
+# (singular, no 's') with AGENTS.md and any of workflows/, rules/, skills/.
+# Returns 0 if a candidate is present, 1 otherwise.
+_migrate_has_legacy_agent_dir() {
+    local root="$REPO_ROOT/.agent"
+    [[ -d "$root" ]] || return 1
+    # A bare `.agent/` directory with no recognisable payload is still legacy
+    # leftover — flag it so the user can decide to remove. Recognise both
+    # styles: marker file present, or any nested directory exists.
+    if [[ -f "$root/AGENTS.md" ]] || [[ -d "$root/workflows" ]] || \
+       [[ -d "$root/rules" ]] || [[ -d "$root/skills" ]] || \
+       [[ -z "$(ls -A "$root" 2>/dev/null)" ]]; then
+        return 0
+    fi
+    # Any other non-empty content — still legacy, flag conservatively.
+    return 0
+}
+
+# Remove the legacy `.agent/` directory after confirmation. Prints what was
+# removed. Caller is responsible for printing surrounding context.
+_migrate_remove_legacy_agent_dir() {
+    local root="$REPO_ROOT/.agent"
+    [[ -d "$root" ]] || return 0
+    rm -rf "$root"
+    _green "  removed .agent/ (pre-v0.6 layout)"; echo ""
+}
+
 # Remove now-empty legacy directories. Silent on non-empty dirs.
 _migrate_cleanup_empty_dirs() {
     local root="$REPO_ROOT/.ai/src"
@@ -156,17 +183,60 @@ USAGE
 
     local legacy
     legacy=$(_migrate_scan_legacy)
+    local has_legacy_agent_dir=false
+    if _migrate_has_legacy_agent_dir; then
+        has_legacy_agent_dir=true
+    fi
 
     echo ""
     _bold "  AgentSync Migrate"; echo ""
     _dim "  $REPO_ROOT"; echo ""
     echo ""
 
-    if [[ -z "$legacy" ]]; then
+    if [[ -z "$legacy" ]] && [[ "$has_legacy_agent_dir" != "true" ]]; then
         _green "  Nothing to migrate."; echo ""
-        _dim "  No files under .ai/src/{hooks,mcp,settings}/ — already on canonical layout."; echo ""
+        _dim "  No files under .ai/src/{hooks,mcp,settings}/ and no .agent/ legacy dir — already on canonical layout."; echo ""
         echo ""
         return 0
+    fi
+
+    # Handle pre-v0.6 `.agent/` removal first (independent of flat-override moves).
+    if [[ "$has_legacy_agent_dir" == "true" ]]; then
+        echo "  $(_bold "Legacy pre-v0.6 layout"):"
+        echo "    $(_yellow ".agent/") — orphan directory from before tool-specific outputs."
+        local item
+        for item in "$REPO_ROOT/.agent"/*; do
+            [[ -e "$item" ]] || continue
+            echo "      · ${item#"$REPO_ROOT/.agent/"}"
+        done
+        echo ""
+
+        if [[ "$apply" == "true" ]]; then
+            local do_remove=false
+            if [[ "$yes" == "true" ]]; then
+                do_remove=true
+            elif is_tty; then
+                if prompt_confirm "Remove .agent/ (review the listing above first)?" n; then
+                    do_remove=true
+                fi
+            else
+                # Non-interactive without --yes: be conservative, do not auto-remove.
+                echo "  $(_dim "(non-interactive; .agent/ left in place — re-run with --yes to remove)")"
+                echo ""
+            fi
+            if [[ "$do_remove" == "true" ]]; then
+                _migrate_remove_legacy_agent_dir
+            fi
+        else
+            _dim "  Dry-run. Re-run with"; printf ' %s' "$(_cyan "agentsync migrate --apply")"
+            _dim " to remove .agent/."; echo ""
+            echo ""
+        fi
+
+        # If there's no flat-layout legacy too, we're done.
+        if [[ -z "$legacy" ]]; then
+            return 0
+        fi
     fi
 
     # Separate MCP entries (candidates for consolidation) from per-tool moves.

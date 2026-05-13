@@ -202,3 +202,106 @@ JSON
     [ "$status" -eq 0 ]
     [[ "$output" != *"Edit paths"* ]]
 }
+
+# ── Advisory checks (cross-project, orphan outputs, empty skills) ─────────────
+# These detections must never bump exit code beyond 0 — they should be
+# visible (yellow ⚠) but not fail CI in pre-commit hooks.
+
+@test "doctor advises on empty skill directory (no SKILL.md)" {
+    run_agentsync init --no-detect >/dev/null
+    mkdir -p .ai/src/skills/empty-one
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"empty-one/ — missing SKILL.md"* ]]
+    [[ "$output" == *"advisory"* ]]
+}
+
+@test "doctor advises on legacy .agent/ directory" {
+    run_agentsync init --no-detect >/dev/null
+    mkdir -p .agent/rules
+    echo "legacy" > .agent/AGENTS.md
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".agent/ — legacy pre-v0.6 layout"* ]]
+}
+
+@test "doctor advises on orphan tool-output dir for disabled tool" {
+    run_agentsync init --no-detect >/dev/null
+    mkdir -p .cursor/rules
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".cursor/ — orphan"* ]]
+}
+
+@test "doctor does not flag .cursor/ when cursor is enabled" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools cursor
+    mkdir -p .cursor/rules
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".cursor/ — orphan"* ]]
+}
+
+@test "doctor detects identical-hash duplicate against parent .ai/src/" {
+    # Parent has rules/shared.md; child below it has identical file. Child's
+    # doctor should flag it as a duplicate and point at `agentsync dedupe`.
+    local parent_dir="$TEST_PROJECT/parent"
+    local child_dir="$parent_dir/child"
+    mkdir -p "$parent_dir"
+    ( cd "$parent_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    echo "shared content" > "$parent_dir/.ai/src/rules/shared.md"
+    mkdir -p "$child_dir"
+    ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    cp "$parent_dir/.ai/src/rules/shared.md" "$child_dir/.ai/src/rules/shared.md"
+
+    run bash -c "cd '$child_dir' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' doctor"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"rules/shared.md — duplicate of parent"* ]]
+    [[ "$output" == *"agentsync dedupe"* ]]
+}
+
+@test "doctor flags divergent shared file as info (not advisory)" {
+    local parent_dir="$TEST_PROJECT/parent"
+    local child_dir="$parent_dir/child"
+    mkdir -p "$parent_dir"
+    ( cd "$parent_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    echo "parent version" > "$parent_dir/.ai/src/rules/shared.md"
+    mkdir -p "$child_dir"
+    ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null )
+    echo "child version" > "$child_dir/.ai/src/rules/shared.md"
+
+    run bash -c "cd '$child_dir' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' doctor"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"rules/shared.md — diverges from parent"* ]]
+}
+
+@test "doctor walk-up stops at git boundary" {
+    # Outer project with .ai/src/, but the child has its own .git — the walk-up
+    # must NOT traverse out of the child's git repo.
+    local outer="$TEST_PROJECT/outer"
+    local inner="$outer/inner"
+    mkdir -p "$outer"
+    (
+        cd "$outer"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    echo "would be dupe" > "$outer/.ai/src/rules/shared.md"
+    mkdir -p "$inner"
+    (
+        cd "$inner"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    cp "$outer/.ai/src/rules/shared.md" "$inner/.ai/src/rules/shared.md"
+
+    run bash -c "cd '$inner' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' doctor"
+    [ "$status" -eq 0 ]
+    # Should NOT find the parent — git boundary stops the walk.
+    [[ "$output" != *"duplicate of parent"* ]]
+    [[ "$output" == *"No parent .ai/src/ found"* ]]
+}

@@ -125,6 +125,13 @@ is_path_safe_source() {
     if [[ "$candidate_path" == "$DEFAULT_REPO_ROOT" || "$candidate_path" == "$DEFAULT_REPO_ROOT/"* ]]; then
         return 0
     fi
+    # `shared:` overlay places child + parent files into a tmpdir; sync reads
+    # from there. The tmpdir is owned by shared.sh and torn down on EXIT.
+    if [[ -n "${SHARED_OVERLAY_DIR_CANONICAL:-}" ]] && \
+       { [[ "$candidate_path" == "$SHARED_OVERLAY_DIR_CANONICAL" ]] || \
+         [[ "$candidate_path" == "$SHARED_OVERLAY_DIR_CANONICAL/"* ]]; }; then
+        return 0
+    fi
     return 1
 }
 
@@ -174,6 +181,82 @@ resolve_source_path() {
 
     echo "$abs_path_target"
     return 0
+}
+
+# Walk up from a starting directory looking for a sibling `.ai/src/` directory,
+# stopping at the first hit or the start's git repository boundary (whichever
+# first). Does not climb past filesystem root. Skips the start directory
+# itself so a project never claims itself as its own parent.
+# Echoes the absolute path to the parent `.ai/src/` on success; returns 1 if
+# no parent is found within the bounded search.
+#
+# Usage: find_parent_ai_src <start_dir>
+find_parent_ai_src() {
+    local start="$1"
+    [[ -d "$start" ]] || return 1
+
+    local current
+    current=$(cd "$start" && pwd)
+
+    # Determine the start's own git repo root (if any). We are willing to
+    # climb to siblings inside the same repo, but not out of it.
+    local start_git_root=""
+    local probe="$current"
+    while [[ -n "$probe" ]] && [[ "$probe" != "/" ]]; do
+        if [[ -d "$probe/.git" || -f "$probe/.git" ]]; then
+            start_git_root="$probe"
+            break
+        fi
+        probe=$(dirname "$probe")
+    done
+
+    local parent
+    parent=$(dirname "$current")
+    while [[ "$parent" != "$current" ]]; do
+        # Refuse to leave the start's git repo: if we have a git root and
+        # `parent` is neither it nor inside it, stop the walk.
+        if [[ -n "$start_git_root" ]] \
+           && [[ "$parent" != "$start_git_root" ]] \
+           && [[ "$parent" != "$start_git_root"/* ]]; then
+            return 1
+        fi
+        if [[ -d "$parent/.ai/src" ]]; then
+            echo "$parent/.ai/src"
+            return 0
+        fi
+        current="$parent"
+        parent=$(dirname "$current")
+    done
+    return 1
+}
+
+# Find every AgentSync-managed `.ai/` directory below a root, in bottom-up
+# alphabetical order (deeper paths first; siblings at the same depth sorted
+# by LC_ALL=C path order). Used by `sync --workspace` and `dedupe --workspace`
+# so cross-project commands behave deterministically between runs and between
+# machines.
+#
+# A `.ai/` directory is included only when it contains either `src/` or
+# `agent_sync.yaml` — bare `.ai/` directories from other tooling are skipped.
+#
+# Echoes one absolute path per line. Returns 0 even when nothing is found.
+#
+# Usage: find_workspace_ai_dirs <root>
+find_workspace_ai_dirs() {
+    local root="$1"
+    [[ -d "$root" ]] || return 0
+    root=$(cd "$root" && pwd)
+
+    # Two-key sort: depth descending (deeper first), then alphabetical within
+    # each depth. Path-component count via awk -F/ keeps it pure coreutils.
+    find "$root" -type d -name ".ai" 2>/dev/null \
+        | while IFS= read -r d; do
+            [[ -d "$d/src" || -f "$d/agent_sync.yaml" ]] || continue
+            echo "$d"
+          done \
+        | LC_ALL=C awk -F/ '{ print NF "\t" $0 }' \
+        | LC_ALL=C sort -k1,1rn -k2,2 \
+        | cut -f2-
 }
 
 to_repo_relative_path() {

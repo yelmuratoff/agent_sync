@@ -95,6 +95,49 @@ _parse_md_frontmatter() {
     done < "$src_file"
 }
 
+# Read a single scalar field from a markdown file's YAML frontmatter.
+# Only handles top-level `key: value` inside the leading `---` delimiters.
+# Echoes the value (without surrounding quotes) on stdout; empty if no
+# frontmatter or field absent. Stops scanning after the closing `---`.
+#
+# Used to read optional fields like `category:` without dragging in the
+# full _parse_md_frontmatter state machine — keeps the call site cheap
+# when doctor scans dozens of files.
+#
+# Usage: read_frontmatter_field "file.md" "category"
+read_frontmatter_field() {
+    local file="$1"
+    local field="$2"
+    [[ -f "$file" ]] || { echo ""; return 0; }
+    [[ -n "$field" ]] || { echo ""; return 0; }
+
+    local in_fm=false value=""
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$in_fm" == "false" ]]; then
+            [[ "$line" == "---" ]] || { echo ""; return 0; }
+            in_fm=true
+            continue
+        fi
+        if [[ "$line" == "---" ]]; then
+            echo "$value"
+            return 0
+        fi
+        if [[ "$line" =~ ^${field}:[[:space:]]*(.*)$ ]]; then
+            value="${BASH_REMATCH[1]}"
+            value="${value#\"}" ; value="${value%\"}"
+            value="${value#\'}" ; value="${value%\'}"
+            # Strip trailing whitespace / comments.
+            value="${value%%#*}"
+            value="${value%"${value##*[![:space:]]}"}"
+            # Keep scanning — first occurrence wins, which is what frontmatter
+            # spec implies; the early echo on closing `---` covers the case
+            # where the field is the last entry.
+        fi
+    done < "$file"
+    echo "$value"
+}
+
 # Escape a string for safe inclusion as a JSON string value.
 # Handles: backslash, double-quote, newline, carriage return, tab.
 # Usage: _json_escape "input"  → echoes escaped string

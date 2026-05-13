@@ -40,6 +40,8 @@ source "$SCRIPT_DIR/helpers/gitignore.sh"
 source "$SCRIPT_DIR/helpers/tool_resolver.sh"
 # shellcheck source=helpers/manifest.sh
 source "$SCRIPT_DIR/helpers/manifest.sh"
+# shellcheck source=helpers/shared.sh
+source "$SCRIPT_DIR/helpers/shared.sh"
 
 # Global variables
 DRY_RUN="false"
@@ -659,6 +661,12 @@ main() {
         log_error "Run 'agentsync init' or set source.agents in agent_sync.yaml"
         exit 1
     fi
+
+    # `shared:` overlay — must run AFTER child SOURCE_* resolution so child
+    # files take precedence, and BEFORE any tool sync reads them. The shadow
+    # tree is torn down by the EXIT trap installed below.
+    shared_setup_overlay
+    trap 'shared_cleanup_overlay' EXIT
 
     # Build catalog of tools to process: union of base + any user override files.
     local -a all_tools=()

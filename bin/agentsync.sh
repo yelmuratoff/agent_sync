@@ -96,6 +96,7 @@ print_usage() {
     echo "    $(_cyan "diff")           Show user overrides vs base defaults"
     echo "    $(_cyan "resolve")        Interactively reconcile overrides with base values"
     echo "    $(_cyan "doctor")         Validate setup and surface warnings"
+    echo "    $(_cyan "dedupe")         Remove source files that duplicate a parent .ai/src/"
     echo "    $(_cyan "adopt")          Promote a manual edit in a generated file back into .ai/src/"
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
@@ -113,6 +114,7 @@ print_usage() {
     echo "    --skip <tools>    Skip these tools (comma-separated)"
     echo "    --dry-run         Preview changes without writing"
     echo "    --force           Overwrite destination files even if they were edited manually"
+    echo "    --workspace       Run sync in every .ai/ below cwd (bottom-up alphabetical)"
     echo ""
     echo "  $(_green "EXAMPLES")"
     echo "    agentsync init"
@@ -143,6 +145,68 @@ print_usage() {
     echo "  $(_green "DOCS")"
     _dim  "    https://github.com/yelmuratoff/agent"; echo ""
     echo ""
+}
+
+# ─── Workspace fan-out (sync / dedupe) ───────────────────────────────────────
+# Run a per-project command across every AgentSync-managed .ai/ below the
+# current directory, in bottom-up alphabetical order (deeper paths first;
+# siblings sorted by LC_ALL=C). Continues on failure: collects exit codes and
+# reports a summary at the end.
+#
+# Usage: cmd_workspace_fanout <command-label> <forward-args...>
+# Currently only used by `sync --workspace`; `dedupe --workspace` is handled
+# inside cmd_dedupe directly because it's a Bash-level command (no engine
+# subprocess).
+cmd_workspace_fanout() {
+    local label="$1"; shift
+    _need paths logging
+    local cwd
+    cwd=$(pwd)
+
+    local -a ai_dirs=()
+    local d
+    while IFS= read -r d; do
+        [[ -z "$d" ]] && continue
+        ai_dirs+=("$d")
+    done < <(find_workspace_ai_dirs "$cwd")
+
+    if [[ ${#ai_dirs[@]} -eq 0 ]]; then
+        echo "$(_red "Error"): No .ai/ directories found below $(pwd)" >&2
+        echo "Run $(_cyan "agentsync init") to create one, or run from a workspace root." >&2
+        return 1
+    fi
+
+    echo ""
+    _bold "  AgentSync workspace $label"; echo ""
+    _dim  "  Found ${#ai_dirs[@]} project(s) below $(pwd)"; echo ""
+    echo ""
+
+    local max_rc=0
+    local i project_root rel rc
+    for ((i = 0; i < ${#ai_dirs[@]}; i++)); do
+        project_root=$(cd "${ai_dirs[$i]}/.." && pwd)
+        if [[ "$project_root" == "$cwd" ]]; then
+            rel="."
+        else
+            rel="${project_root#"$cwd/"}"
+        fi
+        echo "  $(_cyan "→") $rel"
+        if AGENTSYNC_REPO_ROOT="$project_root" cmd_engine "sync.sh" "$@"; then
+            rc=0
+        else
+            rc=$?
+            max_rc=$rc
+        fi
+        echo ""
+    done
+
+    if [[ $max_rc -eq 0 ]]; then
+        echo "  $(_green "Workspace $label complete.") ${#ai_dirs[@]} project(s) processed."
+    else
+        echo "  $(_yellow "Workspace $label finished with errors.") max exit code: $max_rc"
+    fi
+    echo ""
+    return $max_rc
 }
 
 # ─── Engine delegation (sync, check, setup-hooks) ───────────────────────────
@@ -180,14 +244,33 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|help|--help|-h)
             check_for_updates
             ;;
     esac
 
     case "$command" in
         init)          _need prompts yaml tool_resolver template_manifest init; shift; cmd_init "$@" ;;
-        sync)          shift; cmd_engine "sync.sh" "$@" ;;
+        sync)
+            shift
+            # --workspace fan-out: run sync in every .ai/ below cwd before
+            # delegating to the engine. Any other args (--only, --dry-run,
+            # ...) are forwarded to each per-project sync call.
+            local _sync_workspace=false _sync_forward=()
+            local _a
+            for _a in "$@"; do
+                if [[ "$_a" == "--workspace" ]]; then
+                    _sync_workspace=true
+                else
+                    _sync_forward+=("$_a")
+                fi
+            done
+            if [[ "$_sync_workspace" == "true" ]]; then
+                cmd_workspace_fanout "sync" "${_sync_forward[@]+"${_sync_forward[@]}"}"
+            else
+                cmd_engine "sync.sh" "$@"
+            fi
+            ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
         generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
@@ -204,6 +287,7 @@ main() {
         diff)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_diff "$@" ;;
         resolve)       _need yaml yaml_edit tool_resolver snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
         doctor)        _need yaml tool_resolver edit_paths doctor;     cmd_doctor ;;
+        dedupe)        _need yaml yaml_edit prompts paths template_manifest dedupe; shift; cmd_dedupe "$@" ;;
         adopt)         _need yaml tool_resolver paths logging filters file_ops prompts manifest cli_colors adopt; shift; cmd_adopt "$@" ;;
         update)        _need yaml snapshot;                            shift; cmd_update "$@" ;;
         upgrade-config) _need prompts yaml tool_resolver init;         shift; cmd_upgrade_config "$@" ;;

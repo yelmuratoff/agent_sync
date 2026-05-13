@@ -116,3 +116,46 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"Moves legacy flat-layout"* ]]
 }
+
+# ── Legacy pre-v0.6 .agent/ (singular) directory removal ──────────────────────
+
+@test "migrate dry-run lists legacy .agent/ contents" {
+    mkdir -p .agent/rules .agent/skills
+    echo "legacy AGENTS" > .agent/AGENTS.md
+    run run_agentsync migrate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Legacy pre-v0.6"* ]]
+    [[ "$output" == *".agent/"* ]]
+    [[ "$output" == *"AGENTS.md"* ]]
+    # Dry-run: directory still present.
+    [ -d ".agent" ]
+}
+
+@test "migrate --apply --yes removes legacy .agent/ directory" {
+    mkdir -p .agent/rules
+    echo "legacy" > .agent/AGENTS.md
+    run run_agentsync migrate --apply --yes
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed .agent/"* ]]
+    [ ! -d ".agent" ]
+}
+
+@test "migrate --apply (no --yes) without TTY leaves .agent/ in place" {
+    mkdir -p .agent
+    echo "legacy" > .agent/AGENTS.md
+    # bats is not a TTY by default; --apply alone should not auto-remove.
+    run run_agentsync migrate --apply
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"non-interactive"* ]]
+    [ -d ".agent" ]
+}
+
+@test "migrate detects .agent/ even alongside flat-layout overrides" {
+    mkdir -p .agent .ai/src/hooks
+    echo "legacy" > .agent/AGENTS.md
+    echo '{}' > .ai/src/hooks/cursor.json
+    run run_agentsync migrate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Legacy pre-v0.6"* ]]
+    [[ "$output" == *"Planned moves"* ]]
+}

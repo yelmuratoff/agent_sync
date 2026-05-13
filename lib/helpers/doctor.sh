@@ -8,6 +8,14 @@
 
 # shellcheck source=manifest.sh
 source "$(dirname "${BASH_SOURCE[0]}")/manifest.sh"
+# shellcheck source=paths.sh
+source "$(dirname "${BASH_SOURCE[0]}")/paths.sh"
+# shellcheck source=template_manifest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/template_manifest.sh"
+# shellcheck source=format_conversion.sh
+source "$(dirname "${BASH_SOURCE[0]}")/format_conversion.sh"
+# shellcheck source=shared.sh
+source "$(dirname "${BASH_SOURCE[0]}")/shared.sh"
 
 _doctor_prepare_context() {
     local project_dir
@@ -35,11 +43,16 @@ _doctor_prepare_context() {
 
 DOCTOR_WARNINGS=0
 DOCTOR_ERRORS=0
+DOCTOR_ADVISORIES=0
 
 _doctor_ok()    { echo "    $(_green "✓") $1"; }
 _doctor_warn()  { echo "    $(_yellow "⚠") $1"; DOCTOR_WARNINGS=$((DOCTOR_WARNINGS + 1)); }
 _doctor_fail()  { echo "    $(_red "✗") $1"; DOCTOR_ERRORS=$((DOCTOR_ERRORS + 1)); }
 _doctor_info()  { echo "    $(_dim "·") $1"; }
+# Soft warning — visually attention-grabbing but does NOT influence exit code.
+# Use for techdebt detections (cross-project dupes, orphan output dirs, empty
+# skills) that should be visible but must not fail CI in pre-commit hooks.
+_doctor_advise() { echo "    $(_yellow "⚠") $1"; DOCTOR_ADVISORIES=$((DOCTOR_ADVISORIES + 1)); }
 
 # ── Secret scanning ──────────────────────────────────────────────────────────
 #
@@ -226,11 +239,212 @@ _doctor_scan_overrides() {
     fi
 }
 
+# ── Empty skill detection ────────────────────────────────────────────────────
+#
+# A skill is a directory under .ai/src/skills/<name>/ with a SKILL.md inside.
+# A dir without SKILL.md is a no-op artefact — it lists nowhere, dispatches
+# nothing, and clutters tree views. Warn so the user can either populate it
+# or delete it.
+_doctor_check_empty_skills() {
+    local skills_dir="$REPO_ROOT/.ai/src/skills"
+    if [[ ! -d "$skills_dir" ]]; then
+        _doctor_info "No .ai/src/skills/ — nothing to scan."
+        return 0
+    fi
+
+    local found=0
+    local dir name
+    for dir in "$skills_dir"/*/; do
+        [[ -d "$dir" ]] || continue
+        name=$(basename "$dir")
+        if [[ ! -f "$dir/SKILL.md" ]]; then
+            _doctor_advise "skills/$name/ — missing SKILL.md $(_dim "(empty skill — populate or remove)")"
+            found=$((found + 1))
+        fi
+    done
+
+    if [[ $found -eq 0 ]]; then
+        _doctor_ok "All skill directories contain SKILL.md"
+    else
+        _doctor_info "$(_dim "Tip:") $(_cyan "agentsync simplify") $(_dim "can prune empty skill dirs.")"
+    fi
+}
+
+# ── Orphan tool-output detection ─────────────────────────────────────────────
+#
+# Known output dir basenames mapped to their owning tool slug. AgentSync's
+# cleanup only sweeps paths it wrote in the current sync; legacy directories
+# from older versions, or output dirs left behind after a tool was disabled,
+# survive indefinitely. Doctor surfaces them so the user can decide whether
+# to keep, remove, or re-enable the tool.
+#
+# `.agent` (singular, no 's') was the pre-v0.6 monolithic layout — flag it
+# always, regardless of tool enablement.
+_DOCTOR_OUTPUT_DIR_MAP=(
+    ".claude|claude"
+    ".cursor|cursor"
+    ".codex|codex"
+    ".windsurf|windsurf"
+    ".gemini|gemini"
+    ".junie|junie"
+    ".cline|cline"
+    ".amazonq|amazonq"
+    ".zed|zed"
+    ".antigravity|antigravity"
+    ".agents|codex"
+)
+
+_doctor_check_orphan_outputs() {
+    local enabled=""
+    # NB: capture-then-|| pattern; never `enabled=$(cmd) || enabled=""`,
+    # since the OR branch clobbers stdout the substitution already captured
+    # when `cmd` exits non-zero (list_enabled_tools tail-returns the last
+    # test's exit code under set -e).
+    enabled=$(list_enabled_tools) || true
+
+    local _enabled_set="|"
+    local t
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        _enabled_set="${_enabled_set}${t}|"
+    done <<< "$enabled"
+
+    local found=0
+
+    # Legacy `.agent/` (singular) — never produced by current AgentSync.
+    if [[ -d "$REPO_ROOT/.agent" ]]; then
+        _doctor_advise ".agent/ — legacy pre-v0.6 layout (run $(_cyan "agentsync migrate") to clean up)"
+        found=$((found + 1))
+    fi
+
+    local entry dir tool
+    for entry in "${_DOCTOR_OUTPUT_DIR_MAP[@]}"; do
+        dir="${entry%%|*}"
+        tool="${entry#*|}"
+        [[ -d "$REPO_ROOT/$dir" ]] || continue
+        # `.agents/` is shared by multiple tools (codex skills reference it);
+        # only flag it if NO tool that uses it is enabled.
+        if [[ "$dir" == ".agents" ]]; then
+            [[ "$_enabled_set" == *"|codex|"* ]] && continue
+        fi
+        if [[ "$_enabled_set" != *"|${tool}|"* ]]; then
+            _doctor_advise "$dir/ — orphan (tool '$tool' not enabled; output left from prior run)"
+            found=$((found + 1))
+        fi
+    done
+
+    if [[ $found -eq 0 ]]; then
+        _doctor_ok "No orphan tool-output directories"
+    fi
+}
+
+# ── Cross-project duplicate detection ────────────────────────────────────────
+#
+# When this project is nested under another AgentSync project, source files
+# duplicated between parent and child waste tokens (Claude Code loads both)
+# and drift independently. Doctor compares file hashes for shared paths under
+# rules/, skills/, commands/, agents/ and flags identical copies as dupes
+# (review and remove from child) and divergent copies as "intentional" (worth
+# eyeballing once to confirm).
+#
+# Stops at the first parent .ai/src/ found or the git boundary, whichever
+# comes first — see find_parent_ai_src in paths.sh.
+_doctor_check_cross_project() {
+    local child_src="$REPO_ROOT/.ai/src"
+    if [[ ! -d "$child_src" ]]; then
+        _doctor_info "No .ai/src/ in this project — skipping cross-project scan."
+        return 0
+    fi
+
+    local parent_src
+    parent_src=$(find_parent_ai_src "$REPO_ROOT" 2>/dev/null) || parent_src=""
+    if [[ -z "$parent_src" ]]; then
+        _doctor_info "No parent .ai/src/ found within git boundary."
+        return 0
+    fi
+
+    _doctor_info "Parent source: $(_dim "${parent_src}")"
+    echo ""
+
+    local dupe_count=0 divergent_count=0
+    local rel child_file parent_file ch ph
+
+    local cat
+    for cat in rules commands agents; do
+        local pdir="$parent_src/$cat"
+        [[ -d "$pdir" ]] || continue
+        local f
+        for f in "$pdir"/*.md; do
+            [[ -f "$f" ]] || continue
+            rel="$cat/$(basename "$f")"
+            child_file="$child_src/$rel"
+            [[ -f "$child_file" ]] || continue
+            parent_file="$f"
+            ch=$(template_manifest_hash "$child_file") || continue
+            ph=$(template_manifest_hash "$parent_file") || continue
+            if [[ "$ch" == "$ph" ]]; then
+                local hint=""
+                if shared_inherits_category "$cat"; then
+                    hint=" $(_dim "(inherited via shared: — safe to delete)")"
+                fi
+                _doctor_advise "$rel — duplicate of parent's $(_dim "${parent_file#"$(dirname "$parent_src")/"}")$hint"
+                dupe_count=$((dupe_count + 1))
+            else
+                local pcat
+                pcat=$(read_frontmatter_field "$parent_file" "category")
+                if [[ "$pcat" == "governance" ]]; then
+                    _doctor_advise "$rel — $(_yellow "governance file diverges from parent") $(_dim "(category: governance — likely a mistake, not an override)")"
+                else
+                    _doctor_info "$rel — diverges from parent $(_dim "(review intent)")"
+                fi
+                divergent_count=$((divergent_count + 1))
+            fi
+        done
+    done
+
+    # Skills: nested layout, walk recursively.
+    if [[ -d "$parent_src/skills" ]]; then
+        local fpath
+        while IFS= read -r -d '' fpath; do
+            rel="${fpath#"$parent_src/"}"
+            child_file="$child_src/$rel"
+            [[ -f "$child_file" ]] || continue
+            ch=$(template_manifest_hash "$child_file") || continue
+            ph=$(template_manifest_hash "$fpath") || continue
+            if [[ "$ch" == "$ph" ]]; then
+                local hint=""
+                if shared_inherits_category "skills"; then
+                    hint=" $(_dim "(inherited via shared: — safe to delete)")"
+                fi
+                _doctor_advise "$rel — duplicate of parent's $(_dim "${fpath#"$(dirname "$parent_src")/"}")$hint"
+                dupe_count=$((dupe_count + 1))
+            else
+                local pcat
+                pcat=$(read_frontmatter_field "$fpath" "category")
+                if [[ "$pcat" == "governance" ]]; then
+                    _doctor_advise "$rel — $(_yellow "governance file diverges from parent") $(_dim "(category: governance — likely a mistake, not an override)")"
+                else
+                    _doctor_info "$rel — diverges from parent $(_dim "(review intent)")"
+                fi
+                divergent_count=$((divergent_count + 1))
+            fi
+        done < <(find "$parent_src/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null | LC_ALL=C sort -z)
+    fi
+
+    if [[ $dupe_count -eq 0 ]] && [[ $divergent_count -eq 0 ]]; then
+        _doctor_ok "No source files shared with parent."
+    elif [[ $dupe_count -gt 0 ]]; then
+        echo ""
+        _doctor_info "$(_dim "Run") $(_cyan "agentsync dedupe") $(_dim "to remove duplicates interactively.")"
+    fi
+}
+
 cmd_doctor() {
     _doctor_prepare_context
 
     DOCTOR_WARNINGS=0
     DOCTOR_ERRORS=0
+    DOCTOR_ADVISORIES=0
 
     echo ""
     _bold "  AgentSync Doctor"; echo ""
@@ -367,16 +581,42 @@ cmd_doctor() {
     _doctor_scan_overrides
     echo ""
 
+    # ── Section 7: empty skills ──────────────────────────────────────────────
+    _bold "  Skills"; echo ""
+    _doctor_check_empty_skills
+    echo ""
+
+    # ── Section 8: orphan tool outputs ───────────────────────────────────────
+    _bold "  Tool outputs"; echo ""
+    _doctor_check_orphan_outputs
+    echo ""
+
+    # ── Section 9: cross-project duplicates ──────────────────────────────────
+    _bold "  Cross-project"; echo ""
+    _doctor_check_cross_project
+    echo ""
+
     # ── Summary ──────────────────────────────────────────────────────────────
+    # Exit codes: errors fail (2), real warnings fail (1), advisories never
+    # affect exit code — they are techdebt nudges and must not break CI for
+    # users who run `doctor` in pre-commit / pipeline contexts.
     log_separator_doctor
+    local adv_label=""
+    if [[ $DOCTOR_ADVISORIES -gt 0 ]]; then
+        adv_label=", $(_dim "$DOCTOR_ADVISORIES advisory(ies)")"
+    fi
     if [[ $DOCTOR_ERRORS -gt 0 ]]; then
-        echo "  $(_red "$DOCTOR_ERRORS error(s)"), $(_yellow "$DOCTOR_WARNINGS warning(s)")"
+        echo "  $(_red "$DOCTOR_ERRORS error(s)"), $(_yellow "$DOCTOR_WARNINGS warning(s)")$adv_label"
         echo ""
         return 2
     elif [[ $DOCTOR_WARNINGS -gt 0 ]]; then
-        echo "  $(_green "OK") with $(_yellow "$DOCTOR_WARNINGS warning(s)")"
+        echo "  $(_green "OK") with $(_yellow "$DOCTOR_WARNINGS warning(s)")$adv_label"
         echo ""
         return 1
+    elif [[ $DOCTOR_ADVISORIES -gt 0 ]]; then
+        echo "  $(_green "OK") with $(_dim "$DOCTOR_ADVISORIES advisory(ies)")"
+        echo ""
+        return 0
     else
         echo "  $(_green "All checks passed.")"
         echo ""

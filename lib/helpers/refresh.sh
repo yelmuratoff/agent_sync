@@ -68,6 +68,7 @@ cmd_refresh() {
     local include_agents_md=false
     local include_deleted=false
     local review=false
+    local status_only=false
     local only_flag=""
 
     while [[ $# -gt 0 ]]; do
@@ -77,6 +78,7 @@ cmd_refresh() {
             --include-agents-md)  include_agents_md=true; shift ;;
             --include-deleted)    include_deleted=true; shift ;;
             --review)             review=true; shift ;;
+            --status)             status_only=true; shift ;;
             --only)
                 [[ $# -lt 2 ]] && { echo "$(_red "Error"): --only requires a value" >&2; return 1; }
                 only_flag="$2"; shift 2 ;;
@@ -131,6 +133,12 @@ cmd_refresh() {
     REFRESH_REVIEW_MODE="$review"
     _refresh_collect_changes "$templates_dir" "$repo_root" "$categories" "$include_agents_md"
 
+    # --status: print declined breakdown and return, no mutation.
+    if [[ "$status_only" == "true" ]]; then
+        _refresh_print_status "$repo_root"
+        return 0
+    fi
+
     local new_count=${#NEW_FILES[@]}
     local conflict_count=${#CONFLICT_FILES[@]}
     local auto_count=${#AUTO_UPDATE_FILES[@]}
@@ -158,8 +166,15 @@ cmd_refresh() {
 
     if (( new_count == 0 && conflict_count == 0 && auto_count == 0 )) && [[ "$has_visible_deleted" != "true" ]]; then
         echo "  $(_green "Already up to date!") $unchanged_count file(s) match the current templates."
+        local persistent_count=${#DECLINED_OVERRIDES[@]}
+        if (( persistent_count > 0 )); then
+            echo "  $(_dim "Persistently declined (agent_sync.yaml): $persistent_count file(s).")"
+        fi
         if (( deleted_count > 0 )); then
-            echo "  $(_dim "$deleted_count file(s) previously declined; pass --include-deleted to revisit.")"
+            echo "  $(_dim "Locally declined (.template-manifest):    $deleted_count file(s); --include-deleted to revisit.")"
+        fi
+        if (( persistent_count > 0 )) || (( deleted_count > 0 )); then
+            echo "  $(_dim "Pass --status for the full list.")"
         fi
         if (( SILENTLY_KEPT_COUNT > 0 )) && [[ "$review" != "true" ]]; then
             echo "  $(_dim "$SILENTLY_KEPT_COUNT file(s) differ from the shipped template (local edits or earlier skips); pass --review to revisit.")"
@@ -538,6 +553,46 @@ _refresh_heal_unchanged() {
     template_manifest_heal_from_match "$1" "$2"
 }
 
+# Print a full breakdown of declined templates. Two sources:
+#   * Persistent: template_overrides.declined in agent_sync.yaml — these will
+#     never be offered, even by --include-deleted.
+#   * Local: .template-manifest entries whose corresponding file is missing
+#     on disk and which are NOT in the persistent list — these will resurface
+#     under --include-deleted.
+_refresh_print_status() {
+    local repo_root="$1"
+
+    echo ""
+    _bold "  Declined templates"; echo ""
+
+    local persistent_count=${#DECLINED_OVERRIDES[@]}
+    local deleted_count=${#DELETED_FILES[@]}
+
+    if (( persistent_count == 0 )) && (( deleted_count == 0 )); then
+        echo "  $(_dim "Nothing declined.")"
+        echo ""
+        return 0
+    fi
+
+    if (( persistent_count > 0 )); then
+        echo "  $(_yellow "Persistent")  $(_dim "(template_overrides.declined in agent_sync.yaml — never offered):")"
+        local item
+        for item in "${DECLINED_OVERRIDES[@]}"; do
+            echo "    $(_dim "·") $item"
+        done
+        echo ""
+    fi
+
+    if (( deleted_count > 0 )); then
+        echo "  $(_yellow "Local")       $(_dim "(.template-manifest — deleted from disk; --include-deleted to restore):")"
+        local entry
+        for entry in "${DELETED_FILES[@]}"; do
+            echo "    $(_dim "·") ${entry%%|*}"
+        done
+        echo ""
+    fi
+}
+
 # ── Output helpers ───────────────────────────────────────────────────────────
 
 _refresh_list_proposed() {
@@ -698,6 +753,8 @@ _refresh_usage() {
                            templates, including conflicts you previously
                            [s]kipped. Use this to revisit earlier decisions
                            or audit local edits.
+    --status               Print declined breakdown (persistent + local) and
+                           exit. No mutation, no prompts.
     --dry-run              Print the plan without writing anything.
     -y, --yes              Apply auto-updates and add new files; skip conflicts
                            (no prompts). Required in non-interactive contexts.
