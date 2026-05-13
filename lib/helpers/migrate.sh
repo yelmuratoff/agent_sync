@@ -22,7 +22,14 @@ _migrate_prepare_context() {
     }
     DEFAULT_REPO_ROOT="$(cd "$system_dir/.." && pwd)"
 
-    export REPO_ROOT REPO_ROOT_CANONICAL DEFAULT_REPO_ROOT
+    PROJECT_CONFIG_PATH=""
+    if [[ -f "$project_dir/.ai/agent_sync.yaml" ]]; then
+        PROJECT_CONFIG_PATH="$project_dir/.ai/agent_sync.yaml"
+    elif [[ -f "$project_dir/agent_sync.yaml" ]]; then
+        PROJECT_CONFIG_PATH="$project_dir/agent_sync.yaml"
+    fi
+
+    export REPO_ROOT REPO_ROOT_CANONICAL DEFAULT_REPO_ROOT PROJECT_CONFIG_PATH
 }
 
 # Scan .ai/src/{hooks,mcp,settings} and print one "resource|tool|path|ext" per
@@ -113,9 +120,21 @@ _migrate_move_one() {
 # Detect the pre-v0.6 monolithic layout: a sibling `.agent/` directory
 # (singular, no 's') with AGENTS.md and any of workflows/, rules/, skills/.
 # Returns 0 if a candidate is present, 1 otherwise.
+#
+# Google Antigravity uses the same `.agent/` directory for its current
+# output. If antigravity is enabled, `.agent/` is live tool output, not
+# legacy — never propose to remove it.
 _migrate_has_legacy_agent_dir() {
     local root="$REPO_ROOT/.agent"
     [[ -d "$root" ]] || return 1
+
+    local enabled=""
+    enabled=$(list_enabled_tools) || true
+    local t
+    while IFS= read -r t; do
+        [[ "$t" == "antigravity" ]] && return 1
+    done <<< "$enabled"
+
     # A bare `.agent/` directory with no recognisable payload is still legacy
     # leftover — flag it so the user can decide to remove. Recognise both
     # styles: marker file present, or any nested directory exists.

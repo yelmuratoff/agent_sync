@@ -150,6 +150,25 @@ teardown() { teardown_test_project; }
     [ -d ".agent" ]
 }
 
+@test "migrate ignores .agent/ when antigravity is enabled" {
+    # .agent/ is Antigravity's live output dir. Migrating it would destroy
+    # real content. With antigravity enabled, .agent/ must not be reported as
+    # legacy and `--apply --yes` must leave it in place.
+    enable_tools antigravity
+    mkdir -p .agent/rules .agent/skills
+    echo "live antigravity output" > .agent/AGENTS.md
+
+    run run_agentsync migrate
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Legacy pre-v0.6"* ]]
+    [[ "$output" == *"Nothing to migrate"* ]]
+
+    run run_agentsync migrate --apply --yes
+    [ "$status" -eq 0 ]
+    [ -d ".agent" ]
+    [ -f ".agent/AGENTS.md" ]
+}
+
 @test "migrate detects .agent/ even alongside flat-layout overrides" {
     mkdir -p .agent .ai/src/hooks
     echo "legacy" > .agent/AGENTS.md

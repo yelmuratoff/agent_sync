@@ -278,8 +278,9 @@ _doctor_check_empty_skills() {
 # survive indefinitely. Doctor surfaces them so the user can decide whether
 # to keep, remove, or re-enable the tool.
 #
-# `.agent` (singular, no 's') was the pre-v0.6 monolithic layout — flag it
-# always, regardless of tool enablement.
+# `.agent` (singular) is dual-purpose: pre-v0.6 monolithic layout AND Google
+# Antigravity's current output directory. The legacy-warning path below
+# checks tool enablement so we don't false-flag live Antigravity output.
 _DOCTOR_OUTPUT_DIR_MAP=(
     ".claude|claude"
     ".cursor|cursor"
@@ -311,8 +312,10 @@ _doctor_check_orphan_outputs() {
 
     local found=0
 
-    # Legacy `.agent/` (singular) — never produced by current AgentSync.
-    if [[ -d "$REPO_ROOT/.agent" ]]; then
+    # `.agent/` (singular) is also Antigravity's current output dir. Only
+    # warn when antigravity is NOT enabled — otherwise this is live tool
+    # output, not pre-v0.6 legacy. Migrating it would erase real content.
+    if [[ -d "$REPO_ROOT/.agent" ]] && [[ "$_enabled_set" != *"|antigravity|"* ]]; then
         _doctor_advise ".agent/ — legacy pre-v0.6 layout (run $(_cyan "agentsync migrate") to clean up)"
         found=$((found + 1))
     fi
