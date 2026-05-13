@@ -347,8 +347,12 @@ _doctor_check_orphan_outputs() {
 # (review and remove from child) and divergent copies as "intentional" (worth
 # eyeballing once to confirm).
 #
-# Stops at the first parent .ai/src/ found or the git boundary, whichever
-# comes first — see find_parent_ai_src in paths.sh.
+# Parent resolution: an explicit `shared.path` in agent_sync.yaml wins over
+# walk-up. Walk-up is git-boundary-bounded so auto-detection never compares
+# unrelated repos; `shared.path` is the user saying "this *is* my parent" and
+# must work the same way the overlay does at sync time — across repos.
+# Walk-up stops at the first parent .ai/src/ found or the git boundary,
+# whichever comes first — see find_parent_ai_src in paths.sh.
 _doctor_check_cross_project() {
     local child_src="$REPO_ROOT/.ai/src"
     if [[ ! -d "$child_src" ]]; then
@@ -356,14 +360,23 @@ _doctor_check_cross_project() {
         return 0
     fi
 
-    local parent_src
-    parent_src=$(find_parent_ai_src "$REPO_ROOT" 2>/dev/null) || parent_src=""
+    local parent_src=""
+    local parent_origin=""
+    parent_src=$(shared_parent_src 2>/dev/null) || parent_src=""
+    if [[ -n "$parent_src" ]]; then
+        parent_origin="shared"
+    else
+        parent_src=$(find_parent_ai_src "$REPO_ROOT" 2>/dev/null) || parent_src=""
+        [[ -n "$parent_src" ]] && parent_origin="walk"
+    fi
     if [[ -z "$parent_src" ]]; then
         _doctor_info "No parent .ai/src/ found within git boundary."
         return 0
     fi
 
-    _doctor_info "Parent source: $(_dim "${parent_src}")"
+    local origin_hint=""
+    [[ "$parent_origin" == "shared" ]] && origin_hint=" $(_dim "(from shared.path)")"
+    _doctor_info "Parent source: $(_dim "${parent_src}")${origin_hint}"
     echo ""
 
     local dupe_count=0 divergent_count=0

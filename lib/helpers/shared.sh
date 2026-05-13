@@ -178,6 +178,53 @@ shared_cleanup_overlay() {
     unset SHARED_OVERLAY_DIR_CANONICAL
 }
 
+# Resolve `shared.path` from the project config to the parent's absolute
+# `.ai/src/` directory. Read-only — does not build the overlay, just locates
+# the declared parent.
+#
+# Returns 1 (and echoes nothing) when: no PROJECT_CONFIG_PATH, no shared.path,
+# parent path missing, parent has no .ai/src/, or parent resolves to this
+# project itself.
+#
+# Used by `doctor` so an explicit `shared.path` overrides the git-bounded
+# walk-up. The two parent-resolution paths are intentionally asymmetric:
+# walk-up is bounded by the git boundary because it's auto-detection;
+# `shared.path` is an explicit user declaration and must work the same way
+# overlay does at sync time — across repo boundaries.
+#
+# Usage: shared_parent_src  → echoes absolute path or returns 1
+shared_parent_src() {
+    [[ -n "${PROJECT_CONFIG_PATH:-}" ]] || return 1
+    [[ -f "$PROJECT_CONFIG_PATH" ]] || return 1
+
+    local raw_path
+    raw_path=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "shared.path")
+    [[ -z "$raw_path" ]] && return 1
+
+    local parent_root
+    if [[ "$raw_path" == /* ]]; then
+        parent_root="$raw_path"
+    else
+        parent_root="${REPO_ROOT:-$(pwd)}/$raw_path"
+    fi
+    [[ -d "$parent_root" ]] || return 1
+    parent_root=$(cd "$parent_root" && pwd)
+
+    local parent_src=""
+    if [[ -d "$parent_root/.ai/src" ]]; then
+        parent_src="$parent_root/.ai/src"
+    elif [[ "$(basename "$parent_root")" == "src" ]]; then
+        parent_src="$parent_root"
+    fi
+    [[ -n "$parent_src" ]] || return 1
+
+    # Reject self-reference — sync also rejects this; matching it here keeps
+    # doctor from comparing a tree to itself.
+    [[ "$parent_src" == "${REPO_ROOT:-}/.ai/src" ]] && return 1
+
+    echo "$parent_src"
+}
+
 # Is the given category being inherited via `shared:` in this project?
 # Reads PROJECT_CONFIG_PATH directly (does NOT require shared_setup_overlay
 # to have run), so it's safe to call from doctor/dedupe which don't go

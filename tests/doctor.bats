@@ -275,6 +275,45 @@ JSON
     [[ "$output" == *"rules/shared.md — diverges from parent"* ]]
 }
 
+@test "doctor honors shared.path across git boundary (asymmetric repro)" {
+    # Outer + inner with separate .git: walk-up alone would stop at inner's
+    # boundary and miss the parent. Declaring shared.path in inner makes the
+    # parent explicit, so doctor must use it regardless of git boundary.
+    local outer="$TEST_PROJECT/outer"
+    local inner="$outer/inner"
+    mkdir -p "$outer"
+    (
+        cd "$outer"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    echo "shared content" > "$outer/.ai/src/rules/shared.md"
+
+    mkdir -p "$inner"
+    (
+        cd "$inner"
+        git init --quiet
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init --no-detect >/dev/null
+    )
+    cp "$outer/.ai/src/rules/shared.md" "$inner/.ai/src/rules/shared.md"
+    cat >> "$inner/.ai/agent_sync.yaml" <<'EOF'
+
+shared:
+  path: "../"
+  inherit: rules
+EOF
+
+    run bash -c "cd '$inner' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' doctor"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"rules/shared.md — duplicate of parent"* ]]
+    [[ "$output" == *"(from shared.path)"* ]]
+    [[ "$output" != *"No parent .ai/src/ found"* ]]
+}
+
 @test "doctor walk-up stops at git boundary" {
     # Outer project with .ai/src/, but the child has its own .git — the walk-up
     # must NOT traverse out of the child's git repo.
