@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.1
+
+### Fixed
+
+- **`agentsync doctor` now honors `shared.path` as a cross-project parent override:** in a workspace where some sub-projects share `.git` with the parent and others have their own `.git`, doctor previously flagged governance divergence in the former but stayed silent in the latter — even though both opted into the same `shared:` declaration. Walk-up correctly stops at the git boundary as an auto-detection safety guard, but it shouldn't override an explicit user declaration. Doctor now resolves the parent via `shared.path` first (matching how the sync-time overlay already crosses repo boundaries), and falls back to git-bounded walk-up only when no `shared:` is declared. The "Parent source:" line gains a `(from shared.path)` hint when the override took effect, so it's clear which mechanism resolved the parent. Existing behaviour without `shared:` is unchanged — the git-boundary guard still prevents doctor from comparing unrelated repos during auto-detection. `agentsync dedupe` was not affected by the bug because it already exposes `--against PATH` as an explicit escape hatch.
+
 ## 0.20.0
 
 ### Added
