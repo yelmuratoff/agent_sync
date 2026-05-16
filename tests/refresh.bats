@@ -291,11 +291,16 @@ EOF
 
 @test "refresh: nested skill references files added when missing (NEW)" {
     rm -rf .ai/src/skills/agentsync/references
-    # init was shallow on skill subdirs — references aren't in manifest yet.
+    _drop_manifest_prefix "skills/agentsync/references/"
     run run_agentsync refresh --yes
     [ "$status" -eq 0 ]
     [ -f .ai/src/skills/agentsync/references/maintenance.md ] || \
     [ -f .ai/src/skills/agentsync/references/writing-skills.md ]
+}
+
+@test "init: copies nested skill subdirectories (references, scripts)" {
+    [ -f .ai/src/skills/agentsync/references/writing-skills.md ] || \
+    [ -f .ai/src/skills/agentsync/references/maintenance.md ]
 }
 
 # ── manifest semantics under --yes ───────────────────────────────────────────

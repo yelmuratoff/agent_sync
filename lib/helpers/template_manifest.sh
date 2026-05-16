@@ -118,8 +118,9 @@ template_manifest_write() {
 # the "heal manifest" pass at the start of `refresh`.
 #
 # Args: <templates_dir> <user_src_base>
-# Walks every .md file under templates_dir/{rules,commands,agents,skills}
-# (and templates_dir/AGENTS.md). For each file that ALSO exists in
+# Walks every .md file under templates_dir/{rules,commands,agents} and every
+# non-hidden file under templates_dir/skills (and templates_dir/AGENTS.md).
+# For each file that ALSO exists in
 # user_src_base AND has matching content, records the template hash.
 # Files that don't exist in user_src_base or differ are left out — the next
 # refresh sees them as NEW or CONFLICT and prompts.
@@ -166,6 +167,6 @@ template_manifest_heal_from_match() {
             src_hash=$(template_manifest_hash "$fpath") || continue
             user_hash=$(template_manifest_hash "$user_path") || continue
             [[ "$src_hash" == "$user_hash" ]] && template_manifest_record "$rel" "$src_hash"
-        done < <(find "$templates_dir/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null)
+        done < <(find "$templates_dir/skills" -type f ! -name '.*' -print0 2>/dev/null)
     fi
 }

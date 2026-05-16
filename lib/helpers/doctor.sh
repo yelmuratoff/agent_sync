@@ -444,7 +444,7 @@ _doctor_check_cross_project() {
                 fi
                 divergent_count=$((divergent_count + 1))
             fi
-        done < <(find "$parent_src/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null | LC_ALL=C sort -z)
+        done < <(find "$parent_src/skills" -type f ! -name '.*' -print0 2>/dev/null | LC_ALL=C sort -z)
     fi
 
     if [[ $dupe_count -eq 0 ]] && [[ $divergent_count -eq 0 ]]; then

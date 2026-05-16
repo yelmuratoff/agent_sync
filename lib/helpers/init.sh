@@ -93,7 +93,11 @@ _init_copy_source_templates() {
                 local skill_name
                 skill_name=$(basename "$skill_dir")
                 mkdir -p "$ai_dir/src/skills/$skill_name"
-                cp "$skill_dir"* "$ai_dir/src/skills/$skill_name/" 2>/dev/null || true
+                local skill_item
+                for skill_item in "$skill_dir"*; do
+                    [[ -e "$skill_item" ]] || continue
+                    cp -R "$skill_item" "$ai_dir/src/skills/$skill_name/"
+                done
             done
         fi
 

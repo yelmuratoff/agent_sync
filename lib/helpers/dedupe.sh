@@ -57,7 +57,7 @@ _dedupe_load_template_set() {
         while IFS= read -r -d '' f; do
             rel="${f#"$templates_dir/"}"
             _DEDUPE_TEMPLATE_SET="${_DEDUPE_TEMPLATE_SET}${rel}|"
-        done < <(find "$templates_dir/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null)
+        done < <(find "$templates_dir/skills" -type f ! -name '.*' -print0 2>/dev/null)
     fi
 }
 
@@ -197,7 +197,7 @@ _dedupe_collect() {
             else
                 _DEDUPE_DIVERGENT+=("$rel|$cf|$pf")
             fi
-        done < <(find "$parent_src/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null | LC_ALL=C sort -z)
+        done < <(find "$parent_src/skills" -type f ! -name '.*' -print0 2>/dev/null | LC_ALL=C sort -z)
     fi
 }
 

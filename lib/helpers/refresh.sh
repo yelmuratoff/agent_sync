@@ -477,7 +477,7 @@ _refresh_collect_changes() {
         while IFS= read -r -d '' f; do
             rel="${f#"$templates_dir/"}"
             _refresh_classify "$f" "$user_base/$rel" "$rel"
-        done < <(find "$templates_dir/skills" -type f \( -name "*.md" -o -name "*.markdown" \) -print0 2>/dev/null | LC_ALL=C sort -z)
+        done < <(find "$templates_dir/skills" -type f ! -name '.*' -print0 2>/dev/null | LC_ALL=C sort -z)
     fi
 }
 
