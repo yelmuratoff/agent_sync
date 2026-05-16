@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.4
+
+### Fixed
+
+- **`agentsync init` and `refresh` now copy nested skill subdirectories:** previously `init` shallow-copied each skill via `cp "$skill_dir"*` (no `-R`), and the `find` walks under `skills/` in `refresh`, `dedupe`, `doctor`, and the template-manifest healer were limited to `*.md` / `*.markdown`. Skills that ship companion content under `references/` or `scripts/` (e.g. `prompt-engineering/references/agent-persona.md`, `humanizer/references/wikipedia_signs_of_ai_writing.md`) were silently dropped on `init` and never picked up by `refresh` — the user got a `SKILL.md` that linked to files which weren't on disk. The `init` copy now iterates entries and uses `cp -R` so subdirectory layouts survive, and the four `find` walks now match every non-hidden file under `skills/` (`! -name '.*'`) instead of just markdown. `refresh` will now offer the missing nested files as NEW on existing projects; new projects get the full skill tree on `init` automatically.
+
 ## 0.20.3
 
 ### Changed
