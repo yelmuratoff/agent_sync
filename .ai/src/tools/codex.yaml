@@ -1,5 +1,5 @@
 name: "OpenAI Codex"
-enabled: false
+enabled: true
 
 targets:
   agents:
