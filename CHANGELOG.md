@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.3
+
+### Changed
+
+- **Humanizer skill expanded:** added a "Matching a sample" section so the skill calibrates to a user-provided writing sample when one is supplied (matching sentence-length patterns, paragraph openings, recurring word choices, and punctuation habits instead of defaulting to the skill's house voice). New pattern entries cover tailing negation fragments (", no guessing," ", no wasted motion," tacked onto a sentence end), persuasive authority tropes ("The real question is," "At its core," "Fundamentally"), signposting and self-narration ("Let's dive in," "Here's what you need to know"), elegant variation (synonym cycling for the same noun within a passage), and fragmented headers (a heading followed by a one-line restatement of the heading before the real content begins). The final-pass checklist gains a fourth meta-audit step that asks the model to name remaining AI tells in the draft — too-symmetrical rhythm, slogan-y closers, placeholder-sounding names — and rewrite those specific spots. Surfaces on existing projects via `agentsync refresh`; new projects pick up the refined content automatically on `agentsync init`. No behavioural change in the sync engine.
+
 ## 0.20.2
 
 ### Fixed
