@@ -5,7 +5,7 @@ The sync engine is config-driven: tool behaviour lives in `.ai/src/tools/*.yaml`
 ## Config-Driven Sync Engine
 
 - Declare tool behaviour in YAML configs. `sync_tool()` in `lib/sync.sh` reads `targets.*` and routes to helpers. Keep tool names, paths, and formats inside YAML.
-- Express format differences through YAML target options (`extension`, `header`, `merge_to_file`, `inline_into_agents`, `prepend_agents`, `append_imports`). Add a new option and a helper rather than an `if [[ "$tool_name" == "cursor" ]]` branch.
+- Express format differences through YAML target options (`extension`, `header`, `merge_to_file`, `inline_into_agents`, `prepend_agents`, `append_imports`, `as_skills`). Add a new option and a helper rather than an `if [[ "$tool_name" == "cursor" ]]` branch.
 - Resolve source paths through `resolve_source_override()` → project `agent_sync.yaml` → global `config.yaml`. Reference the `SOURCE_*` variables set by `_resolve_source_paths()`.
 - Read defaults (`enabled`, `cleanup`) from `config.yaml` into `DEFAULT_ENABLED` / `DEFAULT_CLEANUP`, then propagate from there.
 

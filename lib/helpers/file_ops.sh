@@ -113,6 +113,13 @@ sync_dir() {
         basename=$(basename "$dest_item")
 
         if [[ "$source_items" != *"|$basename|"* ]]; then
+            # Items the source filter would have skipped (include miss or
+            # explicit exclude hit) are not owned by this sync_dir call —
+            # leave them so another step (e.g. sync_commands_as_skills)
+            # can manage its own subset of the destination.
+            if ! matches_filter "$basename" "$include" "$exclude"; then
+                continue
+            fi
             if [[ "$dry_run" == "true" ]]; then
                 log_step "Would remove: $dest/$basename (extraneous)"
             else

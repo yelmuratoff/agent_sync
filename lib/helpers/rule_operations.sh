@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rule file operations for AgentSync sync engine.
 # Cross-platform compatible (Unix/macOS/Git Bash)
-# Depends on: logging.sh, filters.sh, file_ops.sh
+# Depends on: logging.sh, filters.sh, file_ops.sh, format_conversion.sh
 
 # Prepend a header to an existing file.
 # Usage: add_header "file" "header_text"
@@ -351,5 +351,167 @@ sync_rules() {
         log_step "$src_dir/ → $dest_dir/ ($count_copy updates, $count_clean cleanups)${extra} (dry-run)"
     else
         log_step "$src_dir/ → $dest_dir/ ($count_copy updates, $count_clean cleanups)${extra}"
+    fi
+}
+
+# Append a "## Commands" index section to an AGENTS-like file. Used for tools
+# without a native commands surface AND without a separate skills dir (Amazon Q,
+# Zed) — so the inlined index is the only way the agent learns the commands
+# exist. Each entry is "- `name` — <description>" pulled from frontmatter.
+#
+# Idempotency note: this appends every run. The full AGENTS.md is regenerated
+# upstream (copy + inline rules + inline skills + inline commands), so the
+# section appears once per sync, not duplicated.
+#
+# Usage: inline_commands_to_file "src_commands_dir" "target_file" "include" "exclude"
+inline_commands_to_file() {
+    local src_dir="$1"
+    local target_file="$2"
+    local include="${3:-}"
+    local exclude="${4:-}"
+
+    [[ -d "$src_dir" ]] || return 0
+    [[ -n "$target_file" ]] || return 0
+
+    local entries=""
+    local src_file basename name desc
+    for src_file in "$src_dir"/*.md; do
+        [[ -f "$src_file" ]] || continue
+        basename=$(basename "$src_file")
+        if ! matches_filter "$basename" "$include" "$exclude"; then
+            continue
+        fi
+        name="${basename%.md}"
+        desc=$(read_frontmatter_field "$src_file" "description")
+        if [[ -n "$desc" ]]; then
+            entries+="- \`/${name}\` — ${desc}"$'\n'
+        else
+            entries+="- \`/${name}\`"$'\n'
+        fi
+    done
+
+    [[ -n "$entries" ]] || return 0
+
+    {
+        echo ""
+        echo "## Commands"
+        echo ""
+        echo "The following commands provide quick workflows. Find them in \`.ai/src/commands/\`:"
+        echo ""
+        printf '%s' "$entries"
+    } >> "$target_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$target_file"
+    fi
+    log_step "Appended command index to $(basename "$target_file")"
+}
+
+# Convert each .ai/src/commands/<name>.md into a generated skill directory
+# at <skills_dest>/command-<name>/SKILL.md. Used for tools that lack a
+# native slash-command surface (Codex, Amazon Q, Zed) so command workflows
+# stay available through the skill mechanism instead.
+#
+# Frontmatter is regenerated (name: command-<name>, description carried over);
+# `$ARGUMENTS` and !`cmd` slash-command sugar is rewritten into plain prose
+# the skill reader will understand.
+#
+# Differential cleanup removes stale command-<name>/ dirs whose source file
+# no longer exists. Non-generated skill dirs (anything not matching
+# command-*) are left untouched.
+#
+# Usage: sync_commands_as_skills "src_commands_dir" "skills_dest_dir" "dry_run" "include" "exclude"
+sync_commands_as_skills() {
+    local src_dir="$1"
+    local dest_dir="$2"
+    local dry_run="${3:-false}"
+    local include="${4:-}"
+    local exclude="${5:-}"
+
+    if [[ ! -d "$src_dir" ]]; then
+        return 0
+    fi
+
+    if [[ "$dry_run" != "true" ]]; then
+        ensure_dir "$dest_dir"
+    fi
+
+    local valid_dirs="|"
+    local count=0
+
+    local src_file
+    for src_file in "$src_dir"/*.md; do
+        [[ -f "$src_file" ]] || continue
+        local basename name skill_dir_name skill_dir skill_file
+        basename=$(basename "$src_file")
+        name="${basename%.md}"
+
+        if ! matches_filter "$basename" "$include" "$exclude"; then
+            continue
+        fi
+
+        skill_dir_name="command-${name}"
+        valid_dirs="${valid_dirs}${skill_dir_name}|"
+        skill_dir="$dest_dir/$skill_dir_name"
+        skill_file="$skill_dir/SKILL.md"
+
+        count=$((count + 1))
+        if [[ "$dry_run" == "true" ]]; then
+            continue
+        fi
+
+        local description
+        description=$(read_frontmatter_field "$src_file" "description")
+        if [[ -z "$description" ]]; then
+            description="Run the /${name} command workflow."
+        fi
+
+        local body
+        body=$(awk '
+            BEGIN { in_fm = 0; fm_seen = 0; body_started = 0 }
+            NR == 1 && /^---$/ { in_fm = 1; next }
+            in_fm == 1 && /^---$/ { in_fm = 0; fm_seen = 1; next }
+            in_fm == 1 { next }
+            !body_started && /^$/ && fm_seen { next }
+            { body_started = 1; print }
+        ' "$src_file" \
+          | sed -e 's/\$ARGUMENTS/<arg>/g' \
+                -e 's/!`/`/g')
+
+        ensure_dir "$skill_dir"
+
+        {
+            printf '%s\n' "---"
+            printf 'name: "command-%s"\n' "$name"
+            printf 'description: >-\n'
+            printf '  %s\n' "$description"
+            printf '%s\n' "---"
+            printf '\n'
+            printf '%s\n' "$body"
+        } > "$skill_file"
+
+        if declare -f manifest_record_write >/dev/null 2>&1; then
+            manifest_record_write "$skill_file"
+        fi
+    done
+
+    local d d_name
+    for d in "$dest_dir"/command-*/; do
+        [[ -d "$d" ]] || continue
+        d_name=$(basename "$d")
+        if [[ "$valid_dirs" != *"|${d_name}|"* ]]; then
+            if [[ "$dry_run" == "true" ]]; then
+                log_step "Would remove obsolete generated skill: $d_name"
+            else
+                rm -rf "$d"
+                log_step "Removed obsolete generated skill: $d_name"
+            fi
+        fi
+    done
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_step "$src_dir/*.md → $dest_dir/command-*/SKILL.md ($count generated) (dry-run)"
+    else
+        log_step "$src_dir/*.md → $dest_dir/command-*/SKILL.md ($count generated)"
     fi
 }

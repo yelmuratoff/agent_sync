@@ -68,6 +68,21 @@ targets:
   # commands:
   #   dest: ".tool/commands"
   #   # extension: ".cmd.md"      # Optional: change file extension
+  #   # include: "*.md"           # Optional: filter (space-separated globs)
+  #   # exclude: "draft-*.md"     # Optional: filter (space-separated globs)
+  #
+  #   # For tools without a native commands surface (e.g. Codex):
+  #   # emit each .ai/src/commands/<name>.md as a generated skill at
+  #   # <targets.skills.dest>/command-<name>/SKILL.md. Requires targets.skills.dest.
+  #   # Mutually exclusive with `dest` and `inline_into_agents`.
+  #   # as_skills: true
+  #
+  #   # For tools that also lack a skills dir (e.g. Amazon Q, Zed):
+  #   # append a "## Commands" index to the AGENTS-like file with
+  #   # one "- `/<name>` — <description>" line per command.
+  #   # Requires targets.agents.dest (or rules.merge_to_file fallback).
+  #   # Mutually exclusive with `dest` and `as_skills`.
+  #   # inline_into_agents: true
 
   # Subagent personas (optional)
   # subagents:

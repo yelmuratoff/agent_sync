@@ -384,8 +384,21 @@ sync_tool() {
     local inline_skills
     inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
 
+    local commands_as_skills
+    commands_as_skills=$(get_tool_value "$tool_name" "targets.commands.as_skills")
+
     if [[ -n "$dest_skills_abs" ]]; then
-        sync_dir "$src_skills_abs" "$dest_skills_abs" "$DRY_RUN" "$skills_include" "$skills_exclude"
+        # Generated command-* skills are owned by the COMMANDS step below — tell
+        # sync_dir to leave them in place rather than sweep them as extraneous.
+        local skills_exclude_effective="$skills_exclude"
+        if [[ "$commands_as_skills" == "true" ]]; then
+            if [[ -n "$skills_exclude_effective" ]]; then
+                skills_exclude_effective="$skills_exclude_effective command-*"
+            else
+                skills_exclude_effective="command-*"
+            fi
+        fi
+        sync_dir "$src_skills_abs" "$dest_skills_abs" "$DRY_RUN" "$skills_include" "$skills_exclude_effective"
     elif [[ "$inline_skills" == "true" ]] && [[ -d "$src_skills_abs" ]]; then
         local skills_target_file="$dest_agents_abs"
         if [[ -z "$skills_target_file" ]] && [[ "$merge_to_file" == "true" ]] && [[ -f "$dest_rules_abs" ]]; then
@@ -431,9 +444,12 @@ sync_tool() {
     fi
 
     # 4. COMMANDS
-    local dest_cmd_ext dest_cmd_format
+    local dest_cmd_ext dest_cmd_format cmd_include cmd_exclude commands_inline_into_agents
     dest_cmd_ext=$(get_tool_value "$tool_name" "targets.commands.extension")
     dest_cmd_format=$(get_tool_value "$tool_name" "targets.commands.format")
+    cmd_include=$(get_tool_value "$tool_name" "targets.commands.include")
+    cmd_exclude=$(get_tool_value "$tool_name" "targets.commands.exclude")
+    commands_inline_into_agents=$(get_tool_value "$tool_name" "targets.commands.inline_into_agents")
     if [[ -n "$dest_commands_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
         local src_commands_abs
         src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
@@ -442,6 +458,28 @@ sync_tool() {
                 sync_commands_as_toml "$src_commands_abs" "$dest_commands_abs" "$DRY_RUN"
             else
                 sync_rules "$src_commands_abs" "$dest_commands_abs" "$dest_cmd_ext" "" "$DRY_RUN" "" ""
+            fi
+        fi
+    elif [[ "$commands_as_skills" == "true" ]] && [[ -n "$dest_skills_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
+        local src_commands_abs
+        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
+        if [[ -d "$src_commands_abs" ]]; then
+            log_info "$display has no native commands surface — generating skills (command-*) instead"
+            sync_commands_as_skills "$src_commands_abs" "$dest_skills_abs" "$DRY_RUN" "$cmd_include" "$cmd_exclude"
+        fi
+    elif [[ "$commands_inline_into_agents" == "true" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
+        local src_commands_abs commands_target_file
+        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
+        commands_target_file="$dest_agents_abs"
+        if [[ -z "$commands_target_file" ]] && [[ "$merge_to_file" == "true" ]] && [[ -f "$dest_rules_abs" ]]; then
+            commands_target_file="$dest_rules_abs"
+        fi
+        if [[ -d "$src_commands_abs" ]] && [[ -n "$commands_target_file" ]]; then
+            if [[ "$DRY_RUN" == "true" ]]; then
+                log_step "Would append command index (dry-run)"
+            else
+                log_info "$display has no native commands surface — appending command index to $(basename "$commands_target_file")"
+                inline_commands_to_file "$src_commands_abs" "$commands_target_file" "$cmd_include" "$cmd_exclude"
             fi
         fi
     fi

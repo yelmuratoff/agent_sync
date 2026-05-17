@@ -239,6 +239,45 @@ _doctor_scan_overrides() {
     fi
 }
 
+# ── Per-tool config conflicts ────────────────────────────────────────────────
+#
+# `targets.commands.{dest, as_skills, inline_into_agents}` are mutually
+# exclusive — sync picks dest first, then as_skills, then inline_into_agents.
+# When the user mixes them, the lower-priority knob is silently ignored.
+# Surface the conflict before it confuses the next sync.
+_doctor_check_commands_config() {
+    local tool="$1"
+    local dest as_skills inline
+    dest=$(get_tool_value "$tool" "targets.commands.dest")
+    as_skills=$(get_tool_value "$tool" "targets.commands.as_skills")
+    inline=$(get_tool_value "$tool" "targets.commands.inline_into_agents")
+
+    if [[ -n "$dest" ]] && [[ "$as_skills" == "true" ]]; then
+        _doctor_warn "$tool: targets.commands.dest and .as_skills both set — dest wins; remove one"
+    fi
+    if [[ -n "$dest" ]] && [[ "$inline" == "true" ]]; then
+        _doctor_warn "$tool: targets.commands.dest and .inline_into_agents both set — dest wins; remove one"
+    fi
+    if [[ "$as_skills" == "true" ]] && [[ "$inline" == "true" ]]; then
+        _doctor_warn "$tool: targets.commands.as_skills and .inline_into_agents both true — as_skills wins; remove one"
+    fi
+
+    if [[ "$as_skills" == "true" ]]; then
+        local skills_dest
+        skills_dest=$(get_tool_value "$tool" "targets.skills.dest")
+        if [[ -z "$skills_dest" ]]; then
+            _doctor_warn "$tool: targets.commands.as_skills requires targets.skills.dest — option will no-op"
+        fi
+    fi
+    if [[ "$inline" == "true" ]]; then
+        local agents_dest
+        agents_dest=$(get_tool_value "$tool" "targets.agents.dest")
+        if [[ -z "$agents_dest" ]]; then
+            _doctor_warn "$tool: targets.commands.inline_into_agents requires targets.agents.dest — option will no-op"
+        fi
+    fi
+}
+
 # ── Empty skill detection ────────────────────────────────────────────────────
 #
 # A skill is a directory under .ai/src/skills/<name>/ with a SKILL.md inside.
@@ -524,6 +563,7 @@ cmd_doctor() {
             else
                 _doctor_fail "$tool: unknown — no base template and no override"
             fi
+            _doctor_check_commands_config "$tool"
         done <<< "$enabled"
     fi
     echo ""

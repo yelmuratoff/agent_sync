@@ -102,6 +102,24 @@ cmd_add() {
                 force=true
                 shift
                 ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync add <kind> <name> [--force]
+       agentsync add mcp <server> (--url URL | --command CMD [--args 'a b'] [--env K=V,...])
+
+  Scaffold a new entry under .ai/src/:
+    rule       Create .ai/src/rules/<name>.md
+    skill      Create .ai/src/skills/<name>/SKILL.md
+    command    Create .ai/src/commands/<name>.md
+    subagent   Create .ai/src/agents/<name>.md
+    mcp        Add an MCP server entry to .ai/src/mcp.json
+
+  --force, -f   Overwrite an existing file.
+
+  Edit the scaffold, then run `agentsync sync` to propagate.
+USAGE
+                return 0
+                ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
                 exit 1

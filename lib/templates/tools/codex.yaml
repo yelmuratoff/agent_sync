@@ -11,6 +11,9 @@ targets:
   skills:
     dest: ".agents/skills"
 
+  commands:
+    as_skills: true
+
   subagents:
     dest: ".codex/agents"
     format: toml

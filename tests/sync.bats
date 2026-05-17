@@ -126,6 +126,38 @@ setup() {
     [ -f "AGENTS.md" ]
 }
 
+@test "sync: Codex skills directory exists" {
+    [ -d ".agents/skills" ]
+}
+
+@test "sync: Codex commands rendered as generated skills (command-*)" {
+    [ -d ".agents/skills/command-fix-issue" ]
+    [ -d ".agents/skills/command-review" ]
+    [ -f ".agents/skills/command-fix-issue/SKILL.md" ]
+}
+
+@test "sync: Codex generated skill carries command-prefixed name and copies description" {
+    grep -q '^name: "command-fix-issue"$' ".agents/skills/command-fix-issue/SKILL.md"
+    grep -q 'Investigate and fix a GitHub issue' ".agents/skills/command-fix-issue/SKILL.md"
+}
+
+@test "sync: Codex generated skill strips \$ARGUMENTS and !\` slash-command sugar" {
+    ! grep -qF '$ARGUMENTS' ".agents/skills/command-fix-issue/SKILL.md"
+    ! grep -qF '!`' ".agents/skills/command-fix-issue/SKILL.md"
+}
+
+@test "sync: Codex generated skills do not collide with native skills" {
+    # Native skill 'review' coexists with generated 'command-review'.
+    [ -d ".agents/skills/review" ]
+    [ -d ".agents/skills/command-review" ]
+}
+
+@test "sync: Codex repeat sync is idempotent (no command-* sweep)" {
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null 2>&1
+    [ -d ".agents/skills/command-fix-issue" ]
+    [ -d ".agents/skills/command-review" ]
+}
+
 # ── Hooks (per-tool) ─────────────────────────────────────────────────────────
 
 @test "sync: Cursor hooks.json exists" {
@@ -160,6 +192,16 @@ setup() {
 
 @test "sync: Amazon Q mcp.json exists" {
     [ -f ".amazonq/mcp.json" ]
+}
+
+@test "sync: Amazon Q AGENTS.md gets ## Commands inline section" {
+    grep -q '^## Commands$' ".amazonq/rules/00-context.md"
+    grep -q '^- `/fix-issue` —' ".amazonq/rules/00-context.md"
+}
+
+@test "sync: Zed .rules gets ## Commands inline section (merge_to_file fallback)" {
+    grep -q '^## Commands$' ".rules"
+    grep -q '^- `/fix-issue` —' ".rules"
 }
 
 @test "sync: Gemini settings.json exists" {

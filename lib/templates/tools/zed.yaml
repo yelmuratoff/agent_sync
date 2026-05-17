@@ -8,6 +8,8 @@ targets:
     prepend_agents: true
   skills:
     inline_into_agents: true
+  commands:
+    inline_into_agents: true
 
   settings:
     source: ".ai/src/settings/zed.json"

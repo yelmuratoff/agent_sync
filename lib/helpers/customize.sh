@@ -57,6 +57,26 @@ cmd_customize() {
         case "$1" in
             --full) full=true; shift ;;
             --yes|-y) yes=true; shift ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync customize <slug> [<resource>] [--full] [--yes]
+
+  Scaffold a per-tool override at .ai/src/tools/<slug>.yaml so you can change
+  fields without forking the whole base template. Empty by default — write
+  only the keys you want to win over base; everything else inherits.
+
+  <resource>   Optional payload override scaffold: tool, hooks, mcp, settings.
+               Default: tool (the YAML override itself).
+  --full       Copy the entire base template into the override. Use when you
+               want to see every available field at once; trim what you don't
+               need with `agentsync simplify`.
+  --yes, -y    Overwrite an existing override without prompting.
+
+  See effective config:  agentsync show <slug>
+  See user vs base diff: agentsync diff <slug>
+USAGE
+                return 0
+                ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
                 exit 1
@@ -255,6 +275,20 @@ cmd_show() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --base) show_base=true; shift ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync show <slug> [<resource>] [--base]
+
+  Print effective configuration for a tool. Each line is marked
+  "base" (inherited from the shipped template) or "user" (overridden in
+  .ai/src/tools/<slug>.yaml).
+
+  <resource>   Optional payload resource: tool, hooks, mcp, settings.
+               Default: tool (the YAML config).
+  --base       Print the base template only, ignoring user overrides.
+USAGE
+                return 0
+                ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
                 exit 1
@@ -350,6 +384,8 @@ cmd_show() {
         "targets.commands.dest"
         "targets.commands.format"
         "targets.commands.extension"
+        "targets.commands.as_skills"
+        "targets.commands.inline_into_agents"
         "targets.subagents.dest"
         "targets.subagents.format"
         "targets.subagents.extension"
@@ -450,6 +486,18 @@ cmd_diff() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync diff [<slug>] [<resource>]
+
+  Show fields where your user override diverges from the shipped base
+  template. With no <slug>, walks every customized tool.
+
+  <resource>   Optional payload resource: tool, hooks, mcp, settings.
+               Default: tool (the YAML config).
+USAGE
+                return 0
+                ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
                 exit 1
@@ -595,6 +643,8 @@ _diff_one_tool() {
         "targets.skills.inline_into_agents"
         "targets.commands.dest"
         "targets.commands.format"
+        "targets.commands.as_skills"
+        "targets.commands.inline_into_agents"
         "targets.subagents.dest"
         "targets.subagents.format"
         "targets.settings.source"

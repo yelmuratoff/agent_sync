@@ -32,6 +32,8 @@ targets.skills.inline_into_agents
 targets.commands.dest
 targets.commands.format
 targets.commands.extension
+targets.commands.as_skills
+targets.commands.inline_into_agents
 targets.subagents.dest
 targets.subagents.format
 targets.subagents.extension

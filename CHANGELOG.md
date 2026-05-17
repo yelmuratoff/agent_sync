@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.21.0
+
+### Added
+
+- **`targets.commands.as_skills`:** new per-tool YAML option that emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md` for tools without a native slash-command surface. Codex CLI is the headline beneficiary — its built-in slash commands are hardcoded and OpenAI explicitly recommends skills as the replacement, so AgentSync's project-local commands now reach Codex through `.agents/skills/command-*/` automatically. Generated skills regenerate frontmatter (`name: command-<name>`, description carried over) and rewrite Claude-flavoured slash sugar (`$ARGUMENTS` → `<arg>`, leading `` !` `` → `` ` ``) into prose the skill reader can use. The `command-` prefix avoids collisions with native skills of the same name — `release` and `command-release` coexist as separate dirs. Enabled by default in the base template for Codex; toggle with `agentsync customize codex` and override `commands: { as_skills: false }`.
+
+- **`targets.commands.inline_into_agents`:** parallel option for tools that lack BOTH a native commands surface AND a skills dir (Amazon Q, Zed). Appends a `## Commands` index to the agents-like file (or to the merged rules file when `rules.merge_to_file: true`) with one ``- `/<name>` — <description>`` line per command. Enabled by default for Amazon Q (`.amazonq/rules/00-context.md`) and Zed (`.rules`).
+
+- **`agentsync doctor` per-tool config conflict checks:** doctor now warns when a tool mixes `targets.commands.dest`, `.as_skills`, and `.inline_into_agents` — only one wins in sync, the others are silently ignored. Also warns when `as_skills: true` is set without `targets.skills.dest`, or `inline_into_agents: true` without `targets.agents.dest`, since both options would no-op.
+
+- **`agentsync sync` info line for fallback modes:** when sync emits commands as skills or inlines them into AGENTS.md (rather than copying to a native commands dir), it now prints a one-line explanation so first-time users understand why their `.ai/src/commands/` lands in an unexpected destination.
+
+### Changed
+
+- **`matches_filter` now accepts space-separated patterns:** `include` and `exclude` in YAML can list multiple globs separated by spaces (e.g. `exclude: "draft-*.md tmp-*.md"`); the filter matches if ANY pattern matches. Single-pattern usage is unchanged.
+
+- **`sync_dir` cleanup honors `exclude`:** files in the destination directory that match the caller's `exclude` glob are no longer swept as extraneous. This lets a second sync step (e.g. `sync_commands_as_skills`) safely own a subset of the destination without the primary `sync_dir` call deleting its output on each run.
+
+- **`--help` / `-h` flag now works on `agentsync customize`, `enable`, `add`, `show`, `diff`:** previously these subcommands rejected `--help` as "Unknown flag". Each now prints a usage block with flags, positional args, and a one-line summary of what the command does.
+
 ## 0.20.4
 
 ### Fixed

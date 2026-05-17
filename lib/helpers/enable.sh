@@ -152,6 +152,21 @@ cmd_enable() {
             --scaffold)    scaffold_mode="yes"; shift ;;
             --no-scaffold) scaffold_mode="no";  shift ;;
             --yes|-y)      yes=true;            shift ;;
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync enable <slug> [<slug>...] [--no-scaffold|--scaffold] [--yes]
+
+  Add one or more tools to the `tools.enabled` list in agent_sync.yaml.
+  After enabling, run `agentsync sync` to write that tool's outputs.
+
+  --scaffold       Always scaffold payload files (settings/hooks/mcp).
+  --no-scaffold    Never scaffold; skip the payload prompt.
+  --yes, -y        Accept any prompts (e.g. project-config creation).
+
+  Run `agentsync list` to see available tool slugs.
+USAGE
+                return 0
+                ;;
             --)            shift; while [[ $# -gt 0 ]]; do tools+=("$1"); shift; done ;;
             -*)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
