@@ -317,9 +317,6 @@ _doctor_check_empty_skills() {
 # survive indefinitely. Doctor surfaces them so the user can decide whether
 # to keep, remove, or re-enable the tool.
 #
-# `.agent` (singular) is dual-purpose: pre-v0.6 monolithic layout AND Google
-# Antigravity's current output directory. The legacy-warning path below
-# checks tool enablement so we don't false-flag live Antigravity output.
 _DOCTOR_OUTPUT_DIR_MAP=(
     ".claude|claude"
     ".cursor|cursor"
@@ -330,7 +327,6 @@ _DOCTOR_OUTPUT_DIR_MAP=(
     ".cline|cline"
     ".amazonq|amazonq"
     ".zed|zed"
-    ".antigravity|antigravity"
     ".agents|codex"
 )
 
@@ -351,10 +347,7 @@ _doctor_check_orphan_outputs() {
 
     local found=0
 
-    # `.agent/` (singular) is also Antigravity's current output dir. Only
-    # warn when antigravity is NOT enabled — otherwise this is live tool
-    # output, not pre-v0.6 legacy. Migrating it would erase real content.
-    if [[ -d "$REPO_ROOT/.agent" ]] && [[ "$_enabled_set" != *"|antigravity|"* ]]; then
+    if [[ -d "$REPO_ROOT/.agent" ]]; then
         _doctor_advise ".agent/ — legacy pre-v0.6 layout (run $(_cyan "agentsync migrate") to clean up)"
         found=$((found + 1))
     fi
@@ -364,10 +357,11 @@ _doctor_check_orphan_outputs() {
         dir="${entry%%|*}"
         tool="${entry#*|}"
         [[ -d "$REPO_ROOT/$dir" ]] || continue
-        # `.agents/` is shared by multiple tools (codex skills reference it);
+        # `.agents/` is shared by multiple tools (codex skills, Antigravity output);
         # only flag it if NO tool that uses it is enabled.
         if [[ "$dir" == ".agents" ]]; then
             [[ "$_enabled_set" == *"|codex|"* ]] && continue
+            [[ "$_enabled_set" == *"|antigravity|"* ]] && continue
         fi
         if [[ "$_enabled_set" != *"|${tool}|"* ]]; then
             _doctor_advise "$dir/ — orphan (tool '$tool' not enabled; output left from prior run)"

@@ -6,11 +6,11 @@ targets:
     dest: "GEMINI.md"
 
   rules:
-    dest: ".agent/rules"
+    dest: ".agents/rules"
     header: "---\ntrigger: always_on\n---"
 
   skills:
-    dest: ".agent/skills"
+    dest: ".agents/skills"
 
   commands:
-    dest: ".agent/workflows"
+    dest: ".agents/workflows"

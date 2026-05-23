@@ -200,7 +200,7 @@ _init_detect_enabled_tools() {
         "cline|$root/.clinerules"
         "amazonq|$root/.amazonq"
         "zed|$root/.zed|$root/.rules"
-        "antigravity|$root/.antigravity"
+        "antigravity|$root/.agents/rules|$root/.agents/workflows"
     )
 
     local entry tool marker IFS_BAK="$IFS"

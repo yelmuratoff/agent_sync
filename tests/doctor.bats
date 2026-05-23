@@ -225,26 +225,25 @@ JSON
     [[ "$output" == *".agent/ — legacy pre-v0.6 layout"* ]]
 }
 
-@test "doctor does not flag .agent/ when antigravity is enabled" {
-    # .agent/ is Antigravity's canonical output dir; treating it as legacy
-    # produces a false-positive advisory and would lead a careless migrate
-    # invocation to destroy live tool output.
+@test "doctor flags .agent/ even when antigravity is enabled" {
+    # Antigravity moved its output to `.agents/` (plural). `.agent/` is now
+    # purely the pre-v0.6 layout regardless of which tools are enabled.
     run_agentsync init --no-detect >/dev/null
     enable_tools antigravity
-    mkdir -p .agent/rules .agent/skills .agent/workflows
-    echo "live" > .agent/AGENTS.md
-    run run_agentsync doctor
-    [ "$status" -eq 0 ]
-    [[ "$output" != *".agent/ — legacy pre-v0.6 layout"* ]]
-}
-
-@test "doctor still flags .agent/ as legacy when antigravity is disabled" {
-    run_agentsync init --no-detect >/dev/null
     mkdir -p .agent/rules
-    echo "legacy" > .agent/AGENTS.md
+    echo "stale" > .agent/AGENTS.md
     run run_agentsync doctor
     [ "$status" -eq 0 ]
     [[ "$output" == *".agent/ — legacy pre-v0.6 layout"* ]]
+}
+
+@test "doctor does not flag .agents/ when antigravity is enabled" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools antigravity
+    mkdir -p .agents/rules .agents/skills
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".agents/ — orphan"* ]]
 }
 
 @test "doctor advises on orphan tool-output dir for disabled tool" {

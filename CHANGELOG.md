@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.22.0
+
+### Changed
+
+- **Google Antigravity output moved from `.agent/` to `.agents/`:** the Antigravity CLI's workspace output directory changed from `.agent/` (singular) to `.agents/` (plural) to match its current plugin convention. `lib/templates/tools/antigravity.yaml` and the example project now write `rules`, `skills`, and `commands` under `.agents/`. The `agents` target stays at the canonical root `GEMINI.md`. Existing projects pick up the new layout on the next `agentsync sync`; the old `.agent/` directory is now treated as pre-v0.6 legacy and surfaced by `agentsync doctor` / `migrate` for cleanup.
+
+- **`doctor` and `migrate` no longer protect `.agent/` when antigravity is enabled:** the dual-purpose guard added in 0.20.2 (treat `.agent/` as live Antigravity output when antigravity is in `tools.enabled`) is removed. With Antigravity's path now `.agents/`, the guard would shield stale `.agent/` directories from cleanup — the opposite of what the user wants on a transitional project. `.agent/` is once again pure pre-v0.6 legacy regardless of tool enablement; `doctor` advises on it and `migrate --apply --yes` removes it. The shared-`.agents/` orphan check in doctor was extended to skip when antigravity is enabled (it already skipped for codex).
+
 ## 0.21.0
 
 ### Added
