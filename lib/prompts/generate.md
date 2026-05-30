@@ -160,7 +160,6 @@ name: "agent-name"
 description: >-
   What this agent specializes in.
   USE PROACTIVELY when [trigger conditions].
-model: default
 tools:
   - Read
   - Grep

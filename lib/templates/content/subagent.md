@@ -3,7 +3,6 @@ name: "template-agent"
 description: >-
   [What this subagent specializes in — one sentence].
   USE PROACTIVELY when [trigger conditions].
-model: default
 tools:
   - Read
   - Grep

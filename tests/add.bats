@@ -37,7 +37,7 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [ -f ".ai/src/agents/reviewer.md" ]
     grep -q '^name: "reviewer"$' .ai/src/agents/reviewer.md
-    grep -q "^model:" .ai/src/agents/reviewer.md
+    grep -q "^tools:" .ai/src/agents/reviewer.md
 }
 
 @test "add prints next-step hint" {
