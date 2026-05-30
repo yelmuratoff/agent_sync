@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://github.com/yelmuratoff/agent/blob/main/assets/agent_sync.png?raw=true" width="400">
 
-  <h3>One source → 14 AI tools. Stop copy-pasting rules.</h3>
+  <h3>One source → 11 AI tools. Stop copy-pasting rules.</h3>
 
   <p>
     <a href="https://github.com/yelmuratoff/agent">
@@ -35,9 +35,8 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 ├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
 ├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
 ├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
-├── .junie/rules/testing.md
 ├── .amazonq/rules/testing.md
-├── AGENTS.md                             # inlined rule reference (Codex)
+├── AGENTS.md                             # inlined rule reference (Codex, Gemini, Junie)
 └── .rules                                # merged into single file (Zed)
 ```
 
@@ -164,14 +163,14 @@ AgentSync supports two source layouts:
 
 | Source        | Purpose                                                                                                                                                                                                                                                                                                                                       | Tools that use it                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `guidelines.md`).                                                                                                                                                                                                                      | All                                                         |
+| **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `.junie/AGENTS.md`, `00-context.md`).                                                                                                                                                                                                                      | All                                                         |
 | **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).                                                                                                                                                                                            | All                                                         |
 | **skills/**   | On-demand recipes in the open [agentskills.io](https://agentskills.io) format. Each skill = directory with `SKILL.md` + optional `references/`, `scripts/`, `assets/`. Description is the trigger (imperative + pushy + ≤1024 chars). `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All                                                         |
-| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. For tools without a native commands surface, AgentSync converts: Codex gets generated skills (`command-*/SKILL.md`); Amazon Q and Zed get a `## Commands` index inlined into the agents file.        | Claude, Cursor, Copilot (`.prompt.md`), Gemini (TOML), Junie, Windsurf, Antigravity; Codex (as skills); Amazon Q, Zed (inlined) |
-| **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex.                                                                                                                                                                                                           | Claude, Cursor, Copilot (`.agent.md`), Gemini, Codex (TOML) |
-| **settings/** | Permissions & config. Per-tool JSON files (`claude.json`). Controls allow/deny rules. Claude hooks also go here.                                                                                                                                                                                                                              | Claude                                                      |
-| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                                                                                                                                                        | Claude, Cursor, Windsurf                                    |
-| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                                                                                                                                              | Cursor, Codex, Copilot                                      |
+| **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. For tools without a native commands surface, AgentSync converts: Codex gets generated skills (`command-*/SKILL.md`); Amazon Q and Zed get a `## Commands` index inlined into the agents file.        | Claude, Cursor, Copilot (`.prompt.md`), Gemini (TOML), Junie, Cline, Windsurf, Antigravity; Codex (as skills); Amazon Q, Zed (inlined) |
+| **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex and to JSON for Amazon Q.                                                                                                                                                                                                           | Claude, Cursor, Copilot (`.agent.md`), Gemini, Junie, Codex (TOML), Amazon Q (JSON) |
+| **settings/** | Permissions & config. Per-tool files (`claude.json`, `gemini.json`, `codex.toml`, `zed.json`). Controls allow/deny rules. Claude hooks also go here.                                                                                                                                                                                                                              | Claude, Gemini, Codex, Zed                                  |
+| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers.                                                                                                                                                                                                                                                                        | Claude, Cursor, Windsurf, Junie, Amazon Q                  |
+| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                                                                                                                                              | Cursor, Copilot, Codex, Windsurf                           |
 | **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                                                                                                                                                | —                                                           |
 
 ## CLI Commands
@@ -180,22 +179,34 @@ AgentSync supports two source layouts:
 agentsync <command> [options]
 ```
 
-| Command              | Alias | Description                                                                                    |
-| -------------------- | ----- | ---------------------------------------------------------------------------------------------- |
-| `init [dir]`         |       | Create `.ai/` structure with starter templates                                                 |
-| `sync`               |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`, `--workspace`)          |
-| `check`              |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
-| `refresh`            |       | Pull new template files into existing `.ai/src/` (three-way diff; `--status` to list declined) |
-| `dedupe`             |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
-| `migrate`            |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
-| `adopt <dest>`       |       | Promote a manual edit in a generated file back into `.ai/src/`                                 |
-| `doctor`             |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
-| `generate [context]` | `gen` | Print AI prompt for project-specific config generation                                         |
-| `setup-hooks`        |       | Install git hooks for auto-sync on pull/checkout                                               |
-| `list`               | `ls`  | Show configured tools and status                                                               |
-| `update`             |       | Self-update via git pull (auto-check every 24h)                                                |
-| `version`            | `-v`  | Print version                                                                                  |
-| `help`               | `-h`  | Show help                                                                                      |
+| Command                  | Alias | Description                                                                                    |
+| ------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
+| `init [dir]`             |       | Create `.ai/` structure with starter templates                                                 |
+| `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`, `--workspace`)          |
+| `check`                  |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
+| `enable <tools…>`        |       | Opt in to one or more tools (scaffolds editable settings/hooks payloads)                        |
+| `disable <tools…>`       |       | Opt out of one or more tools                                                                    |
+| `add <kind> <name>`      |       | Scaffold a `rule`, `skill`, `command`, `subagent`, or `mcp` server                              |
+| `customize <tool> [res]` |       | Create a per-field override for a tool                                                          |
+| `simplify [tool]`        |       | Remove override fields that match the base (`--apply`)                                          |
+| `show <tool>`            |       | Show effective (merged) config for a tool                                                       |
+| `diff [tool]`            |       | Show user overrides vs base defaults                                                            |
+| `resolve`                |       | Interactively reconcile overrides with base values                                              |
+| `refresh`                |       | Pull new template files into existing `.ai/src/` (three-way diff; `--status` to list declined) |
+| `dedupe`                 |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
+| `migrate`                |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
+| `adopt <dest>`           |       | Promote a manual edit in a generated file back into `.ai/src/`                                 |
+| `doctor`                 |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
+| `generate [context]`     | `gen` | Print AI prompt for project-specific config generation                                         |
+| `setup-hooks`            |       | Install git hooks for auto-sync on pull/checkout                                               |
+| `export`                 |       | Bundle `.ai/src/` into a shareable archive                                                      |
+| `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
+| `list`                   | `ls`  | Show configured tools and status                                                               |
+| `update`                 |       | Self-update via git pull (auto-check every 24h)                                                |
+| `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
+| `release`                |       | Bump version, tag, and push (maintainer)                                                        |
+| `version`                | `-v`  | Print version                                                                                  |
+| `help`                   | `-h`  | Show help                                                                                      |
 
 ### Sync options
 
@@ -309,12 +320,13 @@ targets:
 | `header`                        | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                             |
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
-| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini)                                     |
-| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Junie, Cline, Amazon Q, Zed)                     |
+| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie)                             |
+| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Cline, Amazon Q, Zed)                            |
 | `as_skills` (commands)          | Emit each command as a generated skill at `<skills.dest>/command-<name>/SKILL.md` (Codex)                              |
 | `inline_into_agents` (commands) | Append a `## Commands` index (`` `/<name>` — description ``) into AGENTS file (Amazon Q, Zed)                          |
 | `prepend_agents`                | Prepend AGENTS.md content before merged rules (Zed)                                                                    |
 | `format: "toml"`                | Auto-convert MD→TOML (Gemini commands, Codex subagents)                                                                |
+| `format: "amazonq_json"`        | Auto-convert subagent MD→Amazon Q CLI custom-agent JSON (Amazon Q subagents)                                           |
 | `source` (settings/mcp/hooks)   | Required — per-tool source file path                                                                                   |
 
 ## Supported Tools
@@ -323,15 +335,15 @@ targets:
 | ---------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
 | **Claude Code**        | `claude.yaml`      | CLAUDE.md, rules, skills, commands, agents, settings.json, .mcp.json                                       |
 | **GitHub Copilot**     | `copilot.yaml`     | copilot-instructions.md, .instructions.md rules, skills, .prompt.md commands, .agent.md agents, hooks.json |
-| **Cursor**             | `cursor.yaml`      | AGENTS.md, .mdc rules, skills, agents, mcp.json, hooks.json                                                |
-| **Gemini CLI**         | `gemini.yaml`      | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents                                             |
-| **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), subagents (MD→TOML), hooks.json      |
-| **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, mcp_config.json                                            |
-| **JetBrains Junie**    | `junie.yaml`       | guidelines.md, rules/, +inlined skills index                                                               |
-| **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, +inlined skills index                                                         |
-| **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index                             |
-| **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index, +inlined commands index                  |
-| **Google Antigravity** | `antigravity.yaml` | GEMINI.md, rules (trigger frontmatter), skills, workflows (commands)                                       |
+| **Cursor**             | `cursor.yaml`      | AGENTS.md, .mdc rules, skills, commands, agents, mcp.json, hooks.json                                      |
+| **Gemini CLI**         | `gemini.yaml`      | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents, settings.json                              |
+| **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), subagents (MD→TOML), hooks.json, config.toml |
+| **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
+| **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
+| **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
+| **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index, mcp.json, cli-agents (MD→JSON) |
+| **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index, +inlined commands index, settings.json   |
+| **Google Antigravity** | `antigravity.yaml` | GEMINI.md, .agents/rules (trigger frontmatter), .agents/skills, .agents/workflows (commands)               |
 
 ## Format Conversions
 
@@ -343,15 +355,15 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                     |
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                    |
 | Rules `.md`    | Single merged file                               | Zed                         |
-| Rules `.md`    | Inlined into AGENTS.md                           | Codex, Gemini               |
-| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini               |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Junie, Cline, Amazon Q, Zed |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini, Junie        |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Cline, Amazon Q, Zed        |
 | AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q             |
 | AGENTS.md      | Prepended before merged rules                    | Zed                         |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                  |
 | Commands `.md` | `.prompt.md`                                     | Copilot                     |
 | Agents `.md`   | `.agent.md`                                      | Copilot                     |
 | Agents `.md`   | `.toml` (developer_instructions field)           | Codex                       |
+| Agents `.md`   | `.json` (Amazon Q CLI custom-agent)              | Amazon Q                    |
 
 You write everything in Markdown. AgentSync handles the rest.
 
@@ -442,11 +454,11 @@ Every payload resource — tool YAML, hooks, MCP config, settings — follows th
 | mcp       | `lib/templates/mcp/<tool>.json`       | `.ai/src/tools/<tool>/mcp.json`       | `.ai/src/mcp.json` |
 | settings  | `lib/templates/settings/<tool>.<ext>` | `.ai/src/tools/<tool>/settings.<ext>` | —                  |
 
-The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --apply` to move them. Legacy paths will be removed in 0.12.
+The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --apply` to move them into the canonical per-tool layout; the legacy paths may be dropped in a future release.
 
 **Why it matters:**
 
-- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
+- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 11 tools you don't use.
 - **Updates flow through.** Because the base lives in the install dir, `agentsync update` improves every project that hasn't locked the file in as an override.
 - **Shared MCP is shared.** One `.ai/src/mcp.json` reaches every enabled tool — no copy-pasting the same server map into five JSON files.
 - **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/tools/cursor/hooks.json`. Delete the file later to resume inheriting.
