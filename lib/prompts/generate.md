@@ -160,7 +160,7 @@ name: "agent-name"
 description: >-
   What this agent specializes in.
   USE PROACTIVELY when [trigger conditions].
-model: sonnet
+model: default
 tools:
   - Read
   - Grep

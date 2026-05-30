@@ -3,7 +3,7 @@ name: code-reviewer
 description: >
   Expert code reviewer for Bash/Shell scripts with focus on portability and correctness.
   USE PROACTIVELY when reviewing PRs, checking implementations, or validating changes before merging.
-model: sonnet
+model: default
 tools:
   - Read
   - Grep

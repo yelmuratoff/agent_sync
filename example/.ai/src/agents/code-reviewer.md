@@ -3,7 +3,7 @@ name: code-reviewer
 description: >
   Expert code reviewer focused on correctness and maintainability.
   USE PROACTIVELY when reviewing PRs, checking implementations, or validating code before merging.
-model: sonnet
+model: default
 tools:
   - Read
   - Grep
