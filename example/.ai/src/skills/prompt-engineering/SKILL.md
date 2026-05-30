@@ -22,7 +22,7 @@ A workflow and toolbox for writing prompts that steer modern LLMs reliably — s
 5. **Diagnose, don't patch** — name the cause (ambiguous scope? missing context? conflicting instruction? wrong format?). Fix the cause, not the symptom. If you can't pinpoint the cause, run metaprompting (see `references/metaprompting.md`).
 6. **Change one thing at a time** — otherwise you won't know what worked.
 7. **Iterate** — re-run the same test set, compare versions; stop when stable across all of them, not when "looks good once".
-8. **Pin and version** — for production, pin to a specific model snapshot (e.g., `claude-opus-4-7`, `gpt-5.3-codex`) and re-run evals when upgrading.
+8. **Pin and version** — for production, pin to a specific model snapshot (e.g., `claude-opus-4-8`, `gpt-5.3-codex`) and re-run evals when upgrading.
 
 ## Prompt components (include only what's load-bearing)
 
@@ -88,14 +88,14 @@ Before shipping a prompt, check:
 
 ## Tool-specific notes
 
-- **Claude (Opus 4.6+/4.7)** — interprets instructions literally; state scope explicitly. Uses adaptive thinking — tune via `effort`, not by over-prompting. Dial back "MUST/ALWAYS/CRITICAL" — it over-triggers. Prefers XML tags.
+- **Claude (Opus 4.7 / 4.8)** — Opus 4.8 is the current most-capable GA model and builds on 4.7 with no breaking API changes (`effort` defaults to `high`, set `xhigh` for coding). Interprets instructions literally; state scope explicitly. Uses adaptive thinking — tune via `effort`, not by over-prompting. Dial back "MUST/ALWAYS/CRITICAL" — it over-triggers. Prefers XML tags.
 - **OpenAI GPT-5 / Codex** — uses `instructions` + `input` roles; pin production prompts to a specific model snapshot; build evals alongside prompts. Reasoning models: prefer goal-only prompts over step-by-step instructions. For `gpt-5.3-codex`, persist the `phase` field on assistant items (commentary vs. final_answer) — dropping it degrades performance.
 - **Gemini** — responds well to the full component template (Objective → Instructions → Constraints → Context → Output format → Examples → Recap). Native Thinking: avoid explicit step-by-step.
 - **Agent rules / skills / commands (this repo)** — rules are always-on constraints (imperative, 20–50 lines, one topic). Skills are on-demand recipes with a triggering description. Commands are one-workflow prompts. See the `agentsync` skill for AgentSync file format and scaffolding.
 
 ## Gotchas
 
-- Don't blindly copy tips across tools — a prompt tuned for GPT-4 can under- or over-trigger on Claude Opus 4.7 and vice versa.
+- Don't blindly copy tips across tools — a prompt tuned for GPT-4 can under- or over-trigger on Claude Opus 4.8 and vice versa.
 - Don't keep adding rules when the model misbehaves — first check if an existing rule is ambiguous or conflicts with another. Metaprompting (`references/metaprompting.md`) often surfaces these.
 - Don't mix instructions and raw data in the same paragraph — always separate with XML tags or clear headings.
 - Don't put the question at the top when the context is long — questions at the bottom of a long prompt perform meaningfully better.

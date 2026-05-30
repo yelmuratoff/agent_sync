@@ -101,7 +101,7 @@ NEVER use generic AI-generated aesthetics like overused font families (Inter, Ro
 
 ## Frontend variety — propose options before building
 
-When you want different visual directions across runs (replaces `temperature` for variety on Opus 4.7, which has a persistent default cream/serif house style).
+When you want different visual directions across runs (replaces `temperature` for variety on Opus 4.7+, which has a persistent default cream/serif house style).
 
 ```text
 Before building, propose 4 distinct visual directions tailored to this brief (each as: bg hex / accent hex / typeface — one-line rationale). Ask the user to pick one, then implement only that direction.
@@ -119,7 +119,7 @@ Use subagents when tasks can run in parallel, require isolated context, or invol
 Do not spawn a subagent for work you can complete directly in a single response (e.g. refactoring a function you can already see). Spawn multiple subagents in the same turn when fanning out across items or reading many files.
 ```
 
-Inverse — when you *want* more subagent fan-out on 4.7 (which spawns fewer than 4.6 by default): explicitly instruct it to delegate, raise `effort` to `xhigh`, or list the patterns where delegation is desirable.
+Inverse — when you *want* more subagent fan-out on 4.7+ (which spawns fewer than 4.6 by default): explicitly instruct it to delegate, raise `effort` to `xhigh`, or list the patterns where delegation is desirable.
 
 ## Persistence across context windows
 
@@ -236,6 +236,6 @@ If you create any temporary new files, scripts, or helper files for iteration, c
 ## Gotchas when using snippets
 
 - Don't stack contradictory snippets — `default-to-action` and `do-not-act-before-instructions` cancel each other.
-- On Claude Opus 4.6+ (including 4.7), soften `MUST` / `NEVER` / `CRITICAL` to `should` / `do not` — these models over-comply with aggressive language. 4.7 in particular interprets instructions literally, so explicit scope ("apply to every section, not just the first") often matters more than emphasis.
+- On Claude Opus 4.6+ (including 4.7/4.8), soften `MUST` / `NEVER` / `CRITICAL` to `should` / `do not` — these models over-comply with aggressive language. 4.7+ in particular interprets instructions literally, so explicit scope ("apply to every section, not just the first") often matters more than emphasis.
 - Drop the `<frontend_aesthetics>` block on dashboard / fintech / enterprise briefs — it pushes toward editorial aesthetics and reads wrong there.
 - The verbosity-reducer fights against `state-tracking` and `persistence` snippets — pick one direction, not both.

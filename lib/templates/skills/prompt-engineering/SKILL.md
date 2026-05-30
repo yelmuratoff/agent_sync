@@ -22,7 +22,7 @@ A workflow and toolbox for writing prompts that steer modern LLMs reliably — s
 5. **Diagnose before patching** — name the cause (ambiguous scope? missing context? conflicting instruction? wrong format?). Fix the cause, not the symptom. When the cause is unclear, run metaprompting (see `references/metaprompting.md`).
 6. **Change one thing at a time** — otherwise you won't know what worked.
 7. **Iterate** — re-run the same test set, compare versions; stop when stable across all of them, not when "looks good once".
-8. **Pin and version** — for production, pin to a specific model snapshot (e.g., `claude-opus-4-7`, `gpt-5.3-codex`) and re-run evals when upgrading.
+8. **Pin and version** — for production, pin to a specific model snapshot (e.g., `claude-opus-4-8`, `gpt-5.3-codex`) and re-run evals when upgrading.
 
 ## Prompt components (include only what's load-bearing)
 
@@ -88,13 +88,13 @@ Before shipping a prompt, check:
 
 ## Tool-specific notes
 
-- **Claude (Opus 4.6+/4.7)** — interprets instructions literally; state scope explicitly ("apply to every section, not just the first"). Prefers XML tags. Dial back `MUST/ALWAYS/CRITICAL` — it over-triggers. Key levers:
-  - **`effort`** — `low / medium / high / xhigh / max`. Default to `xhigh` for coding and agentic work, minimum `high` for intelligence-sensitive tasks. `max` may overthink; use sparingly. At `low/medium`, 4.7 strictly scopes work to what was asked — raise effort first when reasoning looks shallow, prompt-tweak only after.
+- **Claude (Opus 4.7 / 4.8)** — Opus 4.8 is the current most-capable GA model; it builds on 4.7 with no breaking API changes, so the behavioral notes below carry over. The API `effort` default is now `high` across all surfaces, it serves the 1M context window by default, and it accepts mid-conversation `role: "system"` messages (handy for refreshing instructions without rebuilding history). Both interpret instructions literally; state scope explicitly ("apply to every section, not just the first"). Prefer XML tags. Dial back `MUST/ALWAYS/CRITICAL` — they over-trigger. Key levers:
+  - **`effort`** — `low / medium / high / xhigh / max` (API default `high`). Set `xhigh` explicitly for coding and agentic work, minimum `high` for intelligence-sensitive tasks. `max` may overthink; use sparingly. At `low/medium`, the model strictly scopes work to what was asked — raise effort first when reasoning looks shallow, prompt-tweak only after. Effort levels are recalibrated on 4.8 (`medium` thinks a bit more, `high` a bit less, `xhigh` substantially more) — re-baseline cost/latency at your chosen level after upgrading.
   - **Adaptive thinking** — `thinking: {type: "adaptive"}` paired with `effort` replaces extended thinking with `budget_tokens` (deprecated on 4.6+). Set `max_tokens: 64000` at `high+`/`xhigh`. To dampen over-eager thinking: *"Extended thinking adds latency and should only be used when it will meaningfully improve answer quality. When in doubt, respond directly."*
-  - **Subagents** — 4.7 spawns fewer than 4.6 by default. Steer when needed (see `subagent_control` in `references/snippets.md`).
-  - **Tools** — 4.7 reasons more, calls tools less. To raise tool usage, lift `effort` to `high`/`xhigh` first; describe explicitly when/why to use each tool only if that fails.
-  - **Tone** — 4.7 is more direct and opinionated than 4.6, with fewer emoji and less validation-forward phrasing. For warmer voice: *"Use a warm, collaborative tone. Acknowledge the user's framing before answering."*
-  - **Frontend default** — 4.7 leans cream `#F4F1EA` + serif (Georgia/Fraunces/Playfair) + terracotta accent. Reads well for editorial/hospitality, off for dashboards/fintech/dev tools. Override by specifying a concrete palette + typeface, or have the model propose 4 options first (see `frontend_propose_options` in `references/snippets.md`).
+  - **Subagents** — 4.7+ spawns fewer than 4.6 by default. Steer when needed (see `subagent_control` in `references/snippets.md`).
+  - **Tools** — 4.7+ reasons more, calls tools less. To raise tool usage, lift `effort` to `high`/`xhigh` first; describe explicitly when/why to use each tool only if that fails.
+  - **Tone** — 4.7+ is more direct and opinionated than 4.6, with fewer emoji and less validation-forward phrasing. For warmer voice: *"Use a warm, collaborative tone. Acknowledge the user's framing before answering."*
+  - **Frontend default** — 4.7+ leans cream `#F4F1EA` + serif (Georgia/Fraunces/Playfair) + terracotta accent. Reads well for editorial/hospitality, off for dashboards/fintech/dev tools. Override by specifying a concrete palette + typeface, or have the model propose 4 options first (see `frontend_propose_options` in `references/snippets.md`).
   - **Prefilled assistant messages** — deprecated on 4.6+. Use structured outputs, XML output tags, or direct format instructions instead.
 - **OpenAI GPT-5 / Codex** — uses `instructions` + `input` roles; pin production prompts to a specific model snapshot; build evals alongside prompts. Reasoning models: prefer goal-only prompts over step-by-step instructions. For `gpt-5.3-codex`, persist the `phase` field on assistant items (commentary vs. final_answer) — dropping it degrades performance.
 - **Gemini** — responds well to the full component template (Objective → Instructions → Constraints → Context → Output format → Examples → Recap). Native Thinking: avoid explicit step-by-step.
@@ -102,7 +102,7 @@ Before shipping a prompt, check:
 
 ## Gotchas
 
-- Re-test prompts when crossing tools — a prompt tuned for GPT-4 can under- or over-trigger on Claude Opus 4.7 and vice versa.
+- Re-test prompts when crossing tools — a prompt tuned for GPT-4 can under- or over-trigger on Claude Opus 4.8 and vice versa.
 - When the model misbehaves, audit existing rules for ambiguity or conflict before adding a new one. Metaprompting (`references/metaprompting.md`) often surfaces these.
 - Separate instructions from raw data using XML tags or clear headings — a mixed paragraph blurs scope.
 - Place the question at the bottom of a long prompt — bottom placement performs meaningfully better than top.
