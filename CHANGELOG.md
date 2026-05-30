@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.23.0
+
+### Changed
+
+- **Shipped templates now scaffold `model: default` instead of a pinned model:** the Claude `settings.json` template (`lib/templates/settings/claude.json`) and the subagent scaffolds (`lib/templates/agents/code-reviewer.md`, `lib/templates/content/subagent.md`, and the `agentsync generate` prompt) ship `model: default` in place of a hardcoded `sonnet`/`opus`. New projects scaffolded by `agentsync init` — and existing ones picking up template content via `agentsync refresh` — now inherit the account's recommended model rather than a pinned snapshot, so a Claude Code / account-tier upgrade flows through without editing per-project config. Projects that deliberately pin a model through a `.ai/src/tools/<tool>/` override are unaffected. `default` is valid in `settings.json`, subagent frontmatter, and skill/command frontmatter; the skill's cost-saving guidance to pin `sonnet`/`haiku` for focused subagents still stands as an opt-in.
+
+- **`prompt-engineering` skill updated for Claude Opus 4.8:** the tool-specific notes now treat Opus 4.8 as the current most-capable GA model — it builds on 4.7 with no breaking API changes (the carried-over behavioral notes still apply), `effort` defaults to `high` (set `xhigh` for coding), the 1M context window is served by default, and mid-conversation `role: "system"` messages are accepted. The pinned-snapshot example moves from `claude-opus-4-7` to `claude-opus-4-8`, and carried-over behavior labels shift from `4.7` to `4.7+`. Surfaces on existing projects via `agentsync refresh`; new projects get it on `init`. No change to the sync engine.
+
+- **README and bundled best-practices reference brought back in line with the engine:** the README "Supported Tools", "Format Conversions", "Key Fields", and CLI command tables now match the actual `lib/templates/tools/*.yaml` configs and `bin/agentsync.sh` — corrected Junie (`.junie/AGENTS.md` + inlined rules, skills dir), Cursor (`commands`), Windsurf (`workflows`, `hooks`), Amazon Q (`mcp`, `cli-agents` MD→JSON), Gemini/Codex/Zed (`settings`) targets; documented the `amazonq_json` subagent converter; added the 12 previously-undocumented commands (`enable`, `disable`, `add`, `customize`, `simplify`, `show`, `diff`, `resolve`, `export`, `import`, `upgrade-config`, `release`); and fixed the tool count to 11. The vendored `knowledge/best-practices.md` is on the Claude Opus 4.8 guidance.
+
 ## 0.22.0
 
 ### Changed
