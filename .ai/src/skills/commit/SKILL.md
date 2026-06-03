@@ -28,4 +28,5 @@ If the project has no established convention (step 2 returns mixed messages), de
 - Keep one logical change per commit. Split unrelated work into separate commits.
 - Leave `.env`, credentials, and generated lockfiles out of the index unless the project clearly tracks them.
 - When a pre-commit hook fails, fix the cause and create a new commit. Reach for `--no-verify` only when the user explicitly authorizes it.
+- Never add attribution or tooling trailers (`Co-Authored-By:`, `Generated with …`, agent/model signatures) to the subject or body — the commit records the human author only.
 - Match the project's existing style (gitmoji, ticket-prefixed, plain-English) rather than inventing a new one.

@@ -7,6 +7,7 @@ One logical change per commit, imperative mood, generated artefacts stay out of 
 - Match the project's existing commit style (`git log --oneline -10`). If none is established, default to Conventional Commits: `<type>: <subject>` with `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
 - One logical change per commit. Split unrelated work into separate commits.
 - Subject in imperative mood, ≤72 chars. Body explains *why*; skip the body when the subject says enough.
+- Never append attribution or tooling trailers — no `Co-Authored-By:`, no `Generated with …`, no agent/model signatures. A commit records the human author only.
 
 ## Branches
 
