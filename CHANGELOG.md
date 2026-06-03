@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.2
+
+### Added
+
+- **Git rule and commit skill now forbid AI-attribution trailers:** `lib/templates/rules/git.md` and `lib/templates/skills/commit/SKILL.md` (and this project's own `.ai/src/` copies) gain an explicit instruction barring `Co-Authored-By:`, `Generated with …`, and tool/model signatures from commit messages — a commit records the human author only. The Claude `settings.json` template already sets `includeCoAuthoredBy: false`, but that knob is Claude-specific; the other ten tools have no equivalent, so the prohibition lives in the synced rules where every tool reads it. Existing projects pick it up via `agentsync refresh`; new projects get it on `init`. No change to the sync engine.
+
 ## 0.23.1
 
 ### Fixed
