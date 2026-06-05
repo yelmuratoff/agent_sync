@@ -43,6 +43,17 @@ source "$SCRIPT_DIR/helpers/manifest.sh"
 # shellcheck source=helpers/shared.sh
 source "$SCRIPT_DIR/helpers/shared.sh"
 
+# Tool outputs are written as siblings of `.ai/`. A run rooted inside the
+# `.ai/` tree would nest generated files under the source dir, so refuse and
+# point the user at the project root (the parent of `.ai/`).
+_project_root_above_ai=""
+if _project_root_above_ai=$(ai_dir_enclosing_root "$REPO_ROOT"); then
+    log_error "Refusing to sync from inside the .ai/ directory: $REPO_ROOT"
+    log_info "Run agentsync from the project root (the parent of .ai/):"
+    log_info "  cd \"$_project_root_above_ai\" && agentsync sync"
+    exit 2
+fi
+
 # Global variables
 DRY_RUN="false"
 FORCE_SYNC="false"

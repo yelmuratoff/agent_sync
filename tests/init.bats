@@ -42,6 +42,27 @@ teardown() {
     [ ! -f ".ai/src/settings/cursor.json" ]
 }
 
+@test "init: refuses to run from inside .ai/" {
+    run run_agentsync init
+    [ "$status" -eq 0 ]
+
+    cd .ai
+    run run_agentsync init
+    [ "$status" -eq 2 ]
+    [[ "$output" == *".ai"* ]]
+    [ ! -d ".ai" ]
+}
+
+@test "sync: refuses to run from inside .ai/" {
+    run run_agentsync init
+    [ "$status" -eq 0 ]
+
+    cd .ai
+    run run_agentsync sync
+    [ "$status" -eq 2 ]
+    [[ "$output" == *".ai"* ]]
+}
+
 @test "init --content agents,rules skips skills/commands/agents" {
     run run_agentsync init --content agents,rules
     [ "$status" -eq 0 ]

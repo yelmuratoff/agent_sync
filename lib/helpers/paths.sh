@@ -230,6 +230,30 @@ find_parent_ai_src() {
     return 1
 }
 
+# Detect whether a directory lives inside a `.ai/` source tree (or is one).
+# AgentSync writes tool outputs as siblings of `.ai/`, so a run rooted inside
+# it would nest generated files under the source dir instead of the project.
+# Echoes the project root — the parent of the shallowest `.ai/` segment in the
+# path — when the directory is inside such a tree; returns 1 when it is not.
+#
+# Usage: ai_dir_enclosing_root <dir>
+ai_dir_enclosing_root() {
+    local dir="$1"
+    [[ -d "$dir" ]] || return 1
+    dir=$(cd "$dir" && pwd)
+
+    local shallowest_ai="" current="$dir"
+    while [[ "$current" != "/" && -n "$current" ]]; do
+        if [[ "$(basename "$current")" == ".ai" ]]; then
+            shallowest_ai="$current"
+        fi
+        current=$(dirname "$current")
+    done
+
+    [[ -n "$shallowest_ai" ]] || return 1
+    dirname "$shallowest_ai"
+}
+
 # Find every AgentSync-managed `.ai/` directory below a root, in bottom-up
 # alphabetical order (deeper paths first; siblings at the same depth sorted
 # by LC_ALL=C path order). Used by `sync --workspace` and `dedupe --workspace`

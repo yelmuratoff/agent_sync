@@ -250,7 +250,7 @@ main() {
     esac
 
     case "$command" in
-        init)          _need prompts yaml tool_resolver template_manifest init; shift; cmd_init "$@" ;;
+        init)          _need prompts yaml tool_resolver template_manifest paths init; shift; cmd_init "$@" ;;
         sync)
             shift
             # --workspace fan-out: run sync in every .ai/ below cwd before

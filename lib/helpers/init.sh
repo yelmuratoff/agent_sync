@@ -621,6 +621,14 @@ HELP
         exit 1
     }
 
+    local _project_root_above_ai=""
+    if _project_root_above_ai=$(ai_dir_enclosing_root "$target_dir"); then
+        echo "$(_red "Error"): Cannot init inside the .ai/ directory: $target_dir" >&2
+        echo "Run agentsync init from the project root (the parent of .ai/):" >&2
+        echo "  cd \"$_project_root_above_ai\" && agentsync init" >&2
+        exit 2
+    fi
+
     local ai_dir="$target_dir/.ai"
 
     if [[ -d "$ai_dir/src" ]]; then
