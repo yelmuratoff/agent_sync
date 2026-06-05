@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.3
+
+### Fixed
+
+- **`sync` and `init` refuse to run from inside the `.ai/` source directory:** running either command while the working directory was inside `.ai/` (e.g. `cd project/.ai && agentsync sync`) rooted the engine at the source tree, so `sync` wrote tool outputs *under* `.ai/` and `init` created a nested `.ai/.ai/` — instead of generating at the project level alongside `.ai/`. Both commands now detect this, stop with exit code `2`, and point you at the project root (the parent of `.ai/`): `cd "<project>" && agentsync sync`. The new `ai_dir_enclosing_root` helper in `lib/helpers/paths.sh` backs the guard. No change for runs started from the project root.
+
 ## 0.23.2
 
 ### Added
