@@ -45,6 +45,16 @@ Business logic lives in `lib/helpers/`. `bin/agentsync.sh` stays a router. `sync
 4. Each helper stays tool-agnostic — it operates on inputs, not on tool identity.
 5. EXIT trap calls `shared_cleanup_overlay` so the shadow tree never outlives the sync run.
 
+## Profiles (config-home variants)
+
+A profile produces a self-contained config-home directory per tool (e.g. `~/.claude-hub/` next to personal `~/.claude/`) with content = base `.ai/src/` ⊕ a per-profile overlay (`.ai/profiles/<name>/src/`, profile wins). It reuses existing primitives rather than adding a tool-name axis:
+
+- **Variant tools, not branches.** Each profile tool is a thin `.ai/src/tools/<base>-<name>.yaml` with `base: <tool>` and config-home `targets.*.dest`. The resolver (`get_tool_value`, `_find_base_payload`) falls back to the `base:` tool for any unset field, so a variant inherits format/extension/inline flags and base payload templates while only owning its dests. Variant tools are normal tools to the engine — dest/cleanup/manifest/gitignore work unchanged.
+- **Dest derivation** lives in `profile_rewrite_dest` (profiles.sh): strip the leading tool-dir segment and re-root under `<home>` (`.amazonq/rules/x.md` → `<home>/rules/x.md`; `CLAUDE.md`/`.mcp.json` → `<home>/…`). Never `basename` — that loses nested structure.
+- **Per-profile overlay.** `build_overlay_tree` (shared.sh) is the shared engine for both `shared:` and profiles. `profile_setup_overlay` layers profile extras (win) over the base/shared-resolved src (fill), rewrites `SOURCE_*`, and arms `PROFILE_OVERLAY_DIR*` for the paths.sh source allowlist — a separate global from `SHARED_OVERLAY_DIR*` so the two compose.
+- **Sync passes.** `sync.sh main` snapshots `BASE_SOURCE_*` after `shared_setup_overlay`, runs the personal pass (skipping `is_profile_tool`), then one pass per selected/active profile: restore `BASE_SOURCE_*` → `profile_setup_overlay` → sync the profile's tools → `profile_cleanup_overlay`. `--profile <name>` selects one; a plain run syncs every `active` profile. Every profile tool's dests feed gitignore + cleanup-protection regardless of selection, so `.gitignore` stays stable and dormant profiles are never swept.
+- **Lifecycle.** `agentsync profile add` scaffolds variant tools + overlay + the `profiles:` config block; `remove` deletes config-home output and variant files *before* dropping the block (order matters — a deleted variant YAML would orphan its output). Readers live in profiles.sh; CLI in profile.sh; both are shared, never reimplemented per command.
+
 ## Cross-project tooling
 
 `doctor`, `dedupe`, and `sync --workspace` operate across nested `.ai/` trees. The walk-up logic in `find_parent_ai_src` (paths.sh) stops at the start's git repository boundary so a child with its own `.git` never picks up an unrelated parent above the boundary. `find_workspace_ai_dirs` orders results bottom-up alphabetical (deeper paths first; siblings sorted by `LC_ALL=C`) so iteration is reproducible between runs and machines. Both helpers are shared between commands — never duplicate the walk semantics in a command-local function; reach for the helper.

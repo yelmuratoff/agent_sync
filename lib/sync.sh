@@ -42,6 +42,8 @@ source "$SCRIPT_DIR/helpers/tool_resolver.sh"
 source "$SCRIPT_DIR/helpers/manifest.sh"
 # shellcheck source=helpers/shared.sh
 source "$SCRIPT_DIR/helpers/shared.sh"
+# shellcheck source=helpers/profiles.sh
+source "$SCRIPT_DIR/helpers/profiles.sh"
 
 # Tool outputs are written as siblings of `.ai/`. A run rooted inside the
 # `.ai/` tree would nest generated files under the source dir, so refuse and
@@ -59,6 +61,7 @@ DRY_RUN="false"
 FORCE_SYNC="false"
 ONLY_TOOLS=""
 SKIP_TOOLS=""
+SELECTED_PROFILE=""
 SKIP_POST_SYNC="${AGENTSYNC_SKIP_POST_SYNC:-false}"
 ALLOW_POST_SYNC="${AGENTSYNC_ALLOW_POST_SYNC:-false}"
 SYNCED_COUNT=0
@@ -94,6 +97,7 @@ Usage: $(basename "$0") [OPTIONS]
 Options:
   --only <tools>    Sync only specified tools (comma-separated)
   --skip <tools>    Skip specified tools (comma-separated)
+  --profile <name>  Also sync this profile (default: personal + active profiles)
   --dry-run         Show what would be copied without making changes
   --force           Overwrite destination files even if they were edited manually
   --help            Show this help message
@@ -166,6 +170,15 @@ parse_args() {
                     exit 1
                 fi
                 SKIP_TOOLS="$2"
+                shift 2
+                ;;
+            --profile)
+                if [[ $# -lt 2 ]] || [[ "${2:-}" == --* ]]; then
+                    log_error "Option --profile requires a profile name"
+                    usage
+                    exit 1
+                fi
+                SELECTED_PROFILE="$2"
                 shift 2
                 ;;
             --dry-run)
@@ -715,7 +728,36 @@ main() {
     # files take precedence, and BEFORE any tool sync reads them. The shadow
     # tree is torn down by the EXIT trap installed below.
     shared_setup_overlay
-    trap 'shared_cleanup_overlay' EXIT
+    trap 'shared_cleanup_overlay; profile_cleanup_overlay' EXIT
+
+    # Snapshot the personal/base SOURCE_* (post-shared-overlay) so each profile
+    # pass can restore them before layering its own overlay. The overlay
+    # rewrite is conditional, so these can't be recomputed cheaply later.
+    local BASE_SOURCE_AGENTS="$SOURCE_AGENTS"
+    local BASE_SOURCE_RULES="$SOURCE_RULES"
+    local BASE_SOURCE_SKILLS="$SOURCE_SKILLS"
+    local BASE_SOURCE_COMMANDS="$SOURCE_COMMANDS"
+    local BASE_SOURCE_SUBAGENTS="$SOURCE_SUBAGENTS"
+
+    # Directory that holds the base content profiles fill from — the shared
+    # overlay's shadow tree when `shared:` is active, else the raw .ai/src/.
+    local PROFILE_BASE_SRC="$REPO_ROOT/.ai/src"
+    if [[ -n "${SHARED_OVERLAY_DIR:-}" ]] && [[ -d "$SHARED_OVERLAY_DIR/src" ]]; then
+        PROFILE_BASE_SRC="$SHARED_OVERLAY_DIR/src"
+    fi
+
+    # Which profiles to sync this run: the named one with --profile, else every
+    # profile marked active. (Personal tools always sync regardless.)
+    local -a profiles_to_sync=()
+    local _p
+    if [[ -n "$SELECTED_PROFILE" ]]; then
+        profiles_to_sync=("$SELECTED_PROFILE")
+    else
+        while IFS= read -r _p; do
+            [[ -z "$_p" ]] && continue
+            profile_is_active "$_p" && profiles_to_sync+=("$_p")
+        done < <(list_profiles)
+    fi
 
     # Build catalog of tools to process: union of base + any user override files.
     local -a all_tools=()
@@ -732,11 +774,13 @@ main() {
     fi
 
     # First pass: collect paths from enabled tools (for gitignore + cleanup safety).
+    # Profile variant tools are handled in their own collection loop below.
     local -a generated_paths=()
     for t in "${all_tools[@]}"; do
         if ! is_tool_enabled "$t"; then
             continue
         fi
+        is_profile_tool "$t" && continue
         local key raw abs rel
         for key in agents rules skills commands subagents settings mcp hooks; do
             raw=$(get_tool_value "$t" "targets.$key.dest")
@@ -754,6 +798,30 @@ main() {
             esac
         done
     done
+
+    # Collect dests for EVERY profile tool (active or not) into the protected +
+    # gitignored set, so .gitignore stays stable across --profile selections and
+    # cleanup never sweeps a dormant profile's output.
+    local _pt
+    while IFS= read -r _pt; do
+        [[ -z "$_pt" ]] && continue
+        local key raw abs rel
+        for key in agents rules skills commands subagents settings mcp hooks; do
+            raw=$(get_tool_value "$_pt" "targets.$key.dest")
+            [[ -z "$raw" ]] && continue
+            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $_pt") || continue
+            ENABLED_DEST_PATHS+=("$abs")
+            rel=$(to_repo_relative_path "$abs")
+            case "$key" in
+                rules|skills|commands|subagents)
+                    generated_paths+=("$rel/")
+                    ;;
+                *)
+                    generated_paths+=("$rel")
+                    ;;
+            esac
+        done
+    done < <(list_profile_tools)
 
     # Drift check: refuse to overwrite destination files edited since the last sync.
     # Skipped on dry-run (preview-only) and bypassed by --force.
@@ -783,8 +851,10 @@ main() {
         fi
     fi
 
-    # Second pass: sync enabled tools, cleanup disabled ones.
+    # Second pass: sync enabled personal tools, cleanup disabled ones. Profile
+    # variant tools are owned by the profile pass — never synced or cleaned here.
     for t in "${all_tools[@]}"; do
+        is_profile_tool "$t" && continue
         ((TOTAL_COUNT++)) || true
         if is_tool_enabled "$t"; then
             sync_tool "$t"
@@ -792,6 +862,37 @@ main() {
             cleanup_tool "$t"
         fi
         echo ""
+    done
+
+    # Profile passes: each selected/active profile syncs its variant tools with
+    # a per-profile source overlay (profile extras win, base fills the rest).
+    for _p in "${profiles_to_sync[@]+"${profiles_to_sync[@]}"}"; do
+        local _profile_has_tools=false
+        while IFS= read -r t; do
+            [[ -z "$t" ]] && continue
+            _profile_has_tools=true
+            break
+        done < <(profile_tools "$_p")
+        [[ "$_profile_has_tools" != "true" ]] && continue
+
+        log_separator
+        log_info "Profile: $_p"
+
+        SOURCE_AGENTS="$BASE_SOURCE_AGENTS"
+        SOURCE_RULES="$BASE_SOURCE_RULES"
+        SOURCE_SKILLS="$BASE_SOURCE_SKILLS"
+        SOURCE_COMMANDS="$BASE_SOURCE_COMMANDS"
+        SOURCE_SUBAGENTS="$BASE_SOURCE_SUBAGENTS"
+        profile_setup_overlay "$_p" "$PROFILE_BASE_SRC" || true
+
+        while IFS= read -r t; do
+            [[ -z "$t" ]] && continue
+            ((TOTAL_COUNT++)) || true
+            sync_tool "$t"
+            echo ""
+        done < <(profile_tools "$_p")
+
+        profile_cleanup_overlay
     done
 
     if [[ "$DRY_RUN" != "true" ]] && [[ "$UPDATE_GITIGNORE" == "true" ]]; then

@@ -1,6 +1,6 @@
 ---
 name: agentsync
-description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `add` / `customize` / `resolve` / `simplify` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
+description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `add` / `customize` / `resolve` / `simplify` / `profile` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
 ---
 
 # Working with AgentSync
@@ -234,6 +234,30 @@ Modes: default walks up to the nearest parent `.ai/src/` (bounded by the git rep
 **Detection — `agentsync doctor`.** Doctor's "Cross-project" section flags identical-hash duplicates as advisories and divergent files as info. Rules and skills with `category: governance` in their frontmatter are upgraded to advisories when divergent, with explicit "likely a mistake, not an override" framing. All cross-project findings are exit-code-0 advisories — visible during interactive runs, invisible to CI. Combine with `agentsync sync --workspace` for batch syncs across the tree.
 
 **`category:` frontmatter.** Optional field on any rule/skill/command/agent. Today only `governance` carries behavior; `domain`, `workspace`, `project` are recorded but currently informational. Add it to a file when divergence between parent and child would be a mistake, not a deliberate override.
+
+## Profiles (config-home variants)
+
+A profile produces a second, self-contained config-home directory for a tool — e.g. a work `~/.claude-hub/` next to your personal `~/.claude/` (run it with `CLAUDE_CONFIG_DIR=~/.claude-hub`). Its content is the base `.ai/src/` overlaid with profile-only extras, so shared rules stay shared while work-specific rules/MCP live only in the profile. This is the right tool when you sync from `$HOME` and juggle multiple accounts/subscriptions per tool.
+
+**Create one — `agentsync profile add <name>`.** Scaffolds, per enabled tool (or `--tools a,b`):
+
+- a thin variant tool `.ai/src/tools/<tool>-<name>.yaml` — `base: <tool>` (inherits every unset field), `profile_home: ".<tool>-<name>"`, and config-home `targets.*.dest` (everything inside the home dir);
+- an overlay dir `.ai/profiles/<name>/src/` — drop profile-only `rules/`, `skills/`, `commands/`, `agents/`, or `AGENTS.md` here (profile wins on path collisions with base);
+- a `profiles:` entry in `agent_sync.yaml`:
+
+  ```yaml
+  profiles:
+    hub:
+      overlay: ".ai/profiles/hub"
+      active: true
+      tools: [claude-hub, codex-hub]
+  ```
+
+Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the overlay first (rules/skills/commands/agents into the overlay, `.mcp.json`/`settings.json`/`hooks.json` into `.ai/src/tools/<variant>/`), so the first sync doesn't clobber a hand-built directory. Profile-specific MCP/settings/hooks live in that per-variant payload dir; everything else flows through the overlay.
+
+**Sync.** `agentsync sync` syncs personal tools plus every `active: true` profile; `agentsync sync --profile <name>` syncs personal tools plus just that one. Each profile's tools render with a per-profile overlay layered over the base (and over an active `shared:` overlay, if any — the two compose). Profile outputs are gitignored and drift-protected like any other output.
+
+**Inspect / remove.** `agentsync profile list` shows profiles, their tools, and config homes. `agentsync profile remove <name>` deletes the config-home output and variant files, then drops the `profiles:` entry (overlay sources under `.ai/profiles/<name>/` are kept).
 
 ## Gotchas
 

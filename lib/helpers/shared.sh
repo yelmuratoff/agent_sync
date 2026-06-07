@@ -26,6 +26,82 @@ SHARED_OVERLAY_DIR_CANONICAL="" # canonicalised SHARED_OVERLAY_DIR, used by path
 SHARED_OVERLAY_PARENT=""     # parent .ai/src/ that the overlay was built from
 SHARED_OVERLAY_INHERIT=""    # CSV of categories that were inherited
 
+# Per-profile overlay globals — mirror the shared ones but kept distinct so a
+# profile pass can compose on top of an active `shared:` overlay (see profiles.sh).
+PROFILE_OVERLAY_DIR=""
+PROFILE_OVERLAY_DIR_CANONICAL=""
+
+# Build a shadow `src/` tree under a fresh tmpdir: mirror child_src (which wins
+# on conflict), then fill in parent_src files for the given categories where the
+# child has no same-path file. Pure aside from creating the tmpdir — echoes its
+# absolute path; the caller owns the lifecycle globals and teardown.
+#
+# Usage: build_overlay_tree <child_src> <parent_src> <categories_csv>
+build_overlay_tree() {
+    local child_src="$1"
+    local parent_src="$2"
+    local categories_csv="$3"
+
+    local -a cats=()
+    local raw="${categories_csv//,/ }" tok
+    for tok in $raw; do
+        tok="${tok#"${tok%%[![:space:]]*}"}"
+        tok="${tok%"${tok##*[![:space:]]}"}"
+        [[ -z "$tok" ]] && continue
+        [[ "$tok" == "subagents" ]] && tok="agents"
+        cats+=("$tok")
+    done
+
+    local tmpdir
+    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/agentsync_shared.XXXXXX")
+    mkdir -p "$tmpdir/src"
+
+    # Mirror child source. Only copy dirs that exist; `cp -R` preserves deep
+    # skill trees.
+    if [[ -d "$child_src" ]]; then
+        [[ -f "$child_src/AGENTS.md" ]] && cp "$child_src/AGENTS.md" "$tmpdir/src/AGENTS.md"
+        local item
+        for item in rules skills commands agents; do
+            [[ -d "$child_src/$item" ]] || continue
+            cp -R "$child_src/$item" "$tmpdir/src/$item"
+        done
+    fi
+
+    # Fill in parent files for inherited categories — skip any path the child
+    # already provides (child wins).
+    local cat pdir f rel target
+    for cat in "${cats[@]}"; do
+        pdir="$parent_src/$cat"
+        [[ -d "$pdir" ]] || continue
+        while IFS= read -r -d '' f; do
+            rel="${f#"$pdir/"}"
+            target="$tmpdir/src/$cat/$rel"
+            [[ -e "$target" ]] && continue
+            mkdir -p "$(dirname "$target")"
+            cp "$f" "$target"
+        done < <(find "$pdir" -type f -print0 2>/dev/null)
+    done
+
+    echo "$tmpdir"
+}
+
+# Point the caller's SOURCE_* at an overlay tmpdir's `src/`, but only for the
+# categories the overlay actually materialised. Mutates caller-scope globals.
+# Usage: _overlay_rewrite_sources <tmpdir>
+_overlay_rewrite_sources() {
+    local tmpdir="$1"
+    # shellcheck disable=SC2034
+    [[ -f "$tmpdir/src/AGENTS.md" ]] && SOURCE_AGENTS="$tmpdir/src/AGENTS.md"
+    # shellcheck disable=SC2034
+    [[ -d "$tmpdir/src/rules" ]]    && SOURCE_RULES="$tmpdir/src/rules"
+    # shellcheck disable=SC2034
+    [[ -d "$tmpdir/src/skills" ]]   && SOURCE_SKILLS="$tmpdir/src/skills"
+    # shellcheck disable=SC2034
+    [[ -d "$tmpdir/src/commands" ]] && SOURCE_COMMANDS="$tmpdir/src/commands"
+    # shellcheck disable=SC2034
+    [[ -d "$tmpdir/src/agents" ]]   && SOURCE_SUBAGENTS="$tmpdir/src/agents"
+}
+
 # Read `shared.path` and `shared.inherit` from the project config and
 # build a shadow `.ai/src/` tree under a temp dir. Updates SOURCE_*
 # variables in the caller's scope to point into the shadow tree.
@@ -100,65 +176,20 @@ shared_setup_overlay() {
         return 0
     fi
 
-    # Build shadow tree: mirror child .ai/src/ via cp -R, then fill in
-    # parent files for inherited categories where child has no same-path
-    # file. We never overwrite child's own files — child wins on collision.
+    # Build shadow tree (child .ai/src/ wins; parent fills inherited categories),
+    # then point SOURCE_* into it.
+    SHARED_OVERLAY_INHERIT=$(printf '%s,' "${inherit_cats[@]}")
+    SHARED_OVERLAY_INHERIT="${SHARED_OVERLAY_INHERIT%,}"
+    # shellcheck disable=SC2034
+    SHARED_OVERLAY_PARENT="$parent_src"
+
     local tmpdir
-    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/agentsync_shared.XXXXXX")
+    tmpdir=$(build_overlay_tree "$REPO_ROOT/.ai/src" "$parent_src" "$SHARED_OVERLAY_INHERIT")
     SHARED_OVERLAY_DIR="$tmpdir"
     SHARED_OVERLAY_DIR_CANONICAL=$(cd -P "$tmpdir" && pwd)
     export SHARED_OVERLAY_DIR_CANONICAL
-    # shellcheck disable=SC2034
-    SHARED_OVERLAY_PARENT="$parent_src"
-    SHARED_OVERLAY_INHERIT=$(printf '%s,' "${inherit_cats[@]}")
-    SHARED_OVERLAY_INHERIT="${SHARED_OVERLAY_INHERIT%,}"
 
-    # Mirror child source. The child may have any subset of dirs — only
-    # copy what exists. Use `cp -R` so deep skill trees are preserved.
-    mkdir -p "$tmpdir/src"
-    local child_src="$REPO_ROOT/.ai/src"
-    if [[ -d "$child_src" ]]; then
-        if [[ -f "$child_src/AGENTS.md" ]]; then
-            cp "$child_src/AGENTS.md" "$tmpdir/src/AGENTS.md"
-        fi
-        local item
-        for item in rules skills commands agents; do
-            [[ -d "$child_src/$item" ]] || continue
-            cp -R "$child_src/$item" "$tmpdir/src/$item"
-        done
-    fi
-
-    # Fill in parent files for inherited categories. Skip any path that
-    # already exists in the shadow (child wins). Skill directories use
-    # nested paths; flat dirs use one level.
-    local cat pdir f rel target
-    for cat in "${inherit_cats[@]}"; do
-        pdir="$parent_src/$cat"
-        [[ -d "$pdir" ]] || continue
-        while IFS= read -r -d '' f; do
-            rel="${f#"$pdir/"}"
-            target="$tmpdir/src/$cat/$rel"
-            [[ -e "$target" ]] && continue
-            mkdir -p "$(dirname "$target")"
-            cp "$f" "$target"
-        done < <(find "$pdir" -type f -print0 2>/dev/null)
-    done
-
-    # Rewrite SOURCE_* to point into the overlay. Each variable below is
-    # already declared in the caller's scope (sync.sh main). Shellcheck
-    # cannot see the cross-file usage, so the disables are explicit.
-    # shellcheck disable=SC2034
-    if [[ -f "$tmpdir/src/AGENTS.md" ]]; then
-        SOURCE_AGENTS="$tmpdir/src/AGENTS.md"
-    fi
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/rules" ]]    && SOURCE_RULES="$tmpdir/src/rules"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/skills" ]]   && SOURCE_SKILLS="$tmpdir/src/skills"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/commands" ]] && SOURCE_COMMANDS="$tmpdir/src/commands"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/agents" ]]   && SOURCE_SUBAGENTS="$tmpdir/src/agents"
+    _overlay_rewrite_sources "$tmpdir"
 
     log_info "Shared overlay active: $parent_src ($SHARED_OVERLAY_INHERIT)"
 }
@@ -176,6 +207,52 @@ shared_cleanup_overlay() {
     SHARED_OVERLAY_DIR=""
     SHARED_OVERLAY_DIR_CANONICAL=""
     unset SHARED_OVERLAY_DIR_CANONICAL
+}
+
+# Build a per-profile overlay: profile extras (.ai/profiles/<name>/src) win,
+# base_src fills the rest (rules,skills,commands,agents). Rewrites the caller's
+# SOURCE_* to point into the overlay and arms PROFILE_OVERLAY_DIR* for the
+# paths.sh source allowlist. Returns 1 (no SOURCE_* change) when the profile
+# declares no extras, so the personal base flows through unchanged.
+#
+# Usage: profile_setup_overlay <name> <base_src>
+profile_setup_overlay() {
+    local name="$1"
+    local base_src="$2"
+
+    local overlay_rel overlay_root profile_src
+    overlay_rel=$(profile_overlay_dir "$name")
+    overlay_root="$overlay_rel"
+    [[ "$overlay_root" != /* ]] && overlay_root="$REPO_ROOT/$overlay_root"
+    profile_src="$overlay_root/src"
+
+    if [[ ! -d "$profile_src" ]]; then
+        return 1
+    fi
+
+    local tmpdir
+    tmpdir=$(build_overlay_tree "$profile_src" "$base_src" "rules,skills,commands,agents")
+    PROFILE_OVERLAY_DIR="$tmpdir"
+    PROFILE_OVERLAY_DIR_CANONICAL=$(cd -P "$tmpdir" && pwd)
+    export PROFILE_OVERLAY_DIR_CANONICAL
+
+    _overlay_rewrite_sources "$tmpdir"
+
+    log_info "Profile overlay active: $name ($profile_src)"
+    return 0
+}
+
+# Remove the per-profile overlay tmpdir. Safe to call when inactive (no-op).
+profile_cleanup_overlay() {
+    [[ -n "$PROFILE_OVERLAY_DIR" ]] || return 0
+    [[ -d "$PROFILE_OVERLAY_DIR" ]] || { PROFILE_OVERLAY_DIR=""; return 0; }
+    case "$PROFILE_OVERLAY_DIR" in
+        /tmp/*|/private/tmp/*|/var/folders/*) rm -rf "$PROFILE_OVERLAY_DIR" ;;
+        *) log_warning "profile overlay path looks suspicious, NOT removing: $PROFILE_OVERLAY_DIR" ;;
+    esac
+    PROFILE_OVERLAY_DIR=""
+    PROFILE_OVERLAY_DIR_CANONICAL=""
+    unset PROFILE_OVERLAY_DIR_CANONICAL
 }
 
 # Resolve `shared.path` from the project config to the parent's absolute

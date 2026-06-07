@@ -132,6 +132,13 @@ is_path_safe_source() {
          [[ "$candidate_path" == "$SHARED_OVERLAY_DIR_CANONICAL/"* ]]; }; then
         return 0
     fi
+    # Per-profile overlay tmpdir — same contract as the shared overlay, but a
+    # separate global so a profile pass can compose on top of an active shared:.
+    if [[ -n "${PROFILE_OVERLAY_DIR_CANONICAL:-}" ]] && \
+       { [[ "$candidate_path" == "$PROFILE_OVERLAY_DIR_CANONICAL" ]] || \
+         [[ "$candidate_path" == "$PROFILE_OVERLAY_DIR_CANONICAL/"* ]]; }; then
+        return 0
+    fi
     return 1
 }
 

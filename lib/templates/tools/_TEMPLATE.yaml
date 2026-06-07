@@ -7,6 +7,14 @@ name: "Tool Name"
 # Enable or disable synchronization for this tool
 enabled: false
 
+# Optional: profile variant. A thin variant tool (e.g. claude-hub.yaml) declares
+# `base:` to inherit every field it does not set from the base tool, so it only
+# needs to override the config-home dests below. `profile_home` records the
+# config-home directory the variant writes into. Both are managed by
+# `agentsync profile add` — you rarely write them by hand.
+# base: claude
+# profile_home: ".claude-hub"
+
 # Define where files should be copied
 targets:
   # The "Identity" file (AGENTS.md)

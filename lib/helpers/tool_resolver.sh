@@ -36,6 +36,18 @@ tool_resolver_user_file() {
     echo "$(tool_resolver_user_dir)/${tool_name}.yaml"
 }
 
+# Base tool name declared by a variant via `base:` in its user file.
+# Variant tools (profiles) have no base catalog file of their own; they inherit
+# unset fields and base payload templates from the named base tool.
+# Prints the base name, or empty when the tool declares no `base:`.
+tool_base_name() {
+    local tool_name="$1"
+    local user_file
+    user_file=$(tool_resolver_user_file "$tool_name")
+    [[ -f "$user_file" ]] || { echo ""; return 0; }
+    parse_yaml_value "$user_file" "base"
+}
+
 # ── Layered value lookup ──────────────────────────────────────────────────────
 
 # Get an effective YAML value for a tool: user override wins, base fallback.
@@ -61,6 +73,21 @@ get_tool_value() {
     if [[ -f "$base_file" ]]; then
         parse_yaml_value "$base_file" "$key_path"
         return 0
+    fi
+
+    # Variant tool (profile): no base catalog file of its own — fall back to the
+    # base tool declared via `base:`. Skip `base`/`name` so a variant's own
+    # identity never resolves to the base tool's.
+    if [[ "$key_path" != "base" ]] && [[ "$key_path" != "name" ]]; then
+        local base_tool base_tool_file
+        base_tool=$(tool_base_name "$tool_name")
+        if [[ -n "$base_tool" ]]; then
+            base_tool_file=$(tool_resolver_base_file "$base_tool")
+            if [[ -f "$base_tool_file" ]]; then
+                parse_yaml_value "$base_tool_file" "$key_path"
+                return 0
+            fi
+        fi
     fi
 
     echo ""
@@ -112,6 +139,16 @@ _find_base_payload() {
     [[ -d "$base_dir" ]] || return 0
     local candidate
     for candidate in "$base_dir/${tool_name}".*; do
+        [[ -f "$candidate" ]] || continue
+        echo "$candidate"
+        return 0
+    done
+
+    # Variant tool: fall back to the base tool's payload template.
+    local base_tool
+    base_tool=$(tool_base_name "$tool_name")
+    [[ -z "$base_tool" ]] && return 0
+    for candidate in "$base_dir/${base_tool}".*; do
         [[ -f "$candidate" ]] || continue
         echo "$candidate"
         return 0

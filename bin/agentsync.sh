@@ -98,6 +98,7 @@ print_usage() {
     echo "    $(_cyan "doctor")         Validate setup and surface warnings"
     echo "    $(_cyan "dedupe")         Remove source files that duplicate a parent .ai/src/"
     echo "    $(_cyan "adopt")          Promote a manual edit in a generated file back into .ai/src/"
+    echo "    $(_cyan "profile")        Manage config-home profiles (work/personal variants)"
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
     echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
@@ -130,8 +131,10 @@ print_usage() {
     echo "    agentsync doctor"
     echo "    agentsync resolve"
     echo "    agentsync adopt .cursor/rules/core.mdc"
+    echo "    agentsync profile add hub"
     echo "    agentsync sync"
     echo "    agentsync sync --only claude,cursor"
+    echo "    agentsync sync --profile hub"
     echo "    agentsync sync --dry-run"
     echo "    agentsync check"
     echo "    agentsync generate"
@@ -244,7 +247,7 @@ main() {
 
     # Update check for interactive commands
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|help|--help|-h)
+        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|profile|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -289,6 +292,7 @@ main() {
         doctor)        _need yaml tool_resolver edit_paths doctor;     cmd_doctor ;;
         dedupe)        _need yaml yaml_edit prompts paths template_manifest dedupe; shift; cmd_dedupe "$@" ;;
         adopt)         _need yaml tool_resolver paths logging filters file_ops prompts manifest cli_colors adopt; shift; cmd_adopt "$@" ;;
+        profile)       _need yaml yaml_edit tool_resolver profiles paths logging prompts profile; shift; cmd_profile "$@" ;;
         update)        _need yaml snapshot;                            shift; cmd_update "$@" ;;
         upgrade-config) _need prompts yaml tool_resolver init;         shift; cmd_upgrade_config "$@" ;;
         release)       _need release;                                  shift; cmd_release "$@" ;;
