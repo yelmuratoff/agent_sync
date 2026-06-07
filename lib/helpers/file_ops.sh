@@ -58,10 +58,44 @@ copy_file() {
     log_step "$src → $dest"
 }
 
+# Decide whether an extraneous destination entry may be pruned during a sync.
+# Inside a manifest-aware sync run, an entry the sync never generated (absent
+# from the loaded manifest) is treated as user-authored and preserved unless the
+# run is forced. Outside such a run — primitive or standalone callers such as
+# unit tests — the legacy "destination is fully owned by sync" behavior applies.
+# Returns 0 = safe to prune, 1 = preserve (looks user-authored).
+# Usage: sync_may_prune "/abs/dest/path"
+sync_may_prune() {
+    local dest_path="$1"
+    [[ "${SYNC_MANIFEST_ACTIVE:-false}" == "true" ]] || return 0
+    [[ "${FORCE_SYNC:-false}" == "true" ]] && return 0
+    declare -f manifest_lookup >/dev/null 2>&1 || return 0
+    declare -f to_repo_relative_path >/dev/null 2>&1 || return 0
+    local rel
+    rel=$(to_repo_relative_path "$dest_path" 2>/dev/null) || return 0
+    manifest_lookup "$rel" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+# Warn that an untracked destination entry was kept, and tally it for the run
+# summary. Goes through log_warning (stdout) so it is never silent.
+# Usage: sync_note_preserved "<shown_path>" "<dry_run>"
+sync_note_preserved() {
+    local shown="$1"
+    local dry_run="${2:-false}"
+    if [[ "$dry_run" == "true" ]]; then
+        log_warning "Would keep $shown (not from .ai/src/; --force to prune)"
+    else
+        log_warning "Kept $shown (not from .ai/src/; move it into .ai/src/, or re-run with --force to prune)"
+    fi
+    SYNC_PRESERVED_COUNT=$(( ${SYNC_PRESERVED_COUNT:-0} + 1 ))
+}
+
 # Sync a directory recursively with differential cleanup.
 # Files present at source (and matching filters) are copied; extraneous dest
-# files are removed. The destination directory is fully owned by this sync.
-# Usage: sync_dir "source_dir" "dest_dir" "dry_run" "include" "exclude"
+# files are removed when sync owns them (see sync_may_prune — user-added files
+# are preserved unless --force). Usage:
+#   sync_dir "source_dir" "dest_dir" "dry_run" "include" "exclude"
 sync_dir() {
     local src="$1"
     local dest="$2"
@@ -118,6 +152,10 @@ sync_dir() {
             # leave them so another step (e.g. sync_commands_as_skills)
             # can manage its own subset of the destination.
             if ! matches_filter "$basename" "$include" "$exclude"; then
+                continue
+            fi
+            if ! sync_may_prune "$dest_item"; then
+                sync_note_preserved "$dest/$basename" "$dry_run"
                 continue
             fi
             if [[ "$dry_run" == "true" ]]; then

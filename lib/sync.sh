@@ -67,6 +67,10 @@ ALLOW_POST_SYNC="${AGENTSYNC_ALLOW_POST_SYNC:-false}"
 SYNCED_COUNT=0
 SKIPPED_COUNT=0
 TOTAL_COUNT=0
+# Set true once the manifest is loaded so the sweep helpers (sync_may_prune)
+# distinguish a real sync run from a primitive/standalone helper call.
+SYNC_MANIFEST_ACTIVE="false"
+SYNC_PRESERVED_COUNT=0
 PROJECT_CONFIG_PATH=""
 SOURCE_AGENTS=""
 SOURCE_RULES=""
@@ -823,10 +827,17 @@ main() {
         done
     done < <(list_profile_tools)
 
+    # Load the manifest for every run (including dry-run) so the sweep helpers
+    # can tell sync-generated outputs from user-added files. SYNC_MANIFEST_ACTIVE
+    # gates that protection — without it, sweeps fall back to legacy behavior.
+    manifest_load
+    # Read by sync_may_prune in file_ops.sh / rule_operations.sh.
+    # shellcheck disable=SC2034
+    SYNC_MANIFEST_ACTIVE="true"
+
     # Drift check: refuse to overwrite destination files edited since the last sync.
     # Skipped on dry-run (preview-only) and bypassed by --force.
     if [[ "$DRY_RUN" != "true" ]]; then
-        manifest_load
         manifest_check_drift
         if [[ ${#SYNC_DRIFT_DETECTED[@]} -gt 0 ]]; then
             if [[ "$FORCE_SYNC" == "true" ]]; then
@@ -910,6 +921,9 @@ main() {
     fi
 
     log_separator
+    if [[ $SYNC_PRESERVED_COUNT -gt 0 ]]; then
+        log_warning "Preserved $SYNC_PRESERVED_COUNT user-added file(s) not in .ai/src/ — move them into .ai/src/ to manage them, or re-run with --force to prune."
+    fi
     local summary="Synced $SYNCED_COUNT/$TOTAL_COUNT tools"
     if [[ $SKIPPED_COUNT -gt 0 ]]; then
         summary="$summary ($SKIPPED_COUNT skipped)"

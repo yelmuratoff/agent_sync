@@ -151,6 +151,47 @@ teardown() { teardown_test_project; }
     [[ "$output" == *"missing"* ]]
 }
 
+# ── User-added files in generated dirs ──────────────────────────────────────
+
+@test "drift: sync preserves a user-added rule in a generated dir" {
+    echo "my own rule" > .claude/rules/my-own.md
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
+    [ "$status" -eq 0 ]
+    [ -f ".claude/rules/my-own.md" ]
+    [[ "$output" == *"Kept"* ]]
+    [[ "$output" == *"my-own.md"* ]]
+}
+
+@test "drift: preserved user-added file is not recorded in the manifest" {
+    echo "my own rule" > .claude/rules/my-own.md
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    ! grep -q "my-own.md" .ai/.sync-manifest
+}
+
+@test "drift: sync --force prunes a user-added rule in a generated dir" {
+    echo "my own rule" > .claude/rules/my-own.md
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --force
+    [ "$status" -eq 0 ]
+    [ ! -f ".claude/rules/my-own.md" ]
+}
+
+@test "drift: dry-run previews keeping a user-added file without deleting it" {
+    echo "my own rule" > .claude/rules/my-own.md
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Would keep"* ]]
+    [ -f ".claude/rules/my-own.md" ]
+}
+
+@test "drift: obsolete sync-generated rule is still pruned when removed from source" {
+    echo "# Temp" > .ai/src/rules/temp-rule.md
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    [ -f ".claude/rules/temp-rule.md" ]
+    rm .ai/src/rules/temp-rule.md
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    [ ! -f ".claude/rules/temp-rule.md" ]
+}
+
 # ── First-run baseline ──────────────────────────────────────────────────────
 
 @test "drift: first-sync baseline message printed" {

@@ -335,6 +335,10 @@ sync_rules() {
         fi
 
         if [[ "$is_managed" == "true" ]] && [[ "$valid_dest_files" != *"|$basename|"* ]]; then
+            if ! sync_may_prune "$dest_file"; then
+                sync_note_preserved "$dest_dir/$basename" "$dry_run"
+                continue
+            fi
             if [[ "$dry_run" == "true" ]]; then
                 log_step "Would remove: $dest_dir/$basename (obsolete)"
             else
