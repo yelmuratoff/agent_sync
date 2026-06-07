@@ -15,11 +15,24 @@ setup_test_project() {
     export AGENTSYNC_HOME="$REPO_ROOT"
 }
 
+# rm -rf that tolerates the transient ENOTEMPTY a settling git background task
+# (gc/maintenance) or a CI filesystem can throw mid-delete. Retries briefly, then
+# gives up quietly: the target is an ephemeral /tmp dir on a throwaway runner, so
+# a leftover never matters — and a cleanup race must not fail an already-asserted
+# test. Surfaced under `bats --jobs` on the release suite (rm of .git/objects).
+_rm_rf_resilient() {
+    local target="${1:-}"
+    [[ -n "$target" ]] && [[ -d "$target" ]] || return 0
+    for _ in 1 2 3; do
+        rm -rf "$target" 2>/dev/null && return 0
+        sleep 1
+    done
+    rm -rf "$target" 2>/dev/null || true
+}
+
 # Clean up temporary project
 teardown_test_project() {
-    if [[ -n "${TEST_PROJECT:-}" ]] && [[ -d "$TEST_PROJECT" ]]; then
-        rm -rf "$TEST_PROJECT"
-    fi
+    [[ -n "${TEST_PROJECT:-}" ]] && _rm_rf_resilient "$TEST_PROJECT"
 }
 
 # Run agentsync from the repo (not installed version)
@@ -57,7 +70,7 @@ seed_project() {
 
 # Usage (inside teardown_file): clean up the seed dir
 teardown_seed_project() {
-    [[ -n "${TEST_SEED:-}" ]] && [[ -d "$TEST_SEED" ]] && rm -rf "$TEST_SEED"
+    [[ -n "${TEST_SEED:-}" ]] && _rm_rf_resilient "$TEST_SEED"
 }
 
 # Usage (inside setup): create a per-test clone of the seed and cd into it.
