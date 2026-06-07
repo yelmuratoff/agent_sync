@@ -69,6 +69,12 @@ snapshot_save() {
     local install_dir="$1"
     local snapshot_dir="$2"
 
+    # Refuse to run with an unspecified target: an empty snapshot_dir would turn
+    # the rm -rf below into a delete of a bare "/tools" path.
+    if [[ -z "$install_dir" ]] || [[ -z "$snapshot_dir" ]]; then
+        return 1
+    fi
+
     local src="$install_dir/lib/templates/tools"
     local dst="$snapshot_dir/tools"
 

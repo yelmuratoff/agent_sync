@@ -69,6 +69,17 @@ YAML
     [ "$status" -ne 0 ]
 }
 
+@test "snapshot_save refuses empty snapshot_dir" {
+    _write_base_tool claude ".claude/rules"
+    run snapshot_save "$FAKE_INSTALL" ""
+    [ "$status" -eq 1 ]
+}
+
+@test "snapshot_save refuses empty install_dir" {
+    run snapshot_save "" "$SNAPSHOT_DIR"
+    [ "$status" -eq 1 ]
+}
+
 @test "snapshot_save overwrites stale snapshot" {
     _write_base_tool claude ".claude/rules"
     snapshot_save "$FAKE_INSTALL" "$SNAPSHOT_DIR"
