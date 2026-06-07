@@ -55,6 +55,18 @@ jobs:
             else
               echo "::warning::GNU parallel install failed; Windows tests run serially"
             fi
+            # bats calls bats_semaphore_setup unconditionally for --jobs > 1 and
+            # aborts unless flock OR shlock is on PATH — even with within-file
+            # parallelism disabled. git-bash has neither, so supply a minimal
+            # shlock (atomic create via noclobber). across-file parallelism uses
+            # GNU parallel and never calls it; it exists only to pass the check.
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'f=""; while [[ $# -gt 0 ]]; do case "$1" in -f) f="$2"; shift 2;; -p) shift 2;; *) shift;; esac; done' \
+              '[[ -n "$f" ]] || exit 2' \
+              '( set -o noclobber; : >"$f" ) 2>/dev/null && exit 0 || exit 1' \
+              > "$HOME/.local/bin/shlock"
+            chmod +x "$HOME/.local/bin/shlock"
           fi
 
       - name: Exclude work dirs from Defender
@@ -76,11 +88,14 @@ jobs:
           # a serial fallback. Probe by running it, not by command -v: on Windows
           # a perl-script parallel can be present yet fail to execute.
           if parallel --version >/dev/null 2>&1; then
-            # bats parallelizes across files (GNU parallel) and within each file
-            # (a flock/shlock semaphore). git-bash has no flock, so disable only
-            # within-file parallelism on Windows; across-file — the main win — stays.
             if [[ "$RUNNER_OS" == "Windows" ]]; then
-              bats --jobs 4 --no-parallelize-within-files tests/ --tap
+              # Windows uses across-file parallelism only (within-file needs a
+              # real flock; the shlock shim just satisfies bats' setup check). If
+              # the parallel run can't start at all, fall back to serial so an
+              # environment gap never reds the build — a genuine test failure
+              # still fails the serial re-run.
+              bats --jobs 4 --no-parallelize-within-files tests/ --tap \
+                || bats tests/ --tap
             else
               bats --jobs 4 tests/ --tap
             fi
