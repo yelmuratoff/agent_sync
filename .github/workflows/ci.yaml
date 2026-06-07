@@ -45,14 +45,37 @@ jobs:
             git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
             /tmp/bats-core/install.sh "$HOME/.local"
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            # GNU parallel is a standalone perl script and git-bash ships perl,
+            # so the in-tree src/parallel runs as-is — no build needed. This
+            # lets bats --jobs parallelize on Windows like it does elsewhere.
+            # Non-fatal: a clone failure leaves the serial fallback in Run tests.
+            if git clone --depth 1 https://git.savannah.gnu.org/git/parallel.git /tmp/gnu-parallel; then
+              install -m 0755 /tmp/gnu-parallel/src/parallel "$HOME/.local/bin/parallel"
+              mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
+            else
+              echo "::warning::GNU parallel install failed; Windows tests run serially"
+            fi
           fi
+
+      - name: Exclude work dirs from Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # Defender real-time scanning of every spawned process dominates the
+          # process-heavy bats run on Windows. Excluding the build/temp trees is
+          # the largest cheap win; it never affects test correctness.
+          Add-MpPreference -ExclusionPath "${env:GITHUB_WORKSPACE}"
+          Add-MpPreference -ExclusionPath "${env:RUNNER_TEMP}"
+          Add-MpPreference -ExclusionPath "${env:TEMP}"
 
       - name: Run tests
         shell: bash
         run: |
-          # bats --jobs needs GNU parallel (Linux/macOS). Windows git-bash
-          # lacks it, so fall back to serial there.
-          if command -v parallel >/dev/null 2>&1; then
+          # bats --jobs needs GNU parallel; every OS installs it above, but keep
+          # a serial fallback. Probe by running it, not by command -v: on Windows
+          # a perl-script parallel can be present yet fail to execute.
+          if parallel --version >/dev/null 2>&1; then
             bats --jobs 4 tests/ --tap
           else
             bats tests/ --tap
