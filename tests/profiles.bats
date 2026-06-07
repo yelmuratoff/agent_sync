@@ -3,15 +3,17 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    run_agentsync init --no-detect --yes >/dev/null
-    run_agentsync enable claude --no-scaffold >/dev/null
+# Seed init + enable claude once; clone per test.
+setup_file() {
+    seed_project --no-detect --yes
+    (
+        cd "$TEST_SEED"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude --no-scaffold >/dev/null
+    )
 }
-
-teardown() {
-    teardown_test_project
-}
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 @test "profile add: scaffolds a thin variant tool with config-home dests" {
     run_agentsync profile add hub --tools claude

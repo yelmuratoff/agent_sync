@@ -5,16 +5,18 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init >/dev/null
-    enable_tools claude
-    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+# Seed a post-sync tree (init + enable claude + sync) once; clone per test.
+setup_file() {
+    seed_project
+    (
+        cd "$TEST_SEED"
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude --no-scaffold >/dev/null
+        AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    )
 }
-
-teardown() {
-    teardown_test_project
-}
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 # ── Manifest creation ───────────────────────────────────────────────────────
 

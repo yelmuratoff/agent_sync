@@ -4,14 +4,12 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init >/dev/null
-}
-
-teardown() {
-    teardown_test_project
-}
+# Seed `init` once; each test clones it (APFS clonefile) and enables/syncs
+# the tool it needs. Per-test `init` was the bulk of this file's runtime.
+setup_file() { seed_project; }
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 # ── 1:1 adoptable targets ───────────────────────────────────────────────────
 
