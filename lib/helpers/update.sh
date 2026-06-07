@@ -3,6 +3,31 @@
 
 readonly AGENTSYNC_REPO="yelmuratoff/agent_sync"
 
+# Reconcile a managed install dir to the already-fetched origin/main, healing
+# past local drift. The install dir mirrors a release, not a working branch:
+# local edits to tracked files are set aside into a stash (recoverable via
+# `git stash list`) rather than allowed to abort the update, and a diverged
+# history is hard-reset onto the release. Untracked files (.update_cache) and
+# ignored ones (.snapshot/) are left untouched so the conflict snapshot survives.
+# Echoes "stashed" when local changes were set aside; returns 1 only if even a
+# hard reset fails. Usage: _update_reconcile_install "<install_dir>"
+_update_reconcile_install() {
+    local dir="$1"
+    (
+        cd "$dir" || exit 1
+        local stashed=false
+        if [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+            git stash push --quiet -m "agentsync-update-autostash" 2>/dev/null && stashed=true
+        fi
+        if git merge --ff-only --quiet origin/main 2>/dev/null \
+            || git reset --hard --quiet origin/main 2>/dev/null; then
+            [[ "$stashed" == "true" ]] && echo "stashed"
+            exit 0
+        fi
+        exit 1
+    )
+}
+
 cmd_update() {
     local strict=false
     local arg
@@ -68,8 +93,9 @@ cmd_update() {
     trap "rm -rf '$snapshot_dir'" EXIT
 
     echo "  Updating..."
-    if ! git pull --quiet origin main 2>/dev/null; then
-        echo "  $(_red "Error"): git pull failed. Try reinstalling:" >&2
+    local reconcile_out
+    if ! reconcile_out=$(_update_reconcile_install "$install_dir"); then
+        echo "  $(_red "Error"): could not reconcile the install at $install_dir. Try reinstalling:" >&2
         echo "    curl -fsSL https://raw.githubusercontent.com/$AGENTSYNC_REPO/main/install.sh | bash" >&2
         exit 1
     fi
@@ -99,6 +125,10 @@ cmd_update() {
         echo "  $(_green "Updated!") v${old_version} → v${new_version}"
     else
         echo "  $(_green "Updated!") (v${new_version})"
+    fi
+
+    if [[ "$reconcile_out" == *stashed* ]]; then
+        echo "  $(_dim "Set aside local edits in the install dir — recoverable via") $(_cyan "git -C \"$install_dir\" stash list")$(_dim ".")"
     fi
 
     # Show what's new from CHANGELOG.md (all versions between old and new)
