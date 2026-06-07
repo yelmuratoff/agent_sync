@@ -182,7 +182,7 @@ agentsync <command> [options]
 | Command                  | Alias | Description                                                                                    |
 | ------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
 | `init [dir]`             |       | Create `.ai/` structure with starter templates                                                 |
-| `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--dry-run`, `--force`, `--workspace`)          |
+| `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--profile`, `--dry-run`, `--force`, `--workspace`) |
 | `check`                  |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
 | `enable <tools…>`        |       | Opt in to one or more tools (scaffolds editable settings/hooks payloads)                        |
 | `disable <tools…>`       |       | Opt out of one or more tools                                                                    |
@@ -196,6 +196,7 @@ agentsync <command> [options]
 | `dedupe`                 |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
 | `migrate`                |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
 | `adopt <dest>`           |       | Promote a manual edit in a generated file back into `.ai/src/`                                 |
+| `profile <cmd>`          |       | Manage config-home profiles: `add`, `list`, `remove` (work/personal tool variants)             |
 | `doctor`                 |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
 | `generate [context]`     | `gen` | Print AI prompt for project-specific config generation                                         |
 | `setup-hooks`            |       | Install git hooks for auto-sync on pull/checkout                                               |
@@ -214,6 +215,7 @@ agentsync <command> [options]
 agentsync sync                        # All enabled tools
 agentsync sync --only claude,cursor   # Only specified tools
 agentsync sync --skip gemini          # All except specified
+agentsync sync --profile hub          # Personal tools + the named profile (config-home variant)
 agentsync sync --dry-run              # Preview without writing
 agentsync sync --force                # Overwrite even if dest files were edited manually
 agentsync sync --workspace            # Run sync in every .ai/ below cwd (bottom-up alphabetical)

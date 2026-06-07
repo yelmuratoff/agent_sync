@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.0
+
+### Added
+
+- **`agentsync profile` — config-home profiles for per-account tool variants:** a profile fans one source tree out into a second, self-contained config-home directory for the same tool — e.g. a work `~/.claude-hub/` (run with `CLAUDE_CONFIG_DIR=~/.claude-hub`) alongside your personal `~/.claude/` — each with its own content. `agentsync profile add <name> [--tools a,b] [--adopt]` scaffolds, per tool, a thin variant config `.ai/src/tools/<tool>-<name>.yaml` (declaring `base: <tool>` to inherit every unset field, with config-home `targets.*.dest`), an overlay dir `.ai/profiles/<name>/src/` for profile-only rules/skills/commands/agents, and a `profiles:` block in `agent_sync.yaml`. `agentsync profile list` and `agentsync profile remove <name>` round out the lifecycle. Use `--adopt` to pull an existing `~/.<tool>-<name>/` directory into the overlay before the first sync.
+- **`agentsync sync --profile <name>`:** sync personal tools plus the named profile; a plain `agentsync sync` also syncs every profile marked `active: true`. Each profile renders with a per-profile source overlay (`.ai/src/` base ⊕ `.ai/profiles/<name>/src/`, profile wins on path conflicts), composing on top of an active `shared:` overlay. Profile outputs are gitignored and drift-protected like any other output.
+- **`base:` tool field:** a tool config may declare `base: <tool>` to inherit every field it does not set (formats, extensions, inline flags) and the base tool's `settings`/`mcp`/`hooks` templates from another tool. This backs profile variants but is available to any custom tool that wants to extend a shipped one.
+
 ## 0.23.3
 
 ### Fixed
