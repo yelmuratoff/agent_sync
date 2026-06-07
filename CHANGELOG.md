@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.26.0
+
+### Changed
+
+- **Sync preserves hand-placed files in generated dirs:** `agentsync sync` no longer treats a tool's output directory as fully sync-owned. Previously, a file you added by hand to a generated dir (e.g. `.claude/rules/my-own.md`) was silently deleted on the next sync because it wasn't regenerated from `.ai/src/`. Sync now consults the manifest: an extraneous entry it never generated is kept — with a per-file warning and a run-summary tally ("Preserved N user-added file(s)…") — instead of removed. The file is still *unmanaged*; move it into `.ai/src/` to manage it, or run `agentsync sync --force` to restore the old prune-everything behavior. Manifest-unaware callers keep their previous semantics, so only real sync runs change.
+
+### Fixed
+
+- **`profile add` scaffolds a README instead of empty overlay dirs; `--adopt` dereferences symlinks:** `agentsync profile add` no longer pre-creates empty `rules/`/`skills/` overlay directories (clutter git can't track anyway) — it writes a self-documenting README at the overlay root and creates content dirs on demand. With `--adopt`, an existing `~/.<tool>-<name>/` directory is now copied with `cp -RL`, so symlinked plugin skills are dereferenced into real files and broken links are skipped rather than copied dangling.
+- **`snapshot_save` rejects empty target directories:** an empty `snapshot_dir` made the internal cleanup target a bare `/tools` path. Both `install_dir` and `snapshot_dir` are now validated and the function returns early on either being empty.
+
 ## 0.25.0
 
 ### Added

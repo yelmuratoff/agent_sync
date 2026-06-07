@@ -217,7 +217,7 @@ agentsync sync --only claude,cursor   # Only specified tools
 agentsync sync --skip gemini          # All except specified
 agentsync sync --profile hub          # Personal tools + the named profile (config-home variant)
 agentsync sync --dry-run              # Preview without writing
-agentsync sync --force                # Overwrite even if dest files were edited manually
+agentsync sync --force                # Overwrite edited files and prune hand-added files in generated dirs
 agentsync sync --workspace            # Run sync in every .ai/ below cwd (bottom-up alphabetical)
 ```
 
