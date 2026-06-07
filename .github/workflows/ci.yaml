@@ -76,7 +76,14 @@ jobs:
           # a serial fallback. Probe by running it, not by command -v: on Windows
           # a perl-script parallel can be present yet fail to execute.
           if parallel --version >/dev/null 2>&1; then
-            bats --jobs 4 tests/ --tap
+            # bats parallelizes across files (GNU parallel) and within each file
+            # (a flock/shlock semaphore). git-bash has no flock, so disable only
+            # within-file parallelism on Windows; across-file — the main win — stays.
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              bats --jobs 4 --no-parallelize-within-files tests/ --tap
+            else
+              bats --jobs 4 tests/ --tap
+            fi
           else
             bats tests/ --tap
           fi
