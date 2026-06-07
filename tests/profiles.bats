@@ -68,6 +68,7 @@ teardown() { teardown_test_project; }
 
 @test "sync: profile-only rule lands in the profile output, not personal" {
     run_agentsync profile add hub --tools claude >/dev/null
+    mkdir -p .ai/profiles/hub/src/rules
     echo "work-only" > .ai/profiles/hub/src/rules/work-only.md
     run_agentsync sync >/dev/null
     [ -f .claude-hub/rules/work-only.md ]
@@ -77,6 +78,7 @@ teardown() { teardown_test_project; }
 @test "sync: base rules fill into profile output (overlay fill)" {
     run_agentsync profile add hub --tools claude >/dev/null
     echo "base-rule body" > .ai/src/rules/base-rule.md
+    mkdir -p .ai/profiles/hub/src/rules
     echo "work-only" > .ai/profiles/hub/src/rules/work-only.md
     run_agentsync sync >/dev/null
     # Both the profile extra and the inherited base rule are present.
@@ -87,6 +89,7 @@ teardown() { teardown_test_project; }
 @test "sync: profile wins on path collision with base" {
     run_agentsync profile add hub --tools claude >/dev/null
     echo "BASE VERSION" > .ai/src/rules/clash.md
+    mkdir -p .ai/profiles/hub/src/rules
     echo "PROFILE VERSION" > .ai/profiles/hub/src/rules/clash.md
     run_agentsync sync >/dev/null
     grep -q "PROFILE VERSION" .claude-hub/rules/clash.md
@@ -157,6 +160,7 @@ shared:
   inherit: rules
 EOF
     run_agentsync profile add hub --tools claude >/dev/null
+    mkdir -p .ai/profiles/hub/src/rules
     echo "from-profile" > .ai/profiles/hub/src/rules/profile-only.md
     run run_agentsync sync
     [ "$status" -eq 0 ]
@@ -169,6 +173,7 @@ EOF
     local sandbox="$TEST_PROJECT/tmpdir_sandbox"
     mkdir -p "$sandbox"
     run_agentsync profile add hub --tools claude >/dev/null
+    mkdir -p .ai/profiles/hub/src/rules
     echo "x" > .ai/profiles/hub/src/rules/x.md
     TMPDIR="$sandbox" run run_agentsync sync
     [ "$status" -eq 0 ]
@@ -190,4 +195,11 @@ EOF
 @test "sync --profile: missing value is a usage error" {
     run run_agentsync sync --profile
     [ "$status" -ne 0 ]
+}
+
+@test "profile add: scaffolds a README, not empty overlay dirs" {
+    run_agentsync profile add hub --tools claude
+    [ -f .ai/profiles/hub/README.md ]
+    [ ! -d .ai/profiles/hub/src/rules ]
+    [ ! -d .ai/profiles/hub/src/skills ]
 }

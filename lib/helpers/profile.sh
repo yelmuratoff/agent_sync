@@ -41,6 +41,25 @@ _profile_home_dir() {
     echo ".${base_tool}-${name}"
 }
 
+# Write a self-documenting README at the overlay root so the profile dir is not
+# an empty mystery — overlay content dirs are created on demand, not up front.
+_profile_write_overlay_readme() {
+    local name="$1"
+    local file="$2"
+    [[ -f "$file" ]] && return 0
+    cat > "$file" <<EOF
+# Profile: $name — overlay source
+
+Drop profile-only content under \`src/\`; it layers over the base \`.ai/src/\` at
+sync time (the profile wins on path conflicts):
+
+  src/AGENTS.md   src/rules/*.md   src/skills/<name>/   src/commands/*.md   src/agents/*.md
+
+Anything not present here is inherited from the base — an empty overlay mirrors
+the base. Profile-specific MCP/settings/hooks go in \`.ai/src/tools/<tool>-$name/\`.
+EOF
+}
+
 # Emit the `targets:` block for a variant: every base resource that declares a
 # dest, rewritten into the config-home layout. Echoes nothing if the base
 # declares no dests (e.g. an unknown tool).
@@ -148,7 +167,9 @@ _profile_adopt_home() {
     for item in rules skills commands agents; do
         [[ -d "$home_abs/$item" ]] || continue
         mkdir -p "$overlay_src/$item"
-        cp -R "$home_abs/$item/." "$overlay_src/$item/" 2>/dev/null || true
+        # -L dereferences symlinked skills (plugins symlink theirs) into real
+        # files; broken links error and are skipped rather than copied dangling.
+        cp -RL "$home_abs/$item/." "$overlay_src/$item/" 2>/dev/null || true
     done
     # Agents/identity file: CLAUDE.md, AGENTS.md, GEMINI.md, …
     local f
@@ -217,7 +238,8 @@ _profile_add() {
 
     local overlay_rel=".ai/profiles/$name"
     local overlay_src="$REPO_ROOT/$overlay_rel/src"
-    mkdir -p "$overlay_src/rules" "$overlay_src/skills"
+    mkdir -p "$overlay_src"
+    _profile_write_overlay_readme "$name" "$REPO_ROOT/$overlay_rel/README.md"
 
     echo ""
     _bold "  Creating profile '$name'"; echo ""
