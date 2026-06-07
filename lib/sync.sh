@@ -333,8 +333,8 @@ sync_tool() {
     rule_ext=$(get_tool_value "$tool_name" "targets.rules.extension")
     rule_header=$(get_tool_value "$tool_name" "targets.rules.header")
     append_imports_flag=$(get_tool_value "$tool_name" "targets.rules.append_imports")
-    rule_include=$(get_tool_value "$tool_name" "targets.rules.include")
-    rule_exclude=$(get_tool_value "$tool_name" "targets.rules.exclude")
+    rule_include=$(get_tool_filter "$tool_name" "targets.rules.include")
+    rule_exclude=$(get_tool_filter "$tool_name" "targets.rules.exclude")
 
     local merge_to_file inline_into_agents
     merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
@@ -402,8 +402,8 @@ sync_tool() {
     src_skills_abs=$(resolve_source_path "$src_skills" "targets.skills.source for $display")
 
     local skills_include skills_exclude
-    skills_include=$(get_tool_value "$tool_name" "targets.skills.include")
-    skills_exclude=$(get_tool_value "$tool_name" "targets.skills.exclude")
+    skills_include=$(get_tool_filter "$tool_name" "targets.skills.include")
+    skills_exclude=$(get_tool_filter "$tool_name" "targets.skills.exclude")
 
     local inline_skills
     inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
@@ -471,8 +471,8 @@ sync_tool() {
     local dest_cmd_ext dest_cmd_format cmd_include cmd_exclude commands_inline_into_agents
     dest_cmd_ext=$(get_tool_value "$tool_name" "targets.commands.extension")
     dest_cmd_format=$(get_tool_value "$tool_name" "targets.commands.format")
-    cmd_include=$(get_tool_value "$tool_name" "targets.commands.include")
-    cmd_exclude=$(get_tool_value "$tool_name" "targets.commands.exclude")
+    cmd_include=$(get_tool_filter "$tool_name" "targets.commands.include")
+    cmd_exclude=$(get_tool_filter "$tool_name" "targets.commands.exclude")
     commands_inline_into_agents=$(get_tool_value "$tool_name" "targets.commands.inline_into_agents")
     if [[ -n "$dest_commands_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
         local src_commands_abs

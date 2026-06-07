@@ -36,7 +36,8 @@ targets:
     # Optional: Add a header to the top of every rule file
     # header: 'globs: "**/*"'
 
-    # Optional: Filter rules (bash globs)
+    # Optional: Filter rules (bash globs). Each accepts a scalar ("a b c"),
+    # an inline list ([a, b]), or a block list (one `- glob` per line).
     # include: "flutter-*.md"
     # exclude: "secret-*.md"
 

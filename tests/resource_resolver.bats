@@ -203,3 +203,69 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"mcp source: base"* ]]
 }
+
+@test "skills exclude accepts a block-style list" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude
+
+    mkdir -p .ai/src/skills/keepme .ai/src/skills/dropme
+    echo "k" > .ai/src/skills/keepme/SKILL.md
+    echo "d" > .ai/src/skills/dropme/SKILL.md
+
+    mkdir -p .ai/src/tools
+    cat > .ai/src/tools/claude.yaml <<'YAML'
+targets:
+  skills:
+    exclude:
+      - dropme
+YAML
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ -d ".claude/skills/keepme" ]
+    [ ! -d ".claude/skills/dropme" ]
+}
+
+@test "skills exclude accepts an inline [a, b] list" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude
+
+    mkdir -p .ai/src/skills/keepme .ai/src/skills/dropone .ai/src/skills/droptwo
+    echo "k" > .ai/src/skills/keepme/SKILL.md
+    echo "1" > .ai/src/skills/dropone/SKILL.md
+    echo "2" > .ai/src/skills/droptwo/SKILL.md
+
+    mkdir -p .ai/src/tools
+    cat > .ai/src/tools/claude.yaml <<'YAML'
+targets:
+  skills:
+    exclude: [dropone, droptwo]
+YAML
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ -d ".claude/skills/keepme" ]
+    [ ! -d ".claude/skills/dropone" ]
+    [ ! -d ".claude/skills/droptwo" ]
+}
+
+@test "skills exclude still accepts a plain scalar string" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools claude
+
+    mkdir -p .ai/src/skills/keepme .ai/src/skills/dropme
+    echo "k" > .ai/src/skills/keepme/SKILL.md
+    echo "d" > .ai/src/skills/dropme/SKILL.md
+
+    mkdir -p .ai/src/tools
+    cat > .ai/src/tools/claude.yaml <<'YAML'
+targets:
+  skills:
+    exclude: "dropme"
+YAML
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ -d ".claude/skills/keepme" ]
+    [ ! -d ".claude/skills/dropme" ]
+}

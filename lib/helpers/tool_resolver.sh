@@ -110,6 +110,70 @@ get_tool_bool() {
     shopt -u nocasematch
 }
 
+# Read a filter field (include/exclude) from one file as a space-joined string,
+# accepting a scalar ("a b c"), an inline list ([a, b]), or a block list
+# (`- a` per line). Echoes empty when the key is absent.
+_read_filter_file() {
+    local file="$1"
+    local key="$2"
+
+    local scalar
+    scalar=$(parse_yaml_value "$file" "$key")
+    if [[ -n "$scalar" ]] && [[ "$scalar" != \[*\] ]]; then
+        echo "$scalar"
+        return 0
+    fi
+
+    local -a items=()
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && items+=("$line")
+    done < <(parse_yaml_list "$file" "$key")
+    if [[ ${#items[@]} -gt 0 ]]; then
+        echo "${items[*]}"
+    fi
+}
+
+# Layered read of an include/exclude filter (user override → base → base: tool),
+# returning a space-joined glob string regardless of YAML form (scalar/list).
+# Use this instead of get_tool_value for targets.*.include / targets.*.exclude
+# so configs can list one glob per line.
+# Usage: get_tool_filter <tool_name> <targets.X.include|exclude>
+get_tool_filter() {
+    local tool_name="$1"
+    local key_path="$2"
+
+    local user_file
+    user_file=$(tool_resolver_user_file "$tool_name")
+    if [[ -f "$user_file" ]]; then
+        local v
+        v=$(_read_filter_file "$user_file" "$key_path")
+        if [[ -n "$v" ]]; then
+            echo "$v"
+            return 0
+        fi
+    fi
+
+    local base_file
+    base_file=$(tool_resolver_base_file "$tool_name")
+    if [[ -f "$base_file" ]]; then
+        _read_filter_file "$base_file" "$key_path"
+        return 0
+    fi
+
+    local base_tool base_tool_file
+    base_tool=$(tool_base_name "$tool_name")
+    if [[ -n "$base_tool" ]]; then
+        base_tool_file=$(tool_resolver_base_file "$base_tool")
+        if [[ -f "$base_tool_file" ]]; then
+            _read_filter_file "$base_tool_file" "$key_path"
+            return 0
+        fi
+    fi
+
+    echo ""
+}
+
 # ── Payload resolution (settings / mcp / hooks) ───────────────────────────────
 #
 # Each tool can ship a per-resource payload file (e.g. Cursor's hooks.json).
