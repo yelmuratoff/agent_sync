@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.1
+
+### Fixed
+
+- **`agentsync update` self-heals local install-dir drift instead of failing:** when the global install (`~/.agentsync`) had a local edit to a tracked file that an incoming release also touched, the underlying `git pull` aborted ("Your local changes would be overwritten by merge") and the real git error was hidden — you saw only a generic "git pull failed, try reinstalling" message. `update` now reconciles the install dir toward the release: local edits to tracked files are set aside into a recoverable stash (`git stash list`), the update fast-forwards to the fetched release, and a diverged history is reset onto it. Untracked files (`.update_cache`) and the conflict snapshot (`.snapshot/`) are left intact, and the run reports when edits were set aside. The install dir mirrors a release, not a working branch, so reconciling toward it is the intended behavior.
+
 ## 0.26.0
 
 ### Changed
