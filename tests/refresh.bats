@@ -3,15 +3,11 @@
 
 load test_helper
 
-setup() {
-    setup_test_project
-    run run_agentsync init --yes --no-detect --content rules,skills,commands,subagents
-    [ "$status" -eq 0 ]
-}
-
-teardown() {
-    teardown_test_project
-}
+# Seed the init template tree once; clone per test.
+setup_file() { seed_project --yes --no-detect --content rules,skills,commands,subagents; }
+teardown_file() { teardown_seed_project; }
+setup() { clone_seed; }
+teardown() { teardown_test_project; }
 
 # Remove a single relative-path entry from the template manifest. Lets a test
 # simulate "this template is brand new — the user has never seen it" by
