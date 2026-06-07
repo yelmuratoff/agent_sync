@@ -4,35 +4,37 @@
 load test_helper
 
 setup_file() {
-    # Build a seeded copy of the repo once. Each test clones via APFS
-    # clonefile, which is near-instant and isolates concurrent tests.
+    # Minimal engine seed (no .git): release only needs the CLI entry point,
+    # its helpers, a VERSION file, and a CHANGELOG for the tag body. Copying the
+    # whole repo and carrying its .git made each per-test clone race under
+    # `bats --jobs` — the copied index disagreed with the freshly-written working
+    # tree, so release's clean-tree check tripped intermittently.
     TEST_SEED="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_release_seed.XXXXXX")"
     export TEST_SEED
 
-    # clonefile the whole repo when on APFS; fall back to cp -R.
-    if ! cp -c -R "$REPO_ROOT"/. "$TEST_SEED/" 2>/dev/null; then
-        cp -R "$REPO_ROOT"/. "$TEST_SEED/"
-    fi
-
-    (
-        cd "$TEST_SEED"
-        rm -rf .git
-        git init --quiet
-        git config user.email "test@test.com"
-        git config user.name "Test"
-        git add -A
-        git commit -m "initial" --quiet
-
-        echo "1.0.0" > VERSION
-        git add VERSION
-        git commit -m "set version" --quiet
-    )
+    cp -R "$REPO_ROOT/bin" "$TEST_SEED/bin"
+    cp -R "$REPO_ROOT/lib" "$TEST_SEED/lib"
+    echo "1.0.0" > "$TEST_SEED/VERSION"
+    cp "$REPO_ROOT/CHANGELOG.md" "$TEST_SEED/CHANGELOG.md" 2>/dev/null \
+        || echo "# Changelog" > "$TEST_SEED/CHANGELOG.md"
 }
 
 teardown_file() { teardown_seed_project; }
 
 setup() {
-    clone_seed
+    # Copy the static seed, then git-init fresh so the working tree is
+    # deterministically clean: index stat info matches the just-written files,
+    # leaving no room for a stale-index false positive in release's clean check.
+    TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_clone.XXXXXX")"
+    rmdir "$TEST_PROJECT"
+    cp -c -R "$TEST_SEED" "$TEST_PROJECT" 2>/dev/null \
+        || { rm -rf "$TEST_PROJECT"; cp -R "$TEST_SEED" "$TEST_PROJECT"; }
+    cd "$TEST_PROJECT"
+    git init --quiet
+    git config user.email "test@test.com"
+    git config user.name "Test"
+    git add -A
+    git commit -m "seed" --quiet
     export AGENTSYNC_HOME="$TEST_PROJECT"
 }
 
