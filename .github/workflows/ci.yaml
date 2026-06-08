@@ -52,15 +52,16 @@ jobs:
 
   # git-bash can't run bats --jobs (no flock; GNU parallel hangs for hours) and
   # the full suite runs serially in ~58m. Shard the files across jobs instead:
-  # each job runs its slice serially, cutting wall-clock to ~15m/shard.
+  # each job runs its slice serially, cutting wall-clock to ~8m/shard. More
+  # shards hit a floor (~5-6m) as per-job overhead dominates, so 8 is the knee.
   test-windows:
-    name: Test (windows, shard ${{ matrix.shard }}/4)
+    name: Test (windows, shard ${{ matrix.shard }}/8)
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
       - name: Install bats-core
@@ -83,7 +84,7 @@ jobs:
         env:
           TERM: xterm
           SHARD: ${{ matrix.shard }}
-          TOTAL: "4"
+          TOTAL: "8"
         run: |
           # Greedy bin-pack the .bats files by test count into TOTAL shards. The
           # split is deterministic, so every shard computes the same assignment
