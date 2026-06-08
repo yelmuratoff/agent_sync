@@ -42,7 +42,7 @@ teardown() {
     grep -q "USER_OVERRIDE" .cursor/hooks.json
 }
 
-@test "no override and no base template → sync skips silently" {
+@test "no override and no base template -> sync skips silently" {
     run_agentsync init --no-detect >/dev/null
     # Claude has no hooks template — neither override nor base for hooks.
     enable_tools claude

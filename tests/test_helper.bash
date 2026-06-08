@@ -15,18 +15,17 @@ setup_test_project() {
     export AGENTSYNC_HOME="$REPO_ROOT"
 }
 
-# rm -rf that tolerates the transient ENOTEMPTY a settling git background task
-# (gc/maintenance) or a CI filesystem can throw mid-delete. Retries briefly, then
-# gives up quietly: the target is an ephemeral /tmp dir on a throwaway runner, so
-# a leftover never matters — and a cleanup race must not fail an already-asserted
-# test. Surfaced under `bats --jobs` on the release suite (rm of .git/objects).
+# rm -rf that never fails teardown. A cleanup race (a settling git task or a CI
+# filesystem creating an entry mid-delete) or a locked file on Windows git-bash
+# can make rm exit non-zero; swallow that. One immediate retry catches the common
+# transient. The target is an ephemeral /tmp dir on a throwaway runner, so a
+# leftover never matters — only an asserted test failing on cleanup would. No
+# sleep: on Windows the rm frequently needs the retry, and per-test sleeps there
+# add up to tens of minutes.
 _rm_rf_resilient() {
     local target="${1:-}"
     [[ -n "$target" ]] && [[ -d "$target" ]] || return 0
-    for _ in 1 2 3; do
-        rm -rf "$target" 2>/dev/null && return 0
-        sleep 1
-    done
+    rm -rf "$target" 2>/dev/null && return 0
     rm -rf "$target" 2>/dev/null || true
 }
 

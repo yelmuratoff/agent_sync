@@ -13,7 +13,7 @@ teardown() { teardown_test_project; }
 
 # ── 1:1 adoptable targets ───────────────────────────────────────────────────
 
-@test "adopt: rule file (claude — no header) round-trips into source" {
+@test "adopt: rule file (claude - no header) round-trips into source" {
     enable_tools claude
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
     echo "## Manual addition" >> .claude/rules/core.md

@@ -225,7 +225,7 @@ EOF
     [ ! -d .ai/src/skills/comments ]
 }
 
-@test "refresh: idempotent — second run reports up to date" {
+@test "refresh: idempotent - second run reports up to date" {
     run run_agentsync refresh --yes
     [ "$status" -eq 0 ]
     run run_agentsync refresh --yes
@@ -309,7 +309,7 @@ EOF
     grep -q $'^rules/comments.md\t' .ai/.template-manifest
 }
 
-@test "refresh: backward compat — works on project with no manifest at all" {
+@test "refresh: backward compat - works on project with no manifest at all" {
     rm -f .ai/.template-manifest
     # Modify a file so refresh has to make a decision.
     echo "USER LOCAL EDIT" >> .ai/src/rules/core.md
