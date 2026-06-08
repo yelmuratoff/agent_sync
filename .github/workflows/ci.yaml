@@ -28,9 +28,10 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Serial Windows runs ~16m; this bounds a hang to a fast failure instead of
-    # the 6h default a stuck run otherwise burns.
-    timeout-minutes: 30
+    # Serial Windows is slow (process spawning); allow it to finish while still
+    # bounding a true hang far below the 6h default. Tighten once the real
+    # green-run wall-time is known.
+    timeout-minutes: 60
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
