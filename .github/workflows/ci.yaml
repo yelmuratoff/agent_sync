@@ -25,58 +25,80 @@ jobs:
           shellcheck -x -S warning -e SC1091 lib/setup_hooks.sh
           shellcheck -x -S warning -e SC1091 lib/helpers/*.sh
 
-  test:
+  # Linux/macOS parallelize the whole suite with GNU parallel — a few minutes.
+  test-unix:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Serial Windows is slow (process spawning): ~58m for the full suite. Give
-    # headroom over that while still bounding a true hang far below the 6h
-    # default. Drops sharply if Windows is ever sharded across jobs.
-    timeout-minutes: 75
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-
       - name: Install bats-core and GNU parallel
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             sudo apt-get install -y bats parallel
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install bats-core parallel
           else
-            # Windows runs bats serially (see Run tests), so it needs no GNU
-            # parallel: git-bash spawns processes slowly enough that parallel's
-            # own overhead made the suite hang for hours, far worse than serial.
-            git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
-            /tmp/bats-core/install.sh "$HOME/.local"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            brew install bats-core parallel
           fi
+      - name: Run tests
+        shell: bash
+        env:
+          TERM: xterm
+        run: bats --jobs 4 tests/ --tap
 
+  # git-bash can't run bats --jobs (no flock; GNU parallel hangs for hours) and
+  # the full suite runs serially in ~58m. Shard the files across jobs instead:
+  # each job runs its slice serially, cutting wall-clock to ~15m/shard.
+  test-windows:
+    name: Test (windows, shard ${{ matrix.shard }}/4)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats-core
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          /tmp/bats-core/install.sh "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Exclude work dirs from Defender
-        if: runner.os == 'Windows'
         shell: pwsh
         continue-on-error: true
         run: |
           # Defender real-time scanning of every spawned process dominates the
-          # process-heavy bats run on Windows. Excluding the build/temp trees is
-          # the largest cheap win; it never affects test correctness.
+          # process-heavy bats run on Windows; excluding the trees is a cheap win.
           Add-MpPreference -ExclusionPath "${env:GITHUB_WORKSPACE}"
           Add-MpPreference -ExclusionPath "${env:RUNNER_TEMP}"
           Add-MpPreference -ExclusionPath "${env:TEMP}"
-
-      - name: Run tests
+      - name: Run shard serially
         shell: bash
-        run: |
-          # Linux/macOS parallelize with GNU parallel (installed above). Windows
-          # git-bash can't: bats needs flock/shlock it lacks, and GNU parallel's
-          # per-job overhead on git-bash's slow process spawning is pathological
-          # (the suite hung for hours). Serial is both correct and faster there.
-          if [[ "$RUNNER_OS" != "Windows" ]] && parallel --version >/dev/null 2>&1; then
-            bats --jobs 4 tests/ --tap
-          else
-            bats tests/ --tap
-          fi
         env:
           TERM: xterm
+          SHARD: ${{ matrix.shard }}
+          TOTAL: "4"
+        run: |
+          # Greedy bin-pack the .bats files by test count into TOTAL shards. The
+          # split is deterministic, so every shard computes the same assignment
+          # and runs only its own slice — no shared state between jobs.
+          sorted=$(for f in tests/*.bats; do printf '%s %s\n' "$(grep -c '^@test' "$f")" "$f"; done | sort -k1,1nr -k2,2)
+          declare -a load
+          for ((s=0; s<TOTAL; s++)); do load[s]=0; done
+          mine=()
+          while read -r cnt file; do
+            [[ -n "$file" ]] || continue
+            min=0
+            for ((s=1; s<TOTAL; s++)); do (( load[s] < load[min] )) && min=$s; done
+            load[min]=$(( load[min] + cnt ))
+            (( min == SHARD - 1 )) && mine+=("$file")
+          done <<< "$sorted"
+          printf 'shard %s/%s: %d files\n' "$SHARD" "$TOTAL" "${#mine[@]}"
+          printf '  %s\n' "${mine[@]}"
+          bats "${mine[@]}" --tap
