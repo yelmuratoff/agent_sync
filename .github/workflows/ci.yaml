@@ -28,6 +28,9 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Serial Windows runs ~16m; this bounds a hang to a fast failure instead of
+    # the 6h default a stuck run otherwise burns.
+    timeout-minutes: 30
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -42,31 +45,12 @@ jobs:
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             brew install bats-core parallel
           else
+            # Windows runs bats serially (see Run tests), so it needs no GNU
+            # parallel: git-bash spawns processes slowly enough that parallel's
+            # own overhead made the suite hang for hours, far worse than serial.
             git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
             /tmp/bats-core/install.sh "$HOME/.local"
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            # GNU parallel is a standalone perl script and git-bash ships perl,
-            # so the in-tree src/parallel runs as-is — no build needed. This
-            # lets bats --jobs parallelize on Windows like it does elsewhere.
-            # Non-fatal: a clone failure leaves the serial fallback in Run tests.
-            if git clone --depth 1 https://git.savannah.gnu.org/git/parallel.git /tmp/gnu-parallel; then
-              install -m 0755 /tmp/gnu-parallel/src/parallel "$HOME/.local/bin/parallel"
-              mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
-            else
-              echo "::warning::GNU parallel install failed; Windows tests run serially"
-            fi
-            # bats calls bats_semaphore_setup unconditionally for --jobs > 1 and
-            # aborts unless flock OR shlock is on PATH — even with within-file
-            # parallelism disabled. git-bash has neither, so supply a minimal
-            # shlock (atomic create via noclobber). across-file parallelism uses
-            # GNU parallel and never calls it; it exists only to pass the check.
-            printf '%s\n' \
-              '#!/usr/bin/env bash' \
-              'f=""; while [[ $# -gt 0 ]]; do case "$1" in -f) f="$2"; shift 2;; -p) shift 2;; *) shift;; esac; done' \
-              '[[ -n "$f" ]] || exit 2' \
-              '( set -o noclobber; : >"$f" ) 2>/dev/null && exit 0 || exit 1' \
-              > "$HOME/.local/bin/shlock"
-            chmod +x "$HOME/.local/bin/shlock"
           fi
 
       - name: Exclude work dirs from Defender
@@ -84,21 +68,12 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          # bats --jobs needs GNU parallel; every OS installs it above, but keep
-          # a serial fallback. Probe by running it, not by command -v: on Windows
-          # a perl-script parallel can be present yet fail to execute.
-          if parallel --version >/dev/null 2>&1; then
-            if [[ "$RUNNER_OS" == "Windows" ]]; then
-              # Windows uses across-file parallelism only (within-file needs a
-              # real flock; the shlock shim just satisfies bats' setup check). If
-              # the parallel run can't start at all, fall back to serial so an
-              # environment gap never reds the build — a genuine test failure
-              # still fails the serial re-run.
-              bats --jobs 4 --no-parallelize-within-files tests/ --tap \
-                || bats tests/ --tap
-            else
-              bats --jobs 4 tests/ --tap
-            fi
+          # Linux/macOS parallelize with GNU parallel (installed above). Windows
+          # git-bash can't: bats needs flock/shlock it lacks, and GNU parallel's
+          # per-job overhead on git-bash's slow process spawning is pathological
+          # (the suite hung for hours). Serial is both correct and faster there.
+          if [[ "$RUNNER_OS" != "Windows" ]] && parallel --version >/dev/null 2>&1; then
+            bats --jobs 4 tests/ --tap
           else
             bats tests/ --tap
           fi
