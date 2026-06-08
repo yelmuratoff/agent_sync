@@ -52,24 +52,35 @@ jobs:
 
   # git-bash can't run bats --jobs (no flock; GNU parallel hangs for hours) and
   # the full suite runs serially in ~58m. Shard the files across jobs instead:
-  # each job runs its slice serially, cutting wall-clock to ~8m/shard. More
-  # shards hit a floor (~5-6m) as per-job overhead dominates, so 8 is the knee.
+  # each job runs its slice serially. The floor is the slowest single file (it
+  # can't be split) plus per-job overhead, ~4-5m; 12 shards lands near it. More
+  # shards (>16) do nothing — there are only 27 files and the heavy ones are
+  # already isolated.
   test-windows:
-    name: Test (windows, shard ${{ matrix.shard }}/8)
+    name: Test (windows, shard ${{ matrix.shard }}/12)
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v4
+      - name: Cache bats-core
+        id: cache-bats
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: bats-core-${{ runner.os }}-v1
       - name: Install bats-core
+        if: steps.cache-bats.outputs.cache-hit != 'true'
         shell: bash
         run: |
           git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
           /tmp/bats-core/install.sh "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Put bats on PATH
+        shell: bash
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Exclude work dirs from Defender
         shell: pwsh
         continue-on-error: true
@@ -84,7 +95,7 @@ jobs:
         env:
           TERM: xterm
           SHARD: ${{ matrix.shard }}
-          TOTAL: "8"
+          TOTAL: "12"
         run: |
           # Greedy bin-pack the .bats files by test count into TOTAL shards. The
           # split is deterministic, so every shard computes the same assignment
