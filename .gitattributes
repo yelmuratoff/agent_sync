@@ -1,0 +1,4 @@
+# Normalize all text files to LF on checkout. Shell scripts must be LF to run
+# under git-bash, and the frontmatter parsers match /^---$/ exactly — a CRLF
+# "---\r" silently breaks description extraction on Windows.
+* text=auto eol=lf
