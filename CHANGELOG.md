@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.26.3
+
+### Changed
+
+- **`agentsync add mcp` merges `mcp.json` without python3:** the shared MCP source is now edited in pure Bash + awk instead of an embedded python3 script. Previously the command hard-exited with "python3 is required to edit mcp.json safely" on any machine without python3 — contradicting AgentSync's zero-runtime-dependency guarantee. The new merge is string-, escape-, and brace-depth-aware, so it preserves existing servers (including arbitrary nesting) and JSON-escapes values correctly. Server entries are now written one per line (compact JSON values); an existing `mcp.json` reflows to that shape the next time you run `add mcp`.
+
+### Fixed
+
+- **Docs match the shipped behavior:** corrected the `agentsync adopt` refused-target lists (header tools are cursor/copilot/windsurf/antigravity, only zed merges rules into one file, and the inline set is codex/gemini/junie for rules plus amazonq/cline/zed for skills), removed a reference to a non-existent `sync --cleanup` flag, and fixed the `agentsync update` description (it runs a background check on each interactive run, not a 24h timer). Surfaced `--profile` in `sync --help` and the workspace forwarded-options list. Added a Profiles section to the README and refreshed the bundled `agentsync` skill — and its shipped template — for current tool coverage, `add mcp`, and the per-tool override layout.
+
 ## 0.26.2
 
 ### Fixed
