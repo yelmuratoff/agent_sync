@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.2
+
+### Fixed
+
+- **Windows: text files check out with LF so frontmatter parsing works:** a `.gitattributes` (`* text=auto eol=lf`) now pins LF line endings on every platform. On Windows (Git Bash), `core.autocrlf` checked text files out as CRLF, and the frontmatter parsers match `/^---$/` exactly — a `---\r` delimiter never matched, so description extraction returned empty and broke the command-rendering paths (Codex `command-*` skills, Amazon Q / Zed inline "## Commands" sections). Scripts and the `.md` templates/fixtures the parsers read now check out LF identically on macOS, Linux, and Windows.
+
 ## 0.26.1
 
 ### Fixed
