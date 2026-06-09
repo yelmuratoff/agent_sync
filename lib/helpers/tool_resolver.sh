@@ -12,6 +12,16 @@
 #   REPO_ROOT              — project root (user project, or install-dir for self-sync)
 #   DEFAULT_REPO_ROOT      — fallback repo root (install-dir for source templates)
 
+# Canonical ordered list of per-tool target resource types. Every consumer that
+# iterates a tool's targets.* keys reads this — extend it here, not at each loop.
+# Consumed across files (sync.sh, profile.sh); shellcheck lints each in isolation.
+# Guarded so a re-source under `set -e` never aborts on the readonly reassignment.
+if [[ -z "${AGENTSYNC_TARGET_KEYS+x}" ]]; then
+    # shellcheck disable=SC2034
+    AGENTSYNC_TARGET_KEYS=(agents rules skills commands subagents settings mcp hooks)
+    readonly AGENTSYNC_TARGET_KEYS
+fi
+
 # ── Base/User tool directories ────────────────────────────────────────────────
 
 # Path to base tool catalog (install-dir).

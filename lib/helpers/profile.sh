@@ -68,7 +68,7 @@ _profile_variant_targets() {
     local home="$2"
     local emitted=false
     local key raw rewritten
-    for key in agents rules skills commands subagents settings mcp hooks; do
+    for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
         raw=$(get_tool_value "$base_tool" "targets.$key.dest")
         [[ -z "$raw" ]] && continue
         if [[ "$emitted" == false ]]; then

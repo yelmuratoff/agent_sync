@@ -90,6 +90,20 @@ UPDATE_GITIGNORE="true"
 
 # Paths claimed by enabled tools — cleanup must not delete these
 declare -a ENABLED_DEST_PATHS=()
+# Repo-relative dest paths fed to .gitignore (dirs carry a trailing slash)
+declare -a GENERATED_GITIGNORE_PATHS=()
+
+# Personal/base SOURCE_* snapshot + base src dir for the profile passes (set by
+# _snapshot_base_sources, read by _run_profile_passes).
+BASE_SOURCE_AGENTS=""
+BASE_SOURCE_RULES=""
+BASE_SOURCE_SKILLS=""
+BASE_SOURCE_COMMANDS=""
+BASE_SOURCE_SUBAGENTS=""
+PROFILE_BASE_SRC=""
+# Tool catalog + profiles selected for this run (set by _build_tool_catalog).
+declare -a ALL_TOOLS=()
+declare -a PROFILES_TO_SYNC=()
 
 # Usage information
 usage() {
@@ -258,80 +272,143 @@ is_path_protected() {
     return 1
 }
 
-# Resolve every dest path for a tool (effective values via tool_resolver).
-# Sets the given named variables in the caller's scope.
-# Usage: _resolve_tool_dests <tool_name> <out_prefix>
-# Produces: <prefix>_agents, <prefix>_rules, ..., each as absolute path or empty.
-_resolve_tool_dests() {
-    local tool_name="$1"
-    local prefix="$2"
-    local display
-    display=$(tool_display_name "$tool_name")
-
-    local raw abs
-    local key
-    for key in agents rules skills commands subagents settings mcp hooks; do
-        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
-        abs=""
-        if [[ -n "$raw" ]]; then
-            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display")
-        fi
-        printf -v "${prefix}_${key}" '%s' "$abs"
-    done
+# Resolve one tool target's dest to an absolute path, or empty if unset/invalid.
+_resolve_one_dest() {
+    local tool_name="$1" key="$2" display="$3"
+    local raw abs=""
+    raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+    [[ -n "$raw" ]] || { echo ""; return 0; }
+    abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || abs=""
+    echo "$abs"
 }
 
-# Sync a single tool. Assumes the tool is enabled and tool_resolver globals are ready.
-sync_tool() {
-    local tool_name="$1"
-    local display
+# Resolved dest paths for the tool currently being synced — populated by
+# _resolve_tool_dests, read by the _sync_*_step helpers. Module-scoped so the
+# steps share them without threading eight positional args through every call.
+_ST_DEST_AGENTS=""
+_ST_DEST_RULES=""
+_ST_DEST_SKILLS=""
+_ST_DEST_COMMANDS=""
+_ST_DEST_SUBAGENTS=""
+_ST_DEST_SETTINGS=""
+_ST_DEST_MCP=""
+_ST_DEST_HOOKS=""
+
+_resolve_tool_dests() {
+    local tool_name="$1" display
     display=$(tool_display_name "$tool_name")
+    _ST_DEST_AGENTS=$(_resolve_one_dest "$tool_name" agents "$display")
+    _ST_DEST_RULES=$(_resolve_one_dest "$tool_name" rules "$display")
+    _ST_DEST_SKILLS=$(_resolve_one_dest "$tool_name" skills "$display")
+    _ST_DEST_COMMANDS=$(_resolve_one_dest "$tool_name" commands "$display")
+    _ST_DEST_SUBAGENTS=$(_resolve_one_dest "$tool_name" subagents "$display")
+    _ST_DEST_SETTINGS=$(_resolve_one_dest "$tool_name" settings "$display")
+    _ST_DEST_MCP=$(_resolve_one_dest "$tool_name" mcp "$display")
+    _ST_DEST_HOOKS=$(_resolve_one_dest "$tool_name" hooks "$display")
+}
 
-    if ! should_sync_tool "$tool_name"; then
-        log_info "Skipping $display (filtered by CLI)"
-        ((SKIPPED_COUNT++)) || true
-        return 0
-    fi
+# Append a lightweight rule index (name + first heading) to the agents file, for
+# tools that have no separate rules directory (targets.rules.inline_into_agents).
+_inline_rules_into_agents() {
+    local src_rules_abs="$1" dest_agents_abs="$2" rule_include="$3" rule_exclude="$4"
+    [[ -d "$src_rules_abs" ]] || return 0
+    {
+        echo ""
+        echo ""
+        echo "## Rules"
+        echo ""
+        echo "The following rule files define project constraints. Read them before making changes:"
+        echo ""
+        local rule_file basename
+        for rule_file in "$src_rules_abs"/*.md; do
+            [[ -f "$rule_file" ]] || continue
+            basename=$(basename "$rule_file")
+            if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
+                echo "- \`$basename\` — $(head -1 "$rule_file" | sed 's/^[#]* *//')"
+            fi
+        done
+        echo ""
+        echo "Find all rules in \`.ai/src/rules/\`."
+    } >> "$dest_agents_abs"
+    manifest_record_write "$dest_agents_abs"
+    log_step "Appended rule references to $(basename "$dest_agents_abs")"
+}
 
-    local dest_agents dest_rules dest_skills dest_commands
-    local dest_subagents dest_settings dest_mcp dest_hooks
-    _resolve_tool_dests "$tool_name" "dest"
-    # Shellcheck: these are populated via `printf -v` inside _resolve_tool_dests.
-    # shellcheck disable=SC2154
-    local dest_agents_abs="$dest_agents"
-    # shellcheck disable=SC2154
-    local dest_rules_abs="$dest_rules"
-    # shellcheck disable=SC2154
-    local dest_skills_abs="$dest_skills"
-    # shellcheck disable=SC2154
-    local dest_commands_abs="$dest_commands"
-    # shellcheck disable=SC2154
-    local dest_subagents_abs="$dest_subagents"
-    # shellcheck disable=SC2154
-    local dest_settings_abs="$dest_settings"
-    # shellcheck disable=SC2154
-    local dest_mcp_abs="$dest_mcp"
-    # shellcheck disable=SC2154
-    local dest_hooks_abs="$dest_hooks"
+# Append a lightweight skill index (name + description) to a target file, for
+# tools with no native skills directory (targets.skills.inline_into_agents).
+_inline_skills_into_file() {
+    local src_skills_abs="$1" target_file="$2" skills_include="$3" skills_exclude="$4"
+    local skill_entries="" skill_dir skill_name skill_desc skill_file
+    for skill_dir in "$src_skills_abs"/*/; do
+        [[ -d "$skill_dir" ]] || continue
+        skill_name=$(basename "$skill_dir")
+        matches_filter "$skill_name" "$skills_include" "$skills_exclude" || continue
+        skill_desc=""
+        skill_file="$skill_dir/SKILL.md"
+        if [[ -f "$skill_file" ]]; then
+            skill_desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description:[[:space:]]*//; s/^>[[:space:]]*//; p; }; }' "$skill_file" | head -1)
+            [[ "$skill_desc" == ">" ]] && skill_desc=""
+            if [[ -z "$skill_desc" ]]; then
+                skill_desc=$(sed -n '/^---$/,/^---$/{/^description:/,/^[a-z]/{ /^  /{ s/^[[:space:]]*//; p; q; }; }; }' "$skill_file")
+            fi
+        fi
+        if [[ -n "$skill_desc" ]]; then
+            skill_entries+="- \`$skill_name\` — $skill_desc"$'\n'
+        else
+            skill_entries+="- \`$skill_name\`"$'\n'
+        fi
+    done
+    [[ -n "$skill_entries" ]] || return 0
+    {
+        echo ""
+        echo "## Skills"
+        echo ""
+        echo "The following skills provide step-by-step workflows. Find them in \`.ai/src/skills/\`:"
+        echo ""
+        printf '%s' "$skill_entries"
+    } >> "$target_file"
+    manifest_record_write "$target_file"
+    log_step "Appended skill index to $(basename "$target_file")"
+}
 
-    log_info "Syncing $display..."
+# Resolve a tool target's effective source to an absolute path: the per-tool
+# targets.<key>.source override if set, else the run-wide default.
+_resolve_tool_src() {
+    local tool_name="$1" key="$2" default="$3" display="$4"
+    local override
+    override=$(get_tool_value "$tool_name" "targets.$key.source")
+    resolve_source_path "${override:-$default}" "targets.$key.source for $display"
+}
 
-    # 1. AGENTS
-    local override_agents src_agents
-    override_agents=$(get_tool_value "$tool_name" "targets.agents.source")
-    src_agents="${override_agents:-$SOURCE_AGENTS}"
+# Re-copy an AGENTS file that lives inside the rules dir — sync_rules sweeps the
+# directory, so the file must be restored afterwards.
+_recopy_nested_agents() {
+    local src_agents_abs="$1" dest_agents_abs="$2" dest_rules_abs="$3"
+    [[ -n "$dest_agents_abs" ]] && [[ -n "$dest_rules_abs" ]] || return 0
+    [[ "$dest_agents_abs" == "$dest_rules_abs"/* ]] || return 0
+    [[ "$DRY_RUN" != "true" ]] || return 0
+    copy_file "$src_agents_abs" "$dest_agents_abs" "false" 2>/dev/null || true
+}
+
+_sync_agents_step() {
+    local tool_name="$1" display="$2"
+    local dest_agents_abs="$_ST_DEST_AGENTS"
+    [[ -n "$dest_agents_abs" ]] || return 0
+
     local src_agents_abs
-    src_agents_abs=$(resolve_source_path "$src_agents" "targets.agents.source for $display")
+    src_agents_abs=$(_resolve_tool_src "$tool_name" agents "$SOURCE_AGENTS" "$display")
+    copy_file "$src_agents_abs" "$dest_agents_abs" "$DRY_RUN"
+}
 
-    if [[ -n "$dest_agents_abs" ]]; then
-        copy_file "$src_agents_abs" "$dest_agents_abs" "$DRY_RUN"
-    fi
+# Sync RULES as a directory, a merged file, or an index inlined into AGENTS,
+# per the tool's rules options.
+_sync_rules_step() {
+    local tool_name="$1" display="$2"
+    local dest_agents_abs="$_ST_DEST_AGENTS" dest_rules_abs="$_ST_DEST_RULES"
 
-    # 2. RULES
-    local override_rules src_rules
-    override_rules=$(get_tool_value "$tool_name" "targets.rules.source")
-    src_rules="${override_rules:-$SOURCE_RULES}"
-    local src_rules_abs
-    src_rules_abs=$(resolve_source_path "$src_rules" "targets.rules.source for $display")
+    local src_agents_abs src_rules_abs
+    src_agents_abs=$(_resolve_tool_src "$tool_name" agents "$SOURCE_AGENTS" "$display")
+    src_rules_abs=$(_resolve_tool_src "$tool_name" rules "$SOURCE_RULES" "$display")
 
     local rule_ext rule_header append_imports_flag rule_include rule_exclude
     rule_ext=$(get_tool_value "$tool_name" "targets.rules.extension")
@@ -345,35 +422,15 @@ sync_tool() {
     inline_into_agents=$(get_tool_value "$tool_name" "targets.rules.inline_into_agents")
 
     if [[ "$inline_into_agents" == "true" ]] && [[ -n "$dest_agents_abs" ]]; then
-        if [[ -d "$src_rules_abs" ]] && [[ "$DRY_RUN" != "true" ]]; then
-            {
-                echo ""
-                echo ""
-                echo "## Rules"
-                echo ""
-                echo "The following rule files define project constraints. Read them before making changes:"
-                echo ""
-                for rule_file in "$src_rules_abs"/*.md; do
-                    [[ -f "$rule_file" ]] || continue
-                    local basename
-                    basename=$(basename "$rule_file")
-                    if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
-                        echo "- \`$basename\` — $(head -1 "$rule_file" | sed 's/^[#]* *//')"
-                    fi
-                done
-                echo ""
-                echo "Find all rules in \`.ai/src/rules/\`."
-            } >> "$dest_agents_abs"
-            manifest_record_write "$dest_agents_abs"
-            log_step "Appended rule references to $(basename "$dest_agents_abs")"
-        elif [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "$DRY_RUN" != "true" ]]; then
+            _inline_rules_into_agents "$src_rules_abs" "$dest_agents_abs" "$rule_include" "$rule_exclude"
+        else
             log_step "Would append rule references to $(basename "$dest_agents_abs") (dry-run)"
         fi
     elif [[ -n "$dest_rules_abs" ]]; then
         if [[ "$merge_to_file" == "true" ]]; then
-            local prepend_agents_flag
+            local prepend_agents_flag agents_for_prepend=""
             prepend_agents_flag=$(get_tool_value "$tool_name" "targets.rules.prepend_agents")
-            local agents_for_prepend=""
             if [[ "$prepend_agents_flag" == "true" ]] && [[ -f "$src_agents_abs" ]]; then
                 agents_for_prepend="$src_agents_abs"
             fi
@@ -392,27 +449,25 @@ sync_tool() {
         fi
     fi
 
-    if [[ -n "$dest_agents_abs" ]] && [[ -n "$dest_rules_abs" ]] && [[ "$dest_agents_abs" == "$dest_rules_abs"/* ]]; then
-        if [[ "$DRY_RUN" != "true" ]]; then
-            copy_file "$src_agents_abs" "$dest_agents_abs" "false" 2>/dev/null || true
-        fi
-    fi
+    _recopy_nested_agents "$src_agents_abs" "$dest_agents_abs" "$dest_rules_abs"
+}
 
-    # 3. SKILLS
-    local override_skills src_skills
-    override_skills=$(get_tool_value "$tool_name" "targets.skills.source")
-    src_skills="${override_skills:-$SOURCE_SKILLS}"
+# Sync SKILLS as a directory, or inline an index when the tool has no native
+# skills surface.
+_sync_skills_step() {
+    local tool_name="$1" display="$2"
+    local dest_skills_abs="$_ST_DEST_SKILLS" dest_agents_abs="$_ST_DEST_AGENTS" dest_rules_abs="$_ST_DEST_RULES"
+
     local src_skills_abs
-    src_skills_abs=$(resolve_source_path "$src_skills" "targets.skills.source for $display")
+    src_skills_abs=$(_resolve_tool_src "$tool_name" skills "$SOURCE_SKILLS" "$display")
 
     local skills_include skills_exclude
     skills_include=$(get_tool_filter "$tool_name" "targets.skills.include")
     skills_exclude=$(get_tool_filter "$tool_name" "targets.skills.exclude")
 
-    local inline_skills
+    local inline_skills merge_to_file commands_as_skills
     inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
-
-    local commands_as_skills
+    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
     commands_as_skills=$(get_tool_value "$tool_name" "targets.commands.as_skills")
 
     if [[ -n "$dest_skills_abs" ]]; then
@@ -433,76 +488,51 @@ sync_tool() {
             skills_target_file="$dest_rules_abs"
         fi
         if [[ -n "$skills_target_file" ]] && [[ "$DRY_RUN" != "true" ]]; then
-            local skill_entries=""
-            for skill_dir in "$src_skills_abs"/*/; do
-                [[ -d "$skill_dir" ]] || continue
-                local skill_name skill_desc=""
-                skill_name=$(basename "$skill_dir")
-                if matches_filter "$skill_name" "$skills_include" "$skills_exclude"; then
-                    local skill_file="$skill_dir/SKILL.md"
-                    if [[ -f "$skill_file" ]]; then
-                        skill_desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description:[[:space:]]*//; s/^>[[:space:]]*//; p; }; }' "$skill_file" | head -1)
-                        [[ "$skill_desc" == ">" ]] && skill_desc=""
-                        if [[ -z "$skill_desc" ]]; then
-                            skill_desc=$(sed -n '/^---$/,/^---$/{/^description:/,/^[a-z]/{ /^  /{ s/^[[:space:]]*//; p; q; }; }; }' "$skill_file")
-                        fi
-                    fi
-                    if [[ -n "$skill_desc" ]]; then
-                        skill_entries+="- \`$skill_name\` — $skill_desc"$'\n'
-                    else
-                        skill_entries+="- \`$skill_name\`"$'\n'
-                    fi
-                fi
-            done
-            if [[ -n "$skill_entries" ]]; then
-                {
-                    echo ""
-                    echo "## Skills"
-                    echo ""
-                    echo "The following skills provide step-by-step workflows. Find them in \`.ai/src/skills/\`:"
-                    echo ""
-                    printf '%s' "$skill_entries"
-                } >> "$skills_target_file"
-                manifest_record_write "$skills_target_file"
-                log_step "Appended skill index to $(basename "$skills_target_file")"
-            fi
+            _inline_skills_into_file "$src_skills_abs" "$skills_target_file" "$skills_include" "$skills_exclude"
         elif [[ "$DRY_RUN" == "true" ]]; then
             log_step "Would append skill index (dry-run)"
         fi
     fi
+}
 
-    # 4. COMMANDS
-    local dest_cmd_ext dest_cmd_format cmd_include cmd_exclude commands_inline_into_agents
+# Sync COMMANDS to a native commands dir, or fall back to generated skills /
+# an inlined index for tools without one.
+_sync_commands_step() {
+    local tool_name="$1" display="$2"
+    local dest_commands_abs="$_ST_DEST_COMMANDS" dest_skills_abs="$_ST_DEST_SKILLS"
+    local dest_agents_abs="$_ST_DEST_AGENTS" dest_rules_abs="$_ST_DEST_RULES"
+
+    [[ -n "${SOURCE_COMMANDS:-}" ]] || return 0
+
+    local dest_cmd_ext dest_cmd_format cmd_include cmd_exclude
+    local commands_as_skills commands_inline_into_agents merge_to_file
     dest_cmd_ext=$(get_tool_value "$tool_name" "targets.commands.extension")
     dest_cmd_format=$(get_tool_value "$tool_name" "targets.commands.format")
     cmd_include=$(get_tool_filter "$tool_name" "targets.commands.include")
     cmd_exclude=$(get_tool_filter "$tool_name" "targets.commands.exclude")
+    commands_as_skills=$(get_tool_value "$tool_name" "targets.commands.as_skills")
     commands_inline_into_agents=$(get_tool_value "$tool_name" "targets.commands.inline_into_agents")
-    if [[ -n "$dest_commands_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
-        local src_commands_abs
-        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
-        if [[ -d "$src_commands_abs" ]]; then
-            if [[ "$dest_cmd_format" == "toml" ]]; then
-                sync_commands_as_toml "$src_commands_abs" "$dest_commands_abs" "$DRY_RUN"
-            else
-                sync_rules "$src_commands_abs" "$dest_commands_abs" "$dest_cmd_ext" "" "$DRY_RUN" "" ""
-            fi
+    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
+
+    local src_commands_abs
+    src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
+    [[ -d "$src_commands_abs" ]] || return 0
+
+    if [[ -n "$dest_commands_abs" ]]; then
+        if [[ "$dest_cmd_format" == "toml" ]]; then
+            sync_commands_as_toml "$src_commands_abs" "$dest_commands_abs" "$DRY_RUN"
+        else
+            sync_rules "$src_commands_abs" "$dest_commands_abs" "$dest_cmd_ext" "" "$DRY_RUN" "" ""
         fi
-    elif [[ "$commands_as_skills" == "true" ]] && [[ -n "$dest_skills_abs" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
-        local src_commands_abs
-        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
-        if [[ -d "$src_commands_abs" ]]; then
-            log_info "$display has no native commands surface — generating skills (command-*) instead"
-            sync_commands_as_skills "$src_commands_abs" "$dest_skills_abs" "$DRY_RUN" "$cmd_include" "$cmd_exclude"
-        fi
-    elif [[ "$commands_inline_into_agents" == "true" ]] && [[ -n "${SOURCE_COMMANDS:-}" ]]; then
-        local src_commands_abs commands_target_file
-        src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
-        commands_target_file="$dest_agents_abs"
+    elif [[ "$commands_as_skills" == "true" ]] && [[ -n "$dest_skills_abs" ]]; then
+        log_info "$display has no native commands surface — generating skills (command-*) instead"
+        sync_commands_as_skills "$src_commands_abs" "$dest_skills_abs" "$DRY_RUN" "$cmd_include" "$cmd_exclude"
+    elif [[ "$commands_inline_into_agents" == "true" ]]; then
+        local commands_target_file="$dest_agents_abs"
         if [[ -z "$commands_target_file" ]] && [[ "$merge_to_file" == "true" ]] && [[ -f "$dest_rules_abs" ]]; then
             commands_target_file="$dest_rules_abs"
         fi
-        if [[ -d "$src_commands_abs" ]] && [[ -n "$commands_target_file" ]]; then
+        if [[ -n "$commands_target_file" ]]; then
             if [[ "$DRY_RUN" == "true" ]]; then
                 log_step "Would append command index (dry-run)"
             else
@@ -511,30 +541,34 @@ sync_tool() {
             fi
         fi
     fi
+}
 
-    # 5. SUBAGENTS
+# Sync SUBAGENTS in the tool's native format (markdown, TOML, or Amazon Q JSON).
+_sync_subagents_step() {
+    local tool_name="$1" display="$2"
+    local dest_subagents_abs="$_ST_DEST_SUBAGENTS"
+    [[ -n "$dest_subagents_abs" ]] && [[ -n "${SOURCE_SUBAGENTS:-}" ]] || return 0
+
+    local src_subagents_abs
+    src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $display")
+    [[ -d "$src_subagents_abs" ]] || return 0
+
     local dest_sa_ext dest_sa_format
     dest_sa_ext=$(get_tool_value "$tool_name" "targets.subagents.extension")
     dest_sa_format=$(get_tool_value "$tool_name" "targets.subagents.format")
-    if [[ -n "$dest_subagents_abs" ]] && [[ -n "${SOURCE_SUBAGENTS:-}" ]]; then
-        local src_subagents_abs
-        src_subagents_abs=$(resolve_source_path "$SOURCE_SUBAGENTS" "source.subagents for $display")
-        if [[ -d "$src_subagents_abs" ]]; then
-            case "$dest_sa_format" in
-                toml)
-                    sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
-                    ;;
-                amazonq_json)
-                    sync_agents_as_amazonq_json "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN"
-                    ;;
-                *)
-                    sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" ""
-                    ;;
-            esac
-        fi
-    fi
+    case "$dest_sa_format" in
+        toml)         sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
+        amazonq_json) sync_agents_as_amazonq_json "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
+        *)            sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" "" ;;
+    esac
+}
 
-    # 6. SETTINGS  — override → base fallback via resolve_payload_source
+# Copy the SETTINGS, MCP, and HOOKS payloads — each per-tool override falling
+# back to the shared/base source via resolve_payload_source.
+_sync_payloads_step() {
+    local tool_name="$1" display="$2"
+    local dest_settings_abs="$_ST_DEST_SETTINGS" dest_mcp_abs="$_ST_DEST_MCP" dest_hooks_abs="$_ST_DEST_HOOKS"
+
     if [[ -n "$dest_settings_abs" ]]; then
         local src_settings_abs
         src_settings_abs=$(resolve_payload_source "$tool_name" "settings")
@@ -543,7 +577,6 @@ sync_tool() {
         fi
     fi
 
-    # 7. MCP  — per-tool override → shared .ai/src/mcp.json → base fallback
     if [[ -n "$dest_mcp_abs" ]]; then
         local src_mcp_abs
         src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
@@ -555,7 +588,6 @@ sync_tool() {
         fi
     fi
 
-    # 8. HOOKS  — override → base fallback
     if [[ -n "$dest_hooks_abs" ]]; then
         local src_hooks_abs
         src_hooks_abs=$(resolve_payload_source "$tool_name" "hooks")
@@ -563,11 +595,32 @@ sync_tool() {
             copy_file "$src_hooks_abs" "$dest_hooks_abs" "$DRY_RUN"
         fi
     fi
+}
 
-    # 9. POST_SYNC
+# Sync a single tool. Assumes the tool is enabled and tool_resolver globals are ready.
+sync_tool() {
+    local tool_name="$1" display
+    display=$(tool_display_name "$tool_name")
+
+    if ! should_sync_tool "$tool_name"; then
+        log_info "Skipping $display (filtered by CLI)"
+        ((SKIPPED_COUNT++)) || true
+        return 0
+    fi
+
+    _resolve_tool_dests "$tool_name"
+
+    log_info "Syncing $display..."
+
+    _sync_agents_step "$tool_name" "$display"
+    _sync_rules_step "$tool_name" "$display"
+    _sync_skills_step "$tool_name" "$display"
+    _sync_commands_step "$tool_name" "$display"
+    _sync_subagents_step "$tool_name" "$display"
+    _sync_payloads_step "$tool_name" "$display"
+
     local post_sync_cmd
     post_sync_cmd=$(get_tool_value "$tool_name" "post_sync")
-
     if [[ "$DRY_RUN" != "true" ]]; then
         if ! run_post_sync_hook "$display" "$post_sync_cmd"; then
             log_error "Sync failed because post-sync hook failed for $display"
@@ -593,7 +646,7 @@ cleanup_tool() {
 
     local cleaned=false
     local key raw abs
-    for key in agents rules skills commands subagents settings mcp hooks; do
+    for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
         raw=$(get_tool_value "$tool_name" "targets.$key.dest")
         [[ -z "$raw" ]] && continue
         abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || continue
@@ -613,19 +666,9 @@ cleanup_tool() {
     ((SKIPPED_COUNT++)) || true
 }
 
-# Main entry point
-main() {
-    parse_args "$@"
-
-    log_separator
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "Starting AgentSync Config Sync (DRY RUN)..."
-    else
-        log_info "Starting AgentSync Config Sync..."
-    fi
-    log_separator
-    echo ""
-
+# Verify the global config exists, locate the project config, and apply its
+# defaults / post-sync / gitignore settings into the run's globals.
+_load_run_config() {
     local global_config="$SCRIPT_DIR/config.yaml"
     if [[ ! -f "$global_config" ]]; then
         log_error "Global config not found: $global_config"
@@ -633,76 +676,69 @@ main() {
     fi
 
     resolve_project_config_path
+    [[ -n "$PROJECT_CONFIG_PATH" ]] || return 0
 
-    if [[ -n "$PROJECT_CONFIG_PATH" ]]; then
-        local cfg_default_enabled cfg_default_cleanup cfg_allow_post_sync cfg_skip_post_sync
-        cfg_default_enabled=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.enabled")
-        cfg_default_cleanup=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.cleanup")
-        cfg_allow_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.allow")
-        cfg_skip_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.skip")
+    local cfg_default_enabled cfg_default_cleanup cfg_allow_post_sync cfg_skip_post_sync
+    cfg_default_enabled=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.enabled")
+    cfg_default_cleanup=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.cleanup")
+    cfg_allow_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.allow")
+    cfg_skip_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.skip")
 
-        # shellcheck disable=SC2034
-        [[ -n "$cfg_default_enabled" ]] && DEFAULT_ENABLED="$cfg_default_enabled"
-        [[ -n "$cfg_default_cleanup" ]] && DEFAULT_CLEANUP="$cfg_default_cleanup"
+    # shellcheck disable=SC2034
+    [[ -n "$cfg_default_enabled" ]] && DEFAULT_ENABLED="$cfg_default_enabled"
+    [[ -n "$cfg_default_cleanup" ]] && DEFAULT_CLEANUP="$cfg_default_cleanup"
 
-        if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$cfg_allow_post_sync" == "true" ]]; then
-            ALLOW_POST_SYNC="true"
-        fi
-        if [[ -z "${AGENTSYNC_SKIP_POST_SYNC:-}" ]] && [[ "$cfg_skip_post_sync" == "true" ]]; then
-            SKIP_POST_SYNC="true"
-        fi
-
-        local cfg_update_gitignore
-        cfg_update_gitignore=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "gitignore.update")
-        if [[ "$cfg_update_gitignore" == "false" ]]; then
-            UPDATE_GITIGNORE="false"
-        fi
+    if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$cfg_allow_post_sync" == "true" ]]; then
+        ALLOW_POST_SYNC="true"
+    fi
+    if [[ -z "${AGENTSYNC_SKIP_POST_SYNC:-}" ]] && [[ "$cfg_skip_post_sync" == "true" ]]; then
+        SKIP_POST_SYNC="true"
     fi
 
-    # 1. Global defaults
+    local cfg_update_gitignore
+    cfg_update_gitignore=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "gitignore.update")
+    if [[ "$cfg_update_gitignore" == "false" ]]; then
+        UPDATE_GITIGNORE="false"
+    fi
+}
+
+# Echo the first existing source candidate for <subpath>, preferring the
+# .ai/src/ layout over a flat .ai/ one. <kind> is `file` or `dir`. Empty if none.
+_detect_source() {
+    local kind="$1" subpath="$2"
+    local nested=".ai/src/$subpath" flat=".ai/$subpath"
+    if [[ "$kind" == "file" ]]; then
+        [[ -f "$REPO_ROOT/$nested" ]] && { echo "$nested"; return 0; }
+        [[ -f "$REPO_ROOT/$flat" ]] && { echo "$flat"; return 0; }
+    else
+        [[ -d "$REPO_ROOT/$nested" ]] && { echo "$nested"; return 0; }
+        [[ -d "$REPO_ROOT/$flat" ]] && { echo "$flat"; return 0; }
+    fi
+    echo ""
+}
+
+# Resolve SOURCE_* paths: global-config defaults, then local .ai layout
+# auto-detection, then project agent_sync.yaml overrides. Exits if the resolved
+# AGENTS source is missing.
+_resolve_sources() {
+    local global_config="$SCRIPT_DIR/config.yaml"
     SOURCE_AGENTS=$(parse_yaml_value "$global_config" "source.agents")
     SOURCE_RULES=$(parse_yaml_value "$global_config" "source.rules")
     SOURCE_SKILLS=$(parse_yaml_value "$global_config" "source.skills")
+    # shellcheck disable=SC2034
     SOURCE_TOOLS=$(parse_yaml_value "$global_config" "source.tools")
 
-    # 2. Auto-detect local directories
-    if [[ -f "$REPO_ROOT/.ai/src/AGENTS.md" ]]; then
-        SOURCE_AGENTS=".ai/src/AGENTS.md"
-    elif [[ -f "$REPO_ROOT/.ai/AGENTS.md" ]]; then
-        SOURCE_AGENTS=".ai/AGENTS.md"
-    fi
-
-    if [[ -d "$REPO_ROOT/.ai/src/rules" ]]; then
-        SOURCE_RULES=".ai/src/rules"
-    elif [[ -d "$REPO_ROOT/.ai/rules" ]]; then
-        SOURCE_RULES=".ai/rules"
-    fi
-
-    if [[ -d "$REPO_ROOT/.ai/src/skills" ]]; then
-        SOURCE_SKILLS=".ai/src/skills"
-    elif [[ -d "$REPO_ROOT/.ai/skills" ]]; then
-        SOURCE_SKILLS=".ai/skills"
-    fi
-
-    if [[ -d "$REPO_ROOT/.ai/src/tools" ]]; then
-        SOURCE_TOOLS=".ai/src/tools"
-    elif [[ -d "$REPO_ROOT/.ai/tools" ]]; then
-        SOURCE_TOOLS=".ai/tools"
-    fi
+    local detected
+    detected=$(_detect_source file AGENTS.md); [[ -n "$detected" ]] && SOURCE_AGENTS="$detected"
+    detected=$(_detect_source dir rules);      [[ -n "$detected" ]] && SOURCE_RULES="$detected"
+    detected=$(_detect_source dir skills);     [[ -n "$detected" ]] && SOURCE_SKILLS="$detected"
+    # shellcheck disable=SC2034
+    detected=$(_detect_source dir tools);      [[ -n "$detected" ]] && SOURCE_TOOLS="$detected"
 
     SOURCE_COMMANDS=""
-    if [[ -d "$REPO_ROOT/.ai/src/commands" ]]; then
-        SOURCE_COMMANDS=".ai/src/commands"
-    elif [[ -d "$REPO_ROOT/.ai/commands" ]]; then
-        SOURCE_COMMANDS=".ai/commands"
-    fi
-
+    detected=$(_detect_source dir commands);   [[ -n "$detected" ]] && SOURCE_COMMANDS="$detected"
     SOURCE_SUBAGENTS=""
-    if [[ -d "$REPO_ROOT/.ai/src/agents" ]]; then
-        SOURCE_SUBAGENTS=".ai/src/agents"
-    elif [[ -d "$REPO_ROOT/.ai/agents" ]]; then
-        SOURCE_SUBAGENTS=".ai/agents"
-    fi
+    detected=$(_detect_source dir agents);     [[ -n "$detected" ]] && SOURCE_SUBAGENTS="$detected"
 
     local override_agents override_rules override_skills override_tools override_commands override_subagents
     override_agents=$(resolve_source_override "agents")
@@ -727,144 +763,136 @@ main() {
         log_error "Run 'agentsync init' or set source.agents in agent_sync.yaml"
         exit 1
     fi
+}
 
-    # `shared:` overlay — must run AFTER child SOURCE_* resolution so child
-    # files take precedence, and BEFORE any tool sync reads them. The shadow
-    # tree is torn down by the EXIT trap installed below.
-    shared_setup_overlay
-    trap 'shared_cleanup_overlay; profile_cleanup_overlay' EXIT
+# Append a tool's resolved dest paths to ENABLED_DEST_PATHS (cleanup protection)
+# and GENERATED_GITIGNORE_PATHS (gitignore payload). Directory-type targets get a
+# trailing slash so .gitignore matches the whole tree.
+_collect_tool_dests() {
+    local tool_name="$1"
+    local key raw abs rel
+    for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
+        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+        [[ -z "$raw" ]] && continue
+        abs=$(resolve_dest_path "$raw" "targets.$key.dest for $tool_name") || continue
+        ENABLED_DEST_PATHS+=("$abs")
+        rel=$(to_repo_relative_path "$abs")
+        case "$key" in
+            rules|skills|commands|subagents) GENERATED_GITIGNORE_PATHS+=("$rel/") ;;
+            *) GENERATED_GITIGNORE_PATHS+=("$rel") ;;
+        esac
+    done
+}
 
-    # Snapshot the personal/base SOURCE_* (post-shared-overlay) so each profile
-    # pass can restore them before layering its own overlay. The overlay
-    # rewrite is conditional, so these can't be recomputed cheaply later.
-    local BASE_SOURCE_AGENTS="$SOURCE_AGENTS"
-    local BASE_SOURCE_RULES="$SOURCE_RULES"
-    local BASE_SOURCE_SKILLS="$SOURCE_SKILLS"
-    local BASE_SOURCE_COMMANDS="$SOURCE_COMMANDS"
-    local BASE_SOURCE_SUBAGENTS="$SOURCE_SUBAGENTS"
+# Refuse to overwrite destination files edited since the last sync, unless
+# --force. Skipped on dry-run. Exits non-zero when drift is found without --force.
+_check_drift_or_exit() {
+    [[ "$DRY_RUN" != "true" ]] || return 0
+    manifest_check_drift
+    [[ ${#SYNC_DRIFT_DETECTED[@]} -gt 0 ]] || return 0
 
-    # Directory that holds the base content profiles fill from — the shared
-    # overlay's shadow tree when `shared:` is active, else the raw .ai/src/.
-    local PROFILE_BASE_SRC="$REPO_ROOT/.ai/src"
+    local rel
+    if [[ "$FORCE_SYNC" == "true" ]]; then
+        log_warning "Overwriting ${#SYNC_DRIFT_DETECTED[@]} file(s) with manual edits (--force):"
+        for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
+            echo "      $rel" >&2
+        done
+        return 0
+    fi
+
+    log_error "Manual edits detected in ${#SYNC_DRIFT_DETECTED[@]} destination file(s) since last sync:"
+    for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
+        echo "      $rel" >&2
+    done
+    echo "" >&2
+    echo "  These files would be silently overwritten. Choose one:" >&2
+    echo "    • Move your edits into .ai/src/, then re-run sync" >&2
+    echo "    • Re-run with --force to discard the edits and rewrite from source" >&2
+    echo "" >&2
+    exit 1
+}
+
+_print_banner() {
+    log_separator
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "Starting AgentSync Config Sync (DRY RUN)..."
+    else
+        log_info "Starting AgentSync Config Sync..."
+    fi
+    log_separator
+    echo ""
+}
+
+# Snapshot the personal/base SOURCE_* (post-shared-overlay) so each profile pass
+# can restore them before layering its own overlay, and resolve the base src dir
+# profiles fill from. The overlay rewrite is conditional, so the snapshot can't
+# be recomputed cheaply later.
+_snapshot_base_sources() {
+    BASE_SOURCE_AGENTS="$SOURCE_AGENTS"
+    BASE_SOURCE_RULES="$SOURCE_RULES"
+    BASE_SOURCE_SKILLS="$SOURCE_SKILLS"
+    BASE_SOURCE_COMMANDS="$SOURCE_COMMANDS"
+    BASE_SOURCE_SUBAGENTS="$SOURCE_SUBAGENTS"
+
+    PROFILE_BASE_SRC="$REPO_ROOT/.ai/src"
     if [[ -n "${SHARED_OVERLAY_DIR:-}" ]] && [[ -d "$SHARED_OVERLAY_DIR/src" ]]; then
         PROFILE_BASE_SRC="$SHARED_OVERLAY_DIR/src"
     fi
+}
 
-    # Which profiles to sync this run: the named one with --profile, else every
-    # profile marked active. (Personal tools always sync regardless.)
-    local -a profiles_to_sync=()
+# Build the tool catalog (ALL_TOOLS) and the profiles to sync this run
+# (PROFILES_TO_SYNC: the --profile name, else every active profile). Exits if the
+# base catalog is empty.
+_build_tool_catalog() {
+    PROFILES_TO_SYNC=()
     local _p
     if [[ -n "$SELECTED_PROFILE" ]]; then
-        profiles_to_sync=("$SELECTED_PROFILE")
+        PROFILES_TO_SYNC=("$SELECTED_PROFILE")
     else
         while IFS= read -r _p; do
             [[ -z "$_p" ]] && continue
-            profile_is_active "$_p" && profiles_to_sync+=("$_p")
+            profile_is_active "$_p" && PROFILES_TO_SYNC+=("$_p")
         done < <(list_profiles)
     fi
 
-    # Build catalog of tools to process: union of base + any user override files.
-    local -a all_tools=()
+    ALL_TOOLS=()
     local t
     while IFS= read -r t; do
         [[ -z "$t" ]] && continue
-        all_tools+=("$t")
+        ALL_TOOLS+=("$t")
     done < <(list_all_tools)
 
-    if [[ ${#all_tools[@]} -eq 0 ]]; then
+    if [[ ${#ALL_TOOLS[@]} -eq 0 ]]; then
         log_error "No tools found in base catalog ($(tool_resolver_base_dir))"
         log_error "AgentSync installation may be corrupted — try 'agentsync update'"
         exit 1
     fi
+}
 
-    # First pass: collect paths from enabled tools (for gitignore + cleanup safety).
-    # Profile variant tools are handled in their own collection loop below.
-    local -a generated_paths=()
-    for t in "${all_tools[@]}"; do
-        if ! is_tool_enabled "$t"; then
-            continue
-        fi
+# Collect dest paths from enabled personal tools and from EVERY profile tool
+# (active or not) into ENABLED_DEST_PATHS + GENERATED_GITIGNORE_PATHS. Profile
+# tools are always collected so .gitignore stays stable across --profile
+# selections and cleanup never sweeps a dormant profile's output.
+_collect_protected_dests() {
+    local t
+    for t in "${ALL_TOOLS[@]}"; do
+        is_tool_enabled "$t" || continue
         is_profile_tool "$t" && continue
-        local key raw abs rel
-        for key in agents rules skills commands subagents settings mcp hooks; do
-            raw=$(get_tool_value "$t" "targets.$key.dest")
-            [[ -z "$raw" ]] && continue
-            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $t") || continue
-            ENABLED_DEST_PATHS+=("$abs")
-            rel=$(to_repo_relative_path "$abs")
-            case "$key" in
-                rules|skills|commands|subagents)
-                    generated_paths+=("$rel/")
-                    ;;
-                *)
-                    generated_paths+=("$rel")
-                    ;;
-            esac
-        done
+        _collect_tool_dests "$t"
     done
 
-    # Collect dests for EVERY profile tool (active or not) into the protected +
-    # gitignored set, so .gitignore stays stable across --profile selections and
-    # cleanup never sweeps a dormant profile's output.
     local _pt
     while IFS= read -r _pt; do
         [[ -z "$_pt" ]] && continue
-        local key raw abs rel
-        for key in agents rules skills commands subagents settings mcp hooks; do
-            raw=$(get_tool_value "$_pt" "targets.$key.dest")
-            [[ -z "$raw" ]] && continue
-            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $_pt") || continue
-            ENABLED_DEST_PATHS+=("$abs")
-            rel=$(to_repo_relative_path "$abs")
-            case "$key" in
-                rules|skills|commands|subagents)
-                    generated_paths+=("$rel/")
-                    ;;
-                *)
-                    generated_paths+=("$rel")
-                    ;;
-            esac
-        done
+        _collect_tool_dests "$_pt"
     done < <(list_profile_tools)
+}
 
-    # Load the manifest for every run (including dry-run) so the sweep helpers
-    # can tell sync-generated outputs from user-added files. SYNC_MANIFEST_ACTIVE
-    # gates that protection — without it, sweeps fall back to legacy behavior.
-    manifest_load
-    # Read by sync_may_prune in file_ops.sh / rule_operations.sh.
-    # shellcheck disable=SC2034
-    SYNC_MANIFEST_ACTIVE="true"
-
-    # Drift check: refuse to overwrite destination files edited since the last sync.
-    # Skipped on dry-run (preview-only) and bypassed by --force.
-    if [[ "$DRY_RUN" != "true" ]]; then
-        manifest_check_drift
-        if [[ ${#SYNC_DRIFT_DETECTED[@]} -gt 0 ]]; then
-            if [[ "$FORCE_SYNC" == "true" ]]; then
-                log_warning "Overwriting ${#SYNC_DRIFT_DETECTED[@]} file(s) with manual edits (--force):"
-                local rel
-                for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
-                    echo "      $rel" >&2
-                done
-            else
-                log_error "Manual edits detected in ${#SYNC_DRIFT_DETECTED[@]} destination file(s) since last sync:"
-                local rel
-                for rel in "${SYNC_DRIFT_DETECTED[@]}"; do
-                    echo "      $rel" >&2
-                done
-                echo "" >&2
-                echo "  These files would be silently overwritten. Choose one:" >&2
-                echo "    • Move your edits into .ai/src/, then re-run sync" >&2
-                echo "    • Re-run with --force to discard the edits and rewrite from source" >&2
-                echo "" >&2
-                exit 1
-            fi
-        fi
-    fi
-
-    # Second pass: sync enabled personal tools, cleanup disabled ones. Profile
-    # variant tools are owned by the profile pass — never synced or cleaned here.
-    for t in "${all_tools[@]}"; do
+# Sync enabled personal tools and clean up disabled ones. Profile variant tools
+# are owned by the profile pass — skipped here.
+_run_personal_pass() {
+    local t
+    for t in "${ALL_TOOLS[@]}"; do
         is_profile_tool "$t" && continue
         ((TOTAL_COUNT++)) || true
         if is_tool_enabled "$t"; then
@@ -874,10 +902,13 @@ main() {
         fi
         echo ""
     done
+}
 
-    # Profile passes: each selected/active profile syncs its variant tools with
-    # a per-profile source overlay (profile extras win, base fills the rest).
-    for _p in "${profiles_to_sync[@]+"${profiles_to_sync[@]}"}"; do
+# Sync each selected/active profile's variant tools under a per-profile source
+# overlay (profile extras win, base fills the rest).
+_run_profile_passes() {
+    local _p t
+    for _p in "${PROFILES_TO_SYNC[@]+"${PROFILES_TO_SYNC[@]}"}"; do
         local _profile_has_tools=false
         while IFS= read -r t; do
             [[ -z "$t" ]] && continue
@@ -905,34 +936,62 @@ main() {
 
         profile_cleanup_overlay
     done
+}
 
+# Update .gitignore, persist the manifest, and print the run summary.
+_finalize_run() {
     if [[ "$DRY_RUN" != "true" ]] && [[ "$UPDATE_GITIGNORE" == "true" ]]; then
         log_separator
         log_info "Updating .gitignore..."
         local generated_paths_payload=""
-        if [[ ${#generated_paths[@]} -gt 0 ]]; then
-            generated_paths_payload=$(printf '%s\n' "${generated_paths[@]}")
+        if [[ ${#GENERATED_GITIGNORE_PATHS[@]} -gt 0 ]]; then
+            generated_paths_payload=$(printf '%s\n' "${GENERATED_GITIGNORE_PATHS[@]}")
         fi
         update_gitignore "$REPO_ROOT/.gitignore" "$generated_paths_payload"
     fi
 
-    if [[ "$DRY_RUN" != "true" ]]; then
-        manifest_write
-    fi
+    [[ "$DRY_RUN" != "true" ]] && manifest_write
 
     log_separator
     if [[ $SYNC_PRESERVED_COUNT -gt 0 ]]; then
         log_warning "Preserved $SYNC_PRESERVED_COUNT user-added file(s) not in .ai/src/ — move them into .ai/src/ to manage them, or re-run with --force to prune."
     fi
     local summary="Synced $SYNCED_COUNT/$TOTAL_COUNT tools"
-    if [[ $SKIPPED_COUNT -gt 0 ]]; then
-        summary="$summary ($SKIPPED_COUNT skipped)"
-    fi
-    if [[ "$DRY_RUN" == "true" ]]; then
-        summary="$summary (dry-run)"
-    fi
+    [[ $SKIPPED_COUNT -gt 0 ]] && summary="$summary ($SKIPPED_COUNT skipped)"
+    [[ "$DRY_RUN" == "true" ]] && summary="$summary (dry-run)"
     log_done "$summary"
     log_separator
+}
+
+# Main entry point
+main() {
+    parse_args "$@"
+    _print_banner
+
+    _load_run_config
+    _resolve_sources
+
+    # `shared:` overlay — must run AFTER child SOURCE_* resolution so child files
+    # take precedence, and BEFORE any tool sync reads them. Torn down by the EXIT
+    # trap below.
+    shared_setup_overlay
+    trap 'shared_cleanup_overlay; profile_cleanup_overlay' EXIT
+
+    _snapshot_base_sources
+    _build_tool_catalog
+    _collect_protected_dests
+
+    # Load the manifest (even on dry-run) so the sweep helpers tell sync-generated
+    # outputs from user-added files; SYNC_MANIFEST_ACTIVE gates that protection.
+    manifest_load
+    # Read by sync_may_prune in file_ops.sh / rule_operations.sh.
+    # shellcheck disable=SC2034
+    SYNC_MANIFEST_ACTIVE="true"
+
+    _check_drift_or_exit
+    _run_personal_pass
+    _run_profile_passes
+    _finalize_run
 }
 
 main "$@"
