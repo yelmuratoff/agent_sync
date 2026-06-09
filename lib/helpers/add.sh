@@ -8,7 +8,7 @@
 #
 # Content kinds use templates in <engine>/lib/templates/content/ with {{NAME}}
 # substitution. `add mcp` edits the shared .ai/src/mcp.json, creating it on
-# first use.
+# first use — the merge is pure Bash + awk, no python/jq required.
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -228,6 +228,191 @@ _add_mcp_print_usage() {
     echo "                                  [--force]" >&2
 }
 
+_add_trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# Escape a raw string for embedding inside a JSON string literal.
+_add_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    printf '%s' "$s"
+}
+
+# Build a compact JSON object for one MCP server from the parsed flags.
+# Echoes the JSON on stdout. Returns 1 on a malformed --env pair.
+_add_mcp_build_entry() {
+    local url="$1" command_str="$2" args_str="$3" env_str="$4"
+    local fields=""
+
+    if [[ -n "$url" ]]; then
+        fields="\"type\": \"http\", \"url\": \"$(_add_json_escape "$url")\""
+    else
+        fields="\"command\": \"$(_add_json_escape "$command_str")\""
+        if [[ -n "$args_str" ]]; then
+            local -a argv=()
+            read -ra argv <<< "$args_str"
+            local arr="" a
+            for a in "${argv[@]}"; do
+                arr="$arr${arr:+, }\"$(_add_json_escape "$a")\""
+            done
+            fields="$fields, \"args\": [$arr]"
+        fi
+    fi
+
+    if [[ -n "$env_str" ]]; then
+        local -a pairs=()
+        IFS=',' read -ra pairs <<< "$env_str"
+        local envobj="" pair k v
+        for pair in "${pairs[@]}"; do
+            pair="$(_add_trim "$pair")"
+            [[ -z "$pair" ]] && continue
+            if [[ "$pair" != *"="* ]]; then
+                echo "$(_red "Error"): --env entry '$pair' must be KEY=VALUE." >&2
+                return 1
+            fi
+            k="$(_add_trim "${pair%%=*}")"
+            v="${pair#*=}"
+            envobj="$envobj${envobj:+, }\"$(_add_json_escape "$k")\": \"$(_add_json_escape "$v")\""
+        done
+        [[ -n "$envobj" ]] && fields="$fields, \"env\": {$envobj}"
+    fi
+
+    printf '{%s}' "$fields"
+}
+
+# Splice one server ENTRY (a compact JSON value) into the mcpServers object of
+# $mcp_file, preserving every other server. The awk pass is string-, escape-,
+# and brace-depth-aware, so it survives arbitrary sibling nesting. Output is
+# re-emitted canonically (one server per line, value compacted).
+# Returns 0 on success, 3 if the server exists and force is off, 1 otherwise.
+_add_mcp_merge() {
+    local mcp_file="$1" server="$2" entry="$3" force_flag="$4"
+    local tmp rc=0
+    tmp=$(mktemp "${mcp_file}.XXXXXX") || return 1
+
+    AS_SERVER="$server" AS_ENTRY="$entry" AS_FORCE="$force_flag" \
+        awk '
+        function is_ws(c){ return (c==" "||c=="\t"||c=="\n"||c=="\r") }
+        function skip_string(s,i,   c,esc){
+            i++; esc=0
+            while(i<=length(s)){
+                c=substr(s,i,1)
+                if(esc){esc=0}
+                else if(c=="\\"){esc=1}
+                else if(c=="\""){return i+1}
+                i++
+            }
+            return i
+        }
+        function skip_value(s,i,   c,depth,instr,esc){
+            while(i<=length(s)&&is_ws(substr(s,i,1))) i++
+            c=substr(s,i,1)
+            if(c=="\""){ return skip_string(s,i) }
+            if(c=="{"||c=="["){
+                depth=0; instr=0; esc=0
+                while(i<=length(s)){
+                    c=substr(s,i,1)
+                    if(instr){
+                        if(esc){esc=0}
+                        else if(c=="\\"){esc=1}
+                        else if(c=="\""){instr=0}
+                    } else if(c=="\""){instr=1}
+                    else if(c=="{"||c=="["){depth++}
+                    else if(c=="}"||c=="]"){depth--; if(depth==0) return i+1}
+                    i++
+                }
+                return i
+            }
+            while(i<=length(s)){
+                c=substr(s,i,1)
+                if(c==","||c=="}"||c=="]"||is_ws(c)) break
+                i++
+            }
+            return i
+        }
+        function compact(v,   out,i,c,instr,esc,L){
+            out=""; instr=0; esc=0; L=length(v)
+            for(i=1;i<=L;i++){
+                c=substr(v,i,1)
+                if(instr){
+                    out=out c
+                    if(esc){esc=0}
+                    else if(c=="\\"){esc=1}
+                    else if(c=="\""){instr=0}
+                } else if(c=="\""){ instr=1; out=out c }
+                else if(!is_ws(c)){ out=out c }
+            }
+            return out
+        }
+        BEGIN{
+            SERVER=ENVIRON["AS_SERVER"]
+            ENTRY=ENVIRON["AS_ENTRY"]
+            FORCE=(ENVIRON["AS_FORCE"]=="1")
+            s=""
+        }
+        { s = s $0 "\n" }
+        END{
+            k=index(s,"\"mcpServers\"")
+            if(k==0){
+                printf("{\n  \"mcpServers\": {\n    \"%s\": %s\n  }\n}\n", SERVER, compact(ENTRY))
+                exit 0
+            }
+            j=k+length("\"mcpServers\"")
+            while(is_ws(substr(s,j,1))) j++
+            if(substr(s,j,1)==":") j++
+            while(is_ws(substr(s,j,1))) j++
+            if(substr(s,j,1)!="{"){ exit 2 }
+            objStart=j
+            objEnd=skip_value(s,j)
+            n=0
+            p=objStart+1
+            while(p<objEnd-1){
+                c=substr(s,p,1)
+                if(is_ws(c)||c==","){ p++; continue }
+                if(c!="\"") break
+                keyStart=p
+                keyEndPast=skip_string(s,p)
+                q=keyEndPast
+                while(is_ws(substr(s,q,1))) q++
+                if(substr(s,q,1)==":") q++
+                while(is_ws(substr(s,q,1))) q++
+                valStart=q
+                valEndPast=skip_value(s,q)
+                n++
+                names[n]=substr(s,keyStart+1,keyEndPast-keyStart-2)
+                vals[n]=substr(s,valStart,valEndPast-valStart)
+                p=valEndPast
+            }
+            found=0
+            for(i=1;i<=n;i++){ if(names[i]==SERVER){ found=i; break } }
+            if(found>0 && !FORCE) exit 3
+            if(found>0){ vals[found]=ENTRY }
+            else { n++; names[n]=SERVER; vals[n]=ENTRY }
+            printf("{\n  \"mcpServers\": {")
+            for(i=1;i<=n;i++){
+                printf("\n    \"%s\": %s%s", names[i], compact(vals[i]), (i<n?",":""))
+            }
+            printf("\n  }\n}\n")
+            exit 0
+        }
+        ' "$mcp_file" > "$tmp" || rc=$?
+
+    if [[ "$rc" -eq 0 ]]; then
+        mv "$tmp" "$mcp_file"
+        return 0
+    fi
+    rm -f "$tmp"
+    return "$rc"
+}
+
 cmd_add_mcp() {
     local server=""
     local url=""
@@ -278,11 +463,6 @@ cmd_add_mcp() {
         exit 1
     fi
 
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "$(_red "Error"): python3 is required to edit mcp.json safely." >&2
-        exit 1
-    fi
-
     local project_dir
     project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
     project_dir="$(cd "$project_dir" && pwd)"
@@ -295,80 +475,20 @@ cmd_add_mcp() {
         created=true
     fi
 
-    # Merge via python3 — safer than string concat for JSON.
-    # Pass all inputs via env vars to avoid quoting pitfalls.
+    local entry
+    entry=$(_add_mcp_build_entry "$url" "$command_str" "$args_str" "$env_str") || exit 1
+
     local force_flag="0"
     [[ "$force" == "true" ]] && force_flag="1"
 
-    if ! AS_MCP_FILE="$mcp_file" \
-         AS_SERVER="$server" \
-         AS_URL="$url" \
-         AS_COMMAND="$command_str" \
-         AS_ARGS="$args_str" \
-         AS_ENV="$env_str" \
-         AS_FORCE="$force_flag" \
-         python3 - <<'PY'
-import json, os, sys
-
-path = os.environ["AS_MCP_FILE"]
-server = os.environ["AS_SERVER"]
-url = os.environ.get("AS_URL", "")
-cmd = os.environ.get("AS_COMMAND", "")
-args_str = os.environ.get("AS_ARGS", "")
-env_str = os.environ.get("AS_ENV", "")
-force = os.environ.get("AS_FORCE", "0") == "1"
-
-try:
-    with open(path) as f:
-        data = json.load(f)
-except json.JSONDecodeError as exc:
-    print(f"Error: {path} is not valid JSON: {exc}", file=sys.stderr)
-    sys.exit(2)
-
-if not isinstance(data, dict):
-    print(f"Error: {path} must be a JSON object.", file=sys.stderr)
-    sys.exit(2)
-
-servers = data.setdefault("mcpServers", {})
-if not isinstance(servers, dict):
-    print("Error: 'mcpServers' must be a JSON object.", file=sys.stderr)
-    sys.exit(2)
-
-if server in servers and not force:
-    print(f"Error: server '{server}' already exists. Pass --force to overwrite.", file=sys.stderr)
-    sys.exit(3)
-
-entry = {}
-if url:
-    entry["type"] = "http"
-    entry["url"] = url
-else:
-    entry["command"] = cmd
-    if args_str:
-        entry["args"] = args_str.split()
-
-if env_str:
-    env_map = {}
-    for pair in env_str.split(","):
-        pair = pair.strip()
-        if not pair:
-            continue
-        if "=" not in pair:
-            print(f"Error: --env entry '{pair}' must be KEY=VALUE.", file=sys.stderr)
-            sys.exit(2)
-        k, v = pair.split("=", 1)
-        env_map[k.strip()] = v
-    if env_map:
-        entry["env"] = env_map
-
-servers[server] = entry
-data["mcpServers"] = servers
-
-with open(path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PY
-    then
+    local rc=0
+    _add_mcp_merge "$mcp_file" "$server" "$entry" "$force_flag" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        if [[ "$rc" -eq 3 ]]; then
+            echo "$(_red "Error"): server '$server' already exists. Pass --force to overwrite." >&2
+        else
+            echo "$(_red "Error"): failed to update $mcp_file" >&2
+        fi
         exit 1
     fi
 

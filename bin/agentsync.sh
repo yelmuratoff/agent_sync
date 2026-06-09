@@ -113,6 +113,7 @@ print_usage() {
     echo "  $(_green "SYNC OPTIONS")"
     echo "    --only <tools>    Sync only these tools (comma-separated)"
     echo "    --skip <tools>    Skip these tools (comma-separated)"
+    echo "    --profile <name>  Sync personal tools plus the named config-home profile"
     echo "    --dry-run         Preview changes without writing"
     echo "    --force           Overwrite destination files even if they were edited manually"
     echo "    --workspace       Run sync in every .ai/ below cwd (bottom-up alphabetical)"

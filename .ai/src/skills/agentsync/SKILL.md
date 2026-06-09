@@ -23,17 +23,18 @@ Create and maintain AI agent instructions in the AgentSync format.
 │   └── fix-issue.md
 ├── agents/                     # Subagent personas (.md files)
 │   └── code-reviewer.md
-├── settings/                   # Tool-specific permissions (JSON)
-│   └── claude.json
-├── mcp/                        # MCP server configs (JSON)
-│   └── claude.json
-├── hooks/                      # Event hooks (JSON)
-│   ├── cursor.json
-│   └── codex.json
-└── tools/                      # Tool configs (claude.yaml, cursor.yaml, etc.)
+├── mcp.json                    # Shared MCP servers — applied to every tool
+└── tools/                      # Per-tool config and overrides
+    ├── claude.yaml             #   tool config: dest paths, format options
+    └── claude/                 #   per-tool payload overrides (opt-in)
+        ├── settings.json       #     permissions / settings override
+        ├── hooks.json          #     hooks override
+        └── mcp.json            #     per-tool MCP override (shadows mcp.json above)
 ```
 
 After editing, run `agentsync sync` to distribute to all tools.
+
+Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in (`agentsync enable`, `agentsync customize`, `agentsync add mcp`). When absent, AgentSync falls back to its shipped base templates. The flat `settings/`, `mcp/`, and `hooks/` directories from older layouts still work but are deprecated — `agentsync migrate` moves them into the per-tool form above.
 
 ## Scaffolding new content
 
@@ -43,6 +44,7 @@ Use `agentsync add <kind> <name>` to create a new file with the correct frontmat
 - `agentsync add skill <name>` — creates `.ai/src/skills/<name>/SKILL.md`
 - `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
 - `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
+- `agentsync add mcp <name> (--command CMD [--args '…'] [--env K=V,…] | --url URL)` — adds a server to the shared `.ai/src/mcp.json`
 
 The command refuses to overwrite existing files; pass `--force` (or `-f`) to replace them. Names must contain only letters, digits, hyphens, and underscores — no path separators, no `..`, no leading `.` or `-`.
 
@@ -122,9 +124,9 @@ Guidelines:
 
 ## Settings & Permissions
 
-Tool-specific settings in `.ai/src/settings/`. Each file is named after the tool and copied directly.
+Each tool ships with base settings. To diverge, scaffold an override with `agentsync enable <tool>` or `agentsync customize <tool> settings` — it writes `.ai/src/tools/<tool>/settings.json`, which wins over the base on sync. Delete the file to go back to inheriting the base.
 
-Example `claude.json`:
+Example `.ai/src/tools/claude/settings.json`:
 
 ```json
 {
@@ -137,9 +139,7 @@ Example `claude.json`:
 
 ## MCP Configs
 
-MCP server configurations in `.ai/src/mcp/`. Each file is named after the tool.
-
-Example `claude.json`:
+One shared `.ai/src/mcp.json` reaches every enabled tool, so you define a server once. Add servers with `agentsync add mcp <name>` or edit the file directly:
 
 ```json
 {
@@ -152,16 +152,18 @@ Example `claude.json`:
 }
 ```
 
+When one tool needs a different server map, `agentsync customize <tool> mcp` creates `.ai/src/tools/<tool>/mcp.json`, which shadows the shared file for that tool only.
+
 ## Inline Options
 
 For tools without separate rules/skills directories, use inline options:
 
-- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini.
+- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie.
 - **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Junie, Cline, Amazon Q, Zed.
 - **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex.
 - **`inline_into_agents: true`** (commands) — appends a `## Commands` index (one `` `/<name>` — description `` line per command) to the agents file. For tools that have neither a commands dir nor a skills dir. Requires `targets.agents.dest` (or `rules.merge_to_file` fallback). Used by: Amazon Q, Zed.
 - **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Zed.
-- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q.
+- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q, Cline.
 
 ## Adding a New Tool
 
@@ -259,11 +261,22 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 
 **Inspect / remove.** `agentsync profile list` shows profiles, their tools, and config homes. `agentsync profile remove <name>` deletes the config-home output and variant files, then drops the `profiles:` entry (overlay sources under `.ai/profiles/<name>/` are kept).
 
+## Other commands
+
+- `agentsync list` shows configured tools and status; `agentsync enable` / `disable <tool>` toggle them.
+- `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI).
+- `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
+- `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
+- `agentsync export` bundles `.ai/src/` into an archive; `agentsync import <src>` pulls a config from a repo, archive, or directory.
+- `agentsync migrate` moves legacy flat-layout overrides into the per-tool form.
+- `agentsync upgrade-config` re-pins the engine version in `agent_sync.yaml`.
+
 ## Gotchas
 
-- Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it.
+- Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it. If you edited a generated file while iterating, `agentsync adopt <path>` promotes that edit back into the matching source file.
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
-- Native commands and subagents only land in tools that support them — Claude, Cursor, Junie, Windsurf, Antigravity for commands; Claude, Copilot for subagents. For tools without a commands surface, AgentSync converts: Codex gets generated skills under `command-*/`; Amazon Q and Zed get a `## Commands` index inlined into their agents file. Gemini receives commands as TOML.
-- Settings and MCP files are per-tool — each tool has its own format.
+- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, and Antigravity. Tools without a command surface get a conversion: Codex emits a generated skill under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
+- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML and Amazon Q as custom-agent JSON. Cline, Zed, Windsurf, and Antigravity have no subagent surface, so they get none.
+- The shared `.ai/src/mcp.json` reaches every tool; per-tool settings and hooks each have their own format under `.ai/src/tools/<tool>/`.

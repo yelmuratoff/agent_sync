@@ -80,6 +80,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
   - [`agentsync adopt` — promote an IDE edit back into source](#agentsync-adopt--promote-an-ide-edit-back-into-source)
   - [Disabling sync for specific tools](#disabling-sync-for-specific-tools)
 - [Workspaces — nested AgentSync projects](#workspaces--nested-agentsync-projects)
+- [Profiles — multiple config homes per tool](#profiles--multiple-config-homes-per-tool)
 - [Development](#development)
 - [Uninstall](#uninstall)
 
@@ -203,7 +204,7 @@ agentsync <command> [options]
 | `export`                 |       | Bundle `.ai/src/` into a shareable archive                                                      |
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
-| `update`                 |       | Self-update via git pull (auto-check every 24h)                                                |
+| `update`                 |       | Self-update via git pull (runs a background update check on each interactive command)          |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
 | `version`                | `-v`  | Print version                                                                                  |
@@ -479,7 +480,7 @@ agentsync migrate --apply -y  # non-interactive — accepts MCP consolidation by
 
 `migrate` moves each legacy file to `.ai/src/tools/<tool>/<resource>.<ext>`. When every `.ai/src/mcp/*.json` is byte-identical, it offers to collapse them into the shared `.ai/src/mcp.json`; if they differ, they migrate per-tool. Existing files at the target are never overwritten — such collisions are skipped with a warning so you resolve them by hand. Empty source directories are cleaned up on success.
 
-`migrate` also detects the pre-v0.6 monolithic `.agent/` (singular, no `s`) layout — a single directory holding `AGENTS.md`, `workflows/`, `rules/`, `skills/` without per-tool separation. The current engine doesn't recognise it, so `sync --cleanup` never sweeps it. Dry-run lists the contents; `--apply --yes` removes the directory. Detection runs alongside the flat-layout move logic, so a single `migrate --apply --yes` cleans up both in one pass.
+`migrate` also detects the pre-v0.6 monolithic `.agent/` (singular, no `s`) layout — a single directory holding `AGENTS.md`, `workflows/`, `rules/`, `skills/` without per-tool separation. The current engine doesn't recognise it, so a normal `sync` never cleans it up. Dry-run lists the contents; `--apply --yes` removes the directory. Detection runs alongside the flat-layout move logic, so a single `migrate --apply --yes` cleans up both in one pass.
 
 ## Path Overrides
 
@@ -588,12 +589,12 @@ Resolves the destination back to its source file (`.ai/src/rules/core.md`), copi
 
 **Refused targets** (the round-trip would corrupt your source):
 
-- Tools that inject a frontmatter header (`cursor` rules) — adopting would propagate the cursor-specific header to every other tool.
-- Tools that merge rules into a single file (`gemini`, `cline`) — multiple sources collapsed into one dest can't be split back.
-- Tools that inline rules/skills into AGENTS.md (`codex`, `junie`).
-- Format-converted outputs (`codex` subagents → TOML, `amazonq` subagents → JSON).
+- Rules that get a frontmatter header (`cursor`, `copilot`, `windsurf`, `antigravity`) — adopting would push that tool's header into every other tool's rules.
+- Rules merged into a single file (`zed`) — many sources collapsed into one dest can't be split back apart.
+- Rules or skills inlined into AGENTS.md (rules: `codex`, `gemini`, `junie`; skills: `amazonq`, `cline`, `zed`).
+- Format-converted output (`codex` subagents → TOML, `amazonq` subagents → JSON).
 
-For these cases, edit `.ai/src/` directly. AgentSync tells you which file when it refuses.
+For these, edit `.ai/src/` directly. AgentSync names the offending file when it refuses.
 
 ### Disabling sync for specific tools
 
@@ -636,9 +637,25 @@ Identical-hash files become a `[d]elete / [k]eep / [v]iew` prompt; for shipped t
 
 **Detection — `agentsync doctor`.** Doctor walks up to the nearest parent `.ai/src/` (same boundary as dedupe) and flags identical-hash duplicates as advisories and divergent files as info. Rules and skills marked with `category: governance` in their frontmatter are upgraded to advisories when divergent, with explicit "likely a mistake, not an override" framing. All cross-project findings are exit-code-0 advisories — visible during interactive runs, invisible to CI gates, so pre-commit hooks running `doctor` don't break on workspace techdebt.
 
-**Workspace-wide sync.** `agentsync sync --workspace` runs `sync` in every AgentSync-managed `.ai/` below cwd, bottom-up alphabetical (deeper paths first; siblings sorted by `LC_ALL=C` for reproducibility). Continues past per-project failures; reports max exit code at the end. All other sync options (`--only`, `--skip`, `--dry-run`, `--force`) forward to each per-project invocation.
+**Workspace-wide sync.** `agentsync sync --workspace` runs `sync` in every AgentSync-managed `.ai/` below cwd, bottom-up alphabetical (deeper paths first; siblings sorted by `LC_ALL=C` for reproducibility). Continues past per-project failures; reports max exit code at the end. All other sync options (`--only`, `--skip`, `--profile`, `--dry-run`, `--force`) forward to each per-project invocation.
 
 The walk-up logic stops at the start's git repository boundary, so a child project with its own `.git` never picks up an unrelated parent `.ai/src/` from above the boundary.
+
+## Profiles — multiple config homes per tool
+
+Sync from `$HOME` and juggle more than one account for the same tool — a work Claude and a personal Claude? A **profile** generates a second, self-contained config home (`~/.claude-hub/` next to your personal `~/.claude/`) whose content is the base `.ai/src/` plus profile-only extras. Shared rules stay shared; work-only rules and MCP servers live in the profile.
+
+```bash
+agentsync profile add hub                       # scaffold a "hub" profile for every enabled tool
+agentsync profile add hub --tools claude,codex  # ...or just these tools
+agentsync profile add hub --adopt               # pull an existing ~/.claude-hub/ into the profile first
+agentsync profile list                          # show profiles, their tools, and config homes
+agentsync profile remove hub                    # delete the config-home output and the profile
+```
+
+`profile add` writes three things: a thin variant tool `.ai/src/tools/<tool>-hub.yaml` that inherits everything from the base tool via `base:` and only overrides the dest paths, an overlay directory `.ai/profiles/hub/src/` for profile-only content (rules, skills, commands, agents, AGENTS.md — profile wins on collisions), and a `profiles:` block in `agent_sync.yaml`.
+
+On sync, `agentsync sync` builds every `active` profile alongside your personal tools; `agentsync sync --profile hub` builds just that one. The per-profile overlay layers over the base — and over an active `shared:` overlay if you have one, so the two compose. Run the result with the tool's config-home variable, for example `CLAUDE_CONFIG_DIR=~/.claude-hub claude`. Profile outputs are gitignored and drift-protected like any other generated file.
 
 ## Development
 

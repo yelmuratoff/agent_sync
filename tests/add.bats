@@ -236,3 +236,39 @@ teardown() { teardown_test_project; }
     [ "$status" -ne 0 ]
     [[ "$output" == *"path separators"* ]]
 }
+
+@test "add mcp overwrites a middle server without disturbing its siblings" {
+    run_agentsync add mcp aaa --command "cmd-a" >/dev/null
+    run_agentsync add mcp bbb --command "cmd-b" --args "x y" >/dev/null
+    run_agentsync add mcp ccc --url "https://c" >/dev/null
+    run run_agentsync add mcp bbb --command "cmd-b2" --force
+    [ "$status" -eq 0 ]
+    python3 -c "import json; d=json.load(open('.ai/src/mcp.json'))['mcpServers']; \
+                assert list(d) == ['aaa','bbb','ccc']; \
+                assert d['bbb']['command'] == 'cmd-b2' and 'args' not in d['bbb']; \
+                assert d['aaa']['command'] == 'cmd-a'; \
+                assert d['ccc']['type'] == 'http'"
+}
+
+@test "add mcp JSON-escapes quotes and backslashes in values" {
+    run run_agentsync add mcp weird --command 'say "hi" path\to' --env 'MSG=a"b'
+    [ "$status" -eq 0 ]
+    python3 -c "import json; e=json.load(open('.ai/src/mcp.json'))['mcpServers']['weird']; \
+                assert e['command'] == 'say \"hi\" path\\\\to'; \
+                assert e['env']['MSG'] == 'a\"b'"
+}
+
+@test "add mcp attaches env to an http server" {
+    run run_agentsync add mcp h --url "https://x" --env "TOKEN=t"
+    [ "$status" -eq 0 ]
+    python3 -c "import json; e=json.load(open('.ai/src/mcp.json'))['mcpServers']['h']; \
+                assert e['type']=='http' and e['url']=='https://x' and e['env']['TOKEN']=='t'"
+}
+
+@test "add mcp output is valid JSON parseable across repeated edits" {
+    run_agentsync add mcp one --command "c1" >/dev/null
+    run_agentsync add mcp two --command "c2" --args "a b c" --env "K=v" >/dev/null
+    run_agentsync add mcp three --url "https://three" >/dev/null
+    run python3 -c "import json; json.load(open('.ai/src/mcp.json'))"
+    [ "$status" -eq 0 ]
+}
