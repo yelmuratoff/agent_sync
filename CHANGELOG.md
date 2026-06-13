@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0
+
+### Added
+
+- **`paths:`-scoped rules now translate to every tool's native trigger:** a rule that declares `paths:` frontmatter (a list of globs) is emitted with each tool's *scoped* trigger instead of the always-on header — Cursor `globs` + `alwaysApply: false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`, while Claude keeps `paths:` verbatim — so a domain rule (state, routing, data…) loads only when matching files are touched, keeping the always-on context lean. Configured via the new `targets.rules.scoped_header` option (a header string with a `{globs}` placeholder); rules without `paths:` still get the always-on `header`. Tools that inline rules into their agents file now skip a rule's frontmatter when building the index, so a scoped rule shows its heading rather than the `---` delimiter.
+- **`doctor` flags always-on rule bloat:** a new advisory under a "Rules" section warns when the always-on rule set (rules without `paths:`) grows past ~20 KB / ~5k tokens, since a large always-on set dilutes attention and agents start ignoring individual instructions. Advisory only — like other techdebt detections it prints `⚠` but never affects the exit code.
+
 ## 0.26.3
 
 ### Changed

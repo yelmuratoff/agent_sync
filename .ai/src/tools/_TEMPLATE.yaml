@@ -28,6 +28,12 @@ targets:
     # Optional: Add a header to the top of every rule file
     # header: 'globs: "**/*"'
 
+    # Optional: Scoped header for rules that declare `paths:` frontmatter (a list
+    # of globs). The `{globs}` placeholder is replaced with the rule's comma-joined
+    # globs, so the rule loads only when matching files are touched instead of on
+    # every task. Rules without `paths:` fall back to the always-on `header` above.
+    # scoped_header: "---\nglobs: '{globs}'\nalwaysApply: false\n---"
+
     # Optional: Filter rules (bash globs)
     # include: "flutter-*.md"
     # exclude: "secret-*.md"
