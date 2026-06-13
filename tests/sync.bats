@@ -20,6 +20,11 @@ setup_file() {
     # init defaults all tools to disabled; users opt in per project.
     enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity
 
+    # Path-scoped rule (leads with YAML frontmatter) — regression fixture for the
+    # inline-into-agents rule inventory title extraction.
+    printf '%s\n' '---' 'paths:' '  - "**/*.dart"' '---' '' '# Scoped Fixture Rule' '' '- Body.' \
+        > .ai/src/rules/scoped-fixture.md
+
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
 }
 
@@ -218,6 +223,46 @@ setup() {
     [ -f ".junie/AGENTS.md" ]
     # rules were inlined — no unsupported .junie/rules/ subdirectory
     [ ! -d ".junie/rules" ]
+}
+
+@test "sync: inlined rule inventory shows heading, not frontmatter delimiter" {
+    # A path-scoped rule opens with a `---` frontmatter block; the shared
+    # inline-into-agents inventory must surface its heading, not the `---`
+    # delimiter. Asserted on .junie/AGENTS.md (uniquely owned — the root
+    # AGENTS.md is contended by several tools depending on sync order).
+    grep -q '^- `scoped-fixture.md` — Scoped Fixture Rule$' ".junie/AGENTS.md"
+    ! grep -q '`scoped-fixture.md` — ---' ".junie/AGENTS.md"
+}
+
+# ── Path-scoped rules: canonical `paths:` → each tool's native glob trigger ───
+
+@test "sync: path-scoped rule keeps native paths: for Claude" {
+    grep -q '^paths:' ".claude/rules/scoped-fixture.md"
+    grep -qF '"**/*.dart"' ".claude/rules/scoped-fixture.md"
+}
+
+@test "sync: path-scoped rule becomes Cursor Auto Attached glob" {
+    grep -qF "globs: '**/*.dart'" ".cursor/rules/scoped-fixture.mdc"
+    grep -qF "alwaysApply: false" ".cursor/rules/scoped-fixture.mdc"
+}
+
+@test "sync: path-scoped rule becomes Copilot applyTo glob" {
+    grep -qF "applyTo: '**/*.dart'" ".github/instructions/scoped-fixture.instructions.md"
+}
+
+@test "sync: path-scoped rule becomes Windsurf glob trigger" {
+    grep -qF "trigger: glob" ".windsurf/rules/scoped-fixture.md"
+    grep -qF "globs: '**/*.dart'" ".windsurf/rules/scoped-fixture.md"
+}
+
+@test "sync: path-scoped rule becomes Antigravity glob trigger" {
+    grep -qF "trigger: glob" ".agents/rules/scoped-fixture.md"
+    grep -qF "globs: '**/*.dart'" ".agents/rules/scoped-fixture.md"
+}
+
+@test "sync: rule without paths: stays always-on (Cursor)" {
+    # core.md has no `paths:` — must keep the always-on default, not a glob.
+    grep -qF "alwaysApply: true" ".cursor/rules/core.mdc"
 }
 
 # ── Gitignore ────────────────────────────────────────────────────────────────

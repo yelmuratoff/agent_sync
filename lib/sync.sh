@@ -324,7 +324,9 @@ _inline_rules_into_agents() {
             [[ -f "$rule_file" ]] || continue
             basename=$(basename "$rule_file")
             if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
-                echo "- \`$basename\` — $(head -1 "$rule_file" | sed 's/^[#]* *//')"
+                # First Markdown heading, skipping any YAML frontmatter — path-scoped
+                # rules open with a `---` block, so `head -1` would print the delimiter.
+                echo "- \`$basename\` — $(sed -n 's/^##* *//p' "$rule_file" | head -1)"
             fi
         done
         echo ""
@@ -410,9 +412,10 @@ _sync_rules_step() {
     src_agents_abs=$(_resolve_tool_src "$tool_name" agents "$SOURCE_AGENTS" "$display")
     src_rules_abs=$(_resolve_tool_src "$tool_name" rules "$SOURCE_RULES" "$display")
 
-    local rule_ext rule_header append_imports_flag rule_include rule_exclude
+    local rule_ext rule_header rule_scoped_header append_imports_flag rule_include rule_exclude
     rule_ext=$(get_tool_value "$tool_name" "targets.rules.extension")
     rule_header=$(get_tool_value "$tool_name" "targets.rules.header")
+    rule_scoped_header=$(get_tool_value "$tool_name" "targets.rules.scoped_header")
     append_imports_flag=$(get_tool_value "$tool_name" "targets.rules.append_imports")
     rule_include=$(get_tool_filter "$tool_name" "targets.rules.include")
     rule_exclude=$(get_tool_filter "$tool_name" "targets.rules.exclude")
@@ -436,7 +439,7 @@ _sync_rules_step() {
             fi
             merge_rules_to_file "$src_rules_abs" "$dest_rules_abs" "$DRY_RUN" "$rule_include" "$rule_exclude" "$agents_for_prepend"
         else
-            sync_rules "$src_rules_abs" "$dest_rules_abs" "$rule_ext" "$rule_header" "$DRY_RUN" "$rule_include" "$rule_exclude"
+            sync_rules "$src_rules_abs" "$dest_rules_abs" "$rule_ext" "$rule_header" "$DRY_RUN" "$rule_include" "$rule_exclude" "$rule_scoped_header"
 
             if [[ "$append_imports_flag" == "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
                 if [[ -n "$dest_agents_abs" ]]; then

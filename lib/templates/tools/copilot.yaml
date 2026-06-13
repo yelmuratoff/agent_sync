@@ -9,6 +9,7 @@ targets:
     dest: ".github/instructions"
     extension: ".instructions.md"
     header: "---\napplyTo: '**'\n---"
+    scoped_header: "---\napplyTo: '{globs}'\n---"
 
   skills:
     dest: ".github/skills"

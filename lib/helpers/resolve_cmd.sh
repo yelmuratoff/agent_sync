@@ -41,6 +41,7 @@ targets.agents.dest
 targets.rules.dest
 targets.rules.extension
 targets.rules.header
+targets.rules.scoped_header
 targets.rules.append_imports
 targets.rules.merge_to_file
 targets.rules.inline_into_agents

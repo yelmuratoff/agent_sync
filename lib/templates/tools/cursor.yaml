@@ -9,6 +9,7 @@ targets:
     dest: ".cursor/rules"
     extension: ".mdc"
     header: "---\nglobs: '**/*'\nalwaysApply: true\n---"
+    scoped_header: "---\nglobs: '{globs}'\nalwaysApply: false\n---"
 
   skills:
     dest: ".cursor/skills"

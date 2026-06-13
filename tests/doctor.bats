@@ -365,3 +365,29 @@ EOF
     [[ "$output" != *"duplicate of parent"* ]]
     [[ "$output" == *"No parent .ai/src/ found"* ]]
 }
+
+@test "doctor advises path-scoping when always-on rules exceed the budget" {
+    run_agentsync init >/dev/null
+    rm -f .ai/src/rules/*.md
+    local big
+    big=$(printf 'x%.0s' {1..6000})
+    local i
+    for i in 1 2 3 4; do
+        printf '# Rule %s\n\n- %s\n' "$i" "$big" > ".ai/src/rules/bloat-$i.md"
+    done
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"always-on rule(s) load on every task"* ]]
+    [[ "$output" == *"paths:"* ]]
+}
+
+@test "doctor does not count paths:-scoped rules toward always-on bloat" {
+    run_agentsync init >/dev/null
+    rm -f .ai/src/rules/*.md
+    local big
+    big=$(printf 'x%.0s' {1..30000})
+    printf -- '---\npaths:\n  - "**/*.ts"\n---\n\n# Scoped\n\n- %s\n' "$big" > .ai/src/rules/scoped-big.md
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"always-on rule(s) load on every task"* ]]
+}

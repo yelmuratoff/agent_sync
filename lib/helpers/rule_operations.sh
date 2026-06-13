@@ -99,6 +99,48 @@ merge_or_prepend_header() {
     mv "$temp_file" "$file"
 }
 
+# Echo a rule's canonical `paths:` globs as a comma-separated list. Empty when
+# the rule has no leading frontmatter or no `paths:` key.
+_rule_paths_csv() {
+    local file="$1"
+    local first_line=""
+    IFS= read -r first_line < "$file" || true
+    [[ "$first_line" == "---" ]] || return 0
+    sed -n '2,/^---$/p' "$file" | grep -q '^paths:[[:space:]]*$' || return 0
+    sed -n '2,/^---$/p' "$file" \
+        | sed -n 's/^[[:space:]]*-[[:space:]][[:space:]]*//p' \
+        | sed -e 's/^["'\'']//' -e 's/["'\'']$//' \
+        | paste -sd, -
+}
+
+# Remove a leading YAML frontmatter block (and the blank line after it) in place.
+_strip_frontmatter() {
+    local file="$1"
+    local first_line=""
+    IFS= read -r first_line < "$file" || true
+    [[ "$first_line" == "---" ]] || return 0
+    local tmp="${file}.tmp"
+    sed '1,/^---$/d' "$file" | sed '/./,$!d' > "$tmp"
+    mv "$tmp" "$file"
+}
+
+# Apply a tool's rule frontmatter. When the source rule declares canonical
+# `paths:` scope and the tool provides a scoped_header (with a {globs}
+# placeholder), translate that scope into the tool's native glob trigger;
+# otherwise merge the always-on default header. A no-op when the tool defines
+# neither — e.g. Claude, whose native `paths:` frontmatter is kept verbatim.
+apply_rule_header() {
+    local file="$1" header="$2" scoped_header="$3"
+    local globs
+    globs=$(_rule_paths_csv "$file")
+    if [[ -n "$globs" && -n "$scoped_header" ]]; then
+        _strip_frontmatter "$file"
+        add_header "$file" "${scoped_header//\{globs\}/$globs}"
+    elif [[ -n "$header" ]]; then
+        merge_or_prepend_header "$file" "$header"
+    fi
+}
+
 # Append @rules/<filename> import lines into an agents file.
 # Usage: append_imports "agents_file" "rules_dir"
 append_imports() {
@@ -275,6 +317,7 @@ sync_rules() {
     local dry_run="${5:-false}"
     local include="${6:-}"
     local exclude="${7:-}"
+    local scoped_header="${8:-}"
 
     if [[ ! -d "$src_dir" ]]; then
         log_warning "Rules source not found: $src_dir"
@@ -310,9 +353,7 @@ sync_rules() {
             else
                 local dest_path="$dest_dir/$dest_name"
                 cp "$src_file" "$dest_path"
-                if [[ -n "$header" ]]; then
-                    merge_or_prepend_header "$dest_path" "$header"
-                fi
+                apply_rule_header "$dest_path" "$header" "$scoped_header"
                 if declare -f manifest_record_write >/dev/null 2>&1; then
                     manifest_record_write "$dest_path"
                 fi

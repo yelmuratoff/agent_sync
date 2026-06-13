@@ -40,6 +40,8 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 └── .rules                                # merged into single file (Zed)
 ```
 
+The frontmatter above is the always-on default. Give a rule `paths:` frontmatter (a list of globs) and AgentSync emits each tool's **scoped** trigger instead (`alwaysApply: false`, `applyTo: <globs>`, `trigger: glob`; Claude keeps `paths:`), so domain rules load only when matching files are touched — keeping the always-on context lean.
+
 ## Why not just...?
 
 - **...symlink the files?** Tools demand different extensions (`.mdc`, `.instructions.md`), different frontmatter, different nesting. Symlinks can't transform content — AgentSync does.
@@ -140,7 +142,7 @@ AgentSync supports two source layouts:
 ├── agent_sync.yaml             # project config (tools.enabled, version pin, paths)
 └── src/                        # Source of truth. Edit ONLY here.
     ├── AGENTS.md               # Agent identity: role, approach, principles
-    ├── rules/                  # Rules — always-on constraints
+    ├── rules/                  # Rules — always-on, or paths:-scoped (load on-demand)
     │   ├── core.md
     │   └── git.md
     ├── skills/                 # (optional) on-demand step-by-step recipes
@@ -165,7 +167,7 @@ AgentSync supports two source layouts:
 | Source        | Purpose                                                                                                                                                                                                                                                                                                                                       | Tools that use it                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `.junie/AGENTS.md`, `00-context.md`).                                                                                                                                                                                                                      | All                                                         |
-| **rules/**    | Always-on constraints. One file per topic. Auto-converted per tool: `.mdc` (Cursor), `.instructions.md` (Copilot), trigger frontmatter (Windsurf).                                                                                                                                                                                            | All                                                         |
+| **rules/**    | Always-on constraints by default. Add `paths:` frontmatter (a list of globs) to scope a domain rule so it loads only when matching files are touched — translated to each tool's native trigger (Claude keeps `paths:`, Cursor `globs`+`alwaysApply:false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`). One file per topic; keep the always-on set lean so individual rules aren't diluted. | All                                                         |
 | **skills/**   | On-demand recipes in the open [agentskills.io](https://agentskills.io) format. Each skill = directory with `SKILL.md` + optional `references/`, `scripts/`, `assets/`. Description is the trigger (imperative + pushy + ≤1024 chars). `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All                                                         |
 | **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. For tools without a native commands surface, AgentSync converts: Codex gets generated skills (`command-*/SKILL.md`); Amazon Q and Zed get a `## Commands` index inlined into the agents file.        | Claude, Cursor, Copilot (`.prompt.md`), Gemini (TOML), Junie, Cline, Windsurf, Antigravity; Codex (as skills); Amazon Q, Zed (inlined) |
 | **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Auto-converted to TOML for Codex and to JSON for Amazon Q.                                                                                                                                                                                                           | Claude, Cursor, Copilot (`.agent.md`), Gemini, Junie, Codex (TOML), Amazon Q (JSON) |

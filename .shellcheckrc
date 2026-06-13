@@ -1,0 +1,6 @@
+# CI gates on warnings and above and excludes SC1091 (.github/workflows/ci.yaml:
+# `shellcheck -x -S warning -e SC1091`). shellcheck's rc file has no severity
+# knob, so the info/style codes that `-S warning` would drop are listed here to
+# keep editors, hooks, and local runs consistent with CI.
+external-sources=true
+disable=SC1091,SC2129,SC2016,SC2005,SC2001

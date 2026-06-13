@@ -239,10 +239,11 @@ _adopt_resolve_dir_source() {
     # Reject merged / inlined / format-converted variants up front.
     case "$key" in
         rules)
-            local merge inline header
+            local merge inline header scoped_header
             merge=$(get_tool_value "$tool" "targets.rules.merge_to_file")
             inline=$(get_tool_value "$tool" "targets.rules.inline_into_agents")
             header=$(get_tool_value "$tool" "targets.rules.header")
+            scoped_header=$(get_tool_value "$tool" "targets.rules.scoped_header")
             if [[ "$merge" == "true" ]]; then
                 _ADOPT_REFUSAL="$tool merges rules into a single file. Edit the source rules in $SOURCE_RULES/ instead."
                 return 0
@@ -251,7 +252,7 @@ _adopt_resolve_dir_source() {
                 _ADOPT_REFUSAL="$tool inlines rules into AGENTS.md. Edit the source rules in $SOURCE_RULES/ instead."
                 return 0
             fi
-            if [[ -n "$header" ]]; then
+            if [[ -n "$header" || -n "$scoped_header" ]]; then
                 _ADOPT_REFUSAL="$tool injects a frontmatter header on sync. Adopting would propagate it to other tools' rule files. Edit $SOURCE_RULES/ instead."
                 return 0
             fi

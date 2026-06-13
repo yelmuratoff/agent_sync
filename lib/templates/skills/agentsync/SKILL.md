@@ -67,6 +67,7 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 - **Constraints, not tutorials** — Tell the agent what behavior to produce. Skip concept explanations the model already knows.
 - **Prefer positive instructions** — Per Anthropic's prompt-engineering guidance, "respond in flowing prose" works better than "don't use bullet points". Phrase rules as what to do; reserve explicit `do not` for genuinely tempting wrong actions where the positive form would lose information.
 - **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
+- **Always-on by default — scope domain rules with `paths:`** — A rule with no frontmatter loads on every task. For a domain rule (state, routing, data…), add `paths:` frontmatter (a list of globs) so it loads only when matching files are touched. AgentSync translates `paths:` to each tool's native trigger (Claude `paths:`, Cursor `globs`+`alwaysApply:false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`). Keep the always-on set lean — a wall of always-on rules dilutes attention and the agent starts ignoring individual instructions.
 
 ## Writing Skills — The Most Important Part
 

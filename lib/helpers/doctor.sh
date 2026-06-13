@@ -309,6 +309,38 @@ _doctor_check_empty_skills() {
     fi
 }
 
+# ── Always-on rule bloat (context dilution) ──────────────────────────────────
+#
+# Rules without `paths:` frontmatter load on every task. A large always-on set
+# dilutes attention — agents start ignoring individual instructions. Advise
+# scoping domain rules with `paths:` once the always-on set grows past ~5k tokens.
+_doctor_check_always_on_rules() {
+    local rules_dir="$REPO_ROOT/.ai/src/rules"
+    if [[ ! -d "$rules_dir" ]]; then
+        _doctor_info "No .ai/src/rules/ — nothing to scan."
+        return 0
+    fi
+
+    local count=0 bytes=0 file first
+    for file in "$rules_dir"/*.md; do
+        [[ -f "$file" ]] || continue
+        IFS= read -r first < "$file" || true
+        if [[ "$first" == "---" ]] && sed -n '2,/^---$/p' "$file" | grep -q '^paths:[[:space:]]*$'; then
+            continue
+        fi
+        count=$((count + 1))
+        bytes=$((bytes + $(wc -c < "$file")))
+    done
+
+    if [[ $count -eq 0 ]]; then
+        _doctor_ok "No always-on rules (every rule is paths:-scoped)"
+    elif [[ $bytes -ge 20000 ]]; then
+        _doctor_advise "$count always-on rule(s) load on every task (~$((bytes / 1024)) KB, ~$((bytes / 4)) tokens). Add $(_cyan "paths:") frontmatter to domain rules so they load only when matching files are touched — a large always-on set dilutes attention."
+    else
+        _doctor_ok "Always-on rule context is lean ($count file(s), ~$((bytes / 1024)) KB)"
+    fi
+}
+
 # ── Orphan tool-output detection ─────────────────────────────────────────────
 #
 # Known output dir basenames mapped to their owning tool slug. AgentSync's
@@ -634,6 +666,11 @@ cmd_doctor() {
     # ── Section 7: empty skills ──────────────────────────────────────────────
     _bold "  Skills"; echo ""
     _doctor_check_empty_skills
+    echo ""
+
+    # ── Section 7b: always-on rule context ───────────────────────────────────
+    _bold "  Rules"; echo ""
+    _doctor_check_always_on_rules
     echo ""
 
     # ── Section 8: orphan tool outputs ───────────────────────────────────────

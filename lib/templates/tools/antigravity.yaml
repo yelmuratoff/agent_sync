@@ -8,6 +8,7 @@ targets:
   rules:
     dest: ".agents/rules"
     header: "---\ntrigger: always_on\n---"
+    scoped_header: "---\ntrigger: glob\nglobs: '{globs}'\n---"
 
   skills:
     dest: ".agents/skills"
