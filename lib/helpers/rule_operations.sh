@@ -273,6 +273,10 @@ copy_rules() {
         return 0
     fi
 
+    if [[ -z "$dest_dir" ]]; then
+        log_error "copy_rules: refusing to remove an empty dest_dir"
+        return 1
+    fi
     rm -rf "$dest_dir" 2>/dev/null || true
     ensure_dir "$dest_dir"
 

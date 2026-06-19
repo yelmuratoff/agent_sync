@@ -174,11 +174,13 @@ For tools without separate rules/skills directories, use inline options:
 
 ## Maintenance: drift, resolve, simplify
 
-`agentsync update` snapshots the tool catalog and reports upstream changes to fields you've overridden into `.ai/.pending-resolutions.yaml`. Run `agentsync resolve` to walk and adopt or reject each one. Pass `--strict` in CI to fail the build when conflicts exist.
+`agentsync update` snapshots the tool catalog and reports upstream changes to fields you've overridden into `.ai/.pending-resolutions.yaml`. Run `agentsync resolve` to walk and adopt or reject each one. Pass `--strict` to `agentsync update` in CI to fail the build when conflicts exist.
 
 `agentsync simplify` drops user-override fields that already match the current base, surfacing only true divergences. Dry-run by default; `--apply` to write, `-y` to auto-delete emptied files.
 
 **When running `agentsync update`, `resolve`, or `simplify`, or when investigating stale-override / upstream-drift problems, read [`references/maintenance.md`](references/maintenance.md)** for full file format, command semantics, idempotency rules, comment-preservation gotcha, and recommended cadence.
+
+**Recovering a directly-edited generated file.** `agentsync sync` records every generated file in `.ai/.sync-manifest` (SHA-256), so a generated file edited by hand — or one a tool writes into out of band (e.g. a plugin registering itself in `.claude/settings.json`) — makes the next sync **abort** instead of overwriting it. Run `agentsync adopt <file>` to pull the current content back into `.ai/src/`, then sync again.
 
 ## Pulling new template content into an existing project
 

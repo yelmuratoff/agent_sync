@@ -253,6 +253,16 @@ main() {
             ;;
     esac
 
+    # These subcommands don't parse their own --help; show the top-level usage
+    # instead of mis-reading -h/--help as a positional argument.
+    case "$command" in
+        check|setup-hooks|doctor|list|ls|show|diff|disable|resolve)
+            case "${2:-}" in
+                --help|-h) print_usage; exit 0 ;;
+            esac
+            ;;
+    esac
+
     case "$command" in
         init)          _need prompts yaml tool_resolver template_manifest paths init; shift; cmd_init "$@" ;;
         sync)

@@ -298,7 +298,7 @@ to_repo_relative_path() {
     fi
 
     if [[ "$abs_path" == "$REPO_ROOT/"* ]]; then
-        echo "${abs_path#$REPO_ROOT/}"
+        echo "${abs_path#"$REPO_ROOT"/}"
         return 0
     fi
 

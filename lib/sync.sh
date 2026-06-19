@@ -810,6 +810,7 @@ _check_drift_or_exit() {
     echo "" >&2
     echo "  These files would be silently overwritten. Choose one:" >&2
     echo "    • Move your edits into .ai/src/, then re-run sync" >&2
+    echo "    • If a tool wrote here out of band, run 'agentsync adopt <file>' to pull it into .ai/src/" >&2
     echo "    • Re-run with --force to discard the edits and rewrite from source" >&2
     echo "" >&2
     exit 1
