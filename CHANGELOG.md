@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.27.1
+
+### Fixed
+
+- **`--help` on argument-less subcommands:** `agentsync check|setup-hooks|doctor|list|show|diff|disable|resolve --help` now prints the top-level usage instead of mis-reading `-h`/`--help` as a positional argument.
+- **`copy_rules` refuses to delete an empty destination:** rule sync now aborts with a clear error instead of running `rm -rf` against an empty `dest_dir`, guarding against wiping an unintended directory.
+
+### Changed
+
+- **Drift-abort message points to `adopt`:** when `sync` aborts because a generated file was changed out of band (e.g. a plugin writing into `.claude/settings.json`), the guidance now suggests `agentsync adopt <file>` to pull the change into `.ai/src/`, alongside the existing move-to-source and `--force` options.
+
 ## 0.27.0
 
 ### Added
