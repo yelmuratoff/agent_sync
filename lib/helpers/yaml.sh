@@ -34,36 +34,40 @@ _yaml_normalize_scalar() {
     echo "$REPLY"
 }
 
-parse_yaml_value() {
+# REPLY-returning core of parse_yaml_value: identical semantics, but sets REPLY
+# instead of echoing — so hot-path callers can avoid a command-substitution fork.
+# parse_yaml_value is a thin echo wrapper kept for the many `$(...)` call sites.
+parse_yaml_value_r() {
     local file="$1"
     local key_path="$2"
-    
+    REPLY=""
+
     if [[ ! -f "$file" ]]; then
-        echo ""
         return 0
     fi
-    
+
     # Split key path into parts
+    local -a keys
     IFS='.' read -ra keys <<< "$key_path"
     local depth=${#keys[@]}
-    
+
     # For nested keys, we need to track indentation
     local in_section=false
     local section_indent=0
     local looking_for="${keys[0]}"
     local next_key_index=1
-    
+
+    local line stripped indent line_key line_value
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip empty lines and comments
         [[ -z "$line" ]] && continue
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        
+
         # Count leading spaces
-        local stripped="${line#"${line%%[![:space:]]*}"}"
-        local indent=$(( ${#line} - ${#stripped} ))
-        
+        stripped="${line#"${line%%[![:space:]]*}"}"
+        indent=$(( ${#line} - ${#stripped} ))
+
         # Extract key and value
-        local line_key line_value
         if [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):[[:space:]]*(.*) ]]; then
             line_key="${BASH_REMATCH[1]}"
             _yaml_normalize_scalar_reply "${BASH_REMATCH[2]}"
@@ -80,7 +84,7 @@ parse_yaml_value() {
             if [[ $indent -eq 0 ]] && [[ "$line_key" == "$looking_for" ]]; then
                 if [[ $next_key_index -eq $depth ]]; then
                     # This is the final key
-                    echo "$line_value"
+                    REPLY="$line_value"
                     return 0
                 fi
                 in_section=true
@@ -92,14 +96,14 @@ parse_yaml_value() {
             # We're inside a section, looking for nested key
             if [[ $indent -le $section_indent ]]; then
                 # Exited the section without finding key - return empty
-                echo ""
+                REPLY=""
                 return 0
             fi
-            
+
             if [[ "$line_key" == "$looking_for" ]]; then
                 if [[ $next_key_index -eq $depth ]]; then
                     # Found the final key
-                    echo "$line_value"
+                    REPLY="$line_value"
                     return 0
                 fi
                 section_indent=$indent
@@ -108,10 +112,15 @@ parse_yaml_value() {
             fi
         fi
     done < "$file"
-    
+
     # Key not found - return empty (not error)
-    echo ""
+    REPLY=""
     return 0
+}
+
+parse_yaml_value() {
+    parse_yaml_value_r "$1" "$2"
+    echo "$REPLY"
 }
 
 # Parse a YAML list under a key path.

@@ -67,21 +67,22 @@ get_tool_value() {
     local tool_name="$1"
     local key_path="$2"
 
-    local user_file
-    user_file=$(tool_resolver_user_file "$tool_name")
+    # Hot path: called dozens of times per tool per sync. Inline the dir layout
+    # (mirrors tool_resolver_user_dir / tool_resolver_base_dir) and use the
+    # REPLY-returning parser so a lookup costs zero subshell forks.
+    local user_file="$REPO_ROOT/.ai/src/tools/${tool_name}.yaml"
     if [[ -f "$user_file" ]]; then
-        local v
-        v=$(parse_yaml_value "$user_file" "$key_path")
-        if [[ -n "$v" ]]; then
-            echo "$v"
+        parse_yaml_value_r "$user_file" "$key_path"
+        if [[ -n "$REPLY" ]]; then
+            echo "$REPLY"
             return 0
         fi
     fi
 
-    local base_file
-    base_file=$(tool_resolver_base_file "$tool_name")
+    local base_file="$DEFAULT_REPO_ROOT/lib/templates/tools/${tool_name}.yaml"
     if [[ -f "$base_file" ]]; then
-        parse_yaml_value "$base_file" "$key_path"
+        parse_yaml_value_r "$base_file" "$key_path"
+        echo "$REPLY"
         return 0
     fi
 
@@ -491,9 +492,32 @@ list_enabled_tools() {
     } | sort -u
 }
 
-# Is <tool_name> enabled (modern or legacy)?
+# Per-process memo of the enabled-tools set. tools.enabled is fixed for a run,
+# so computing it once and answering membership from a string avoids re-reading
+# config + every override file (and two sort forks) for each tool checked.
+_ENABLED_TOOLS_CACHED="false"
+_ENABLED_TOOLS_SET="|"
+
+# Populate the enabled-tools membership cache. MUST run in the parent shell (not
+# a $(...) subshell), or the globals it sets won't survive for later lookups.
+warm_enabled_tools_cache() {
+    _ENABLED_TOOLS_SET="|"
+    local t
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        _ENABLED_TOOLS_SET="${_ENABLED_TOOLS_SET}${t}|"
+    done < <(list_enabled_tools)
+    _ENABLED_TOOLS_CACHED="true"
+}
+
+# Is <tool_name> enabled (modern or legacy)? Answers from the memo when warmed;
+# otherwise falls back to a fresh scan (standalone callers, tests).
 is_tool_enabled() {
     local tool_name="$1"
+    if [[ "$_ENABLED_TOOLS_CACHED" == "true" ]]; then
+        [[ "$_ENABLED_TOOLS_SET" == *"|${tool_name}|"* ]]
+        return
+    fi
     local t
     while IFS= read -r t; do
         [[ "$t" == "$tool_name" ]] && return 0

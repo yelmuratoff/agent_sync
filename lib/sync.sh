@@ -322,7 +322,7 @@ _inline_rules_into_agents() {
         local rule_file basename
         for rule_file in "$src_rules_abs"/*.md; do
             [[ -f "$rule_file" ]] || continue
-            basename=$(basename "$rule_file")
+            basename="${rule_file##*/}"
             if matches_filter "$basename" "$rule_include" "$rule_exclude"; then
                 # First Markdown heading, skipping any YAML frontmatter — path-scoped
                 # rules open with a `---` block, so `head -1` would print the delimiter.
@@ -333,7 +333,7 @@ _inline_rules_into_agents() {
         echo "Find all rules in \`.ai/src/rules/\`."
     } >> "$dest_agents_abs"
     manifest_record_write "$dest_agents_abs"
-    log_step "Appended rule references to $(basename "$dest_agents_abs")"
+    log_step "Appended rule references to ${dest_agents_abs##*/}"
 }
 
 # Append a lightweight skill index (name + description) to a target file, for
@@ -343,7 +343,8 @@ _inline_skills_into_file() {
     local skill_entries="" skill_dir skill_name skill_desc skill_file
     for skill_dir in "$src_skills_abs"/*/; do
         [[ -d "$skill_dir" ]] || continue
-        skill_name=$(basename "$skill_dir")
+        # Trailing slash from the */ glob: strip it before taking the leaf.
+        skill_name="${skill_dir%/}"; skill_name="${skill_name##*/}"
         matches_filter "$skill_name" "$skills_include" "$skills_exclude" || continue
         skill_desc=""
         skill_file="$skill_dir/SKILL.md"
@@ -370,7 +371,7 @@ _inline_skills_into_file() {
         printf '%s' "$skill_entries"
     } >> "$target_file"
     manifest_record_write "$target_file"
-    log_step "Appended skill index to $(basename "$target_file")"
+    log_step "Appended skill index to ${target_file##*/}"
 }
 
 # Resolve a tool target's effective source to an absolute path: the per-tool
@@ -428,7 +429,7 @@ _sync_rules_step() {
         if [[ "$DRY_RUN" != "true" ]]; then
             _inline_rules_into_agents "$src_rules_abs" "$dest_agents_abs" "$rule_include" "$rule_exclude"
         else
-            log_step "Would append rule references to $(basename "$dest_agents_abs") (dry-run)"
+            log_step "Would append rule references to ${dest_agents_abs##*/} (dry-run)"
         fi
     elif [[ -n "$dest_rules_abs" ]]; then
         if [[ "$merge_to_file" == "true" ]]; then
@@ -444,7 +445,7 @@ _sync_rules_step() {
             if [[ "$append_imports_flag" == "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
                 if [[ -n "$dest_agents_abs" ]]; then
                     append_imports "$dest_agents_abs" "$dest_rules_abs"
-                    log_step "Appended @rules imports to $(basename "$dest_agents_abs")"
+                    log_step "Appended @rules imports to ${dest_agents_abs##*/}"
                 else
                     log_warning "Skipping append_imports for $display because targets.agents.dest is missing"
                 fi
@@ -539,7 +540,7 @@ _sync_commands_step() {
             if [[ "$DRY_RUN" == "true" ]]; then
                 log_step "Would append command index (dry-run)"
             else
-                log_info "$display has no native commands surface — appending command index to $(basename "$commands_target_file")"
+                log_info "$display has no native commands surface — appending command index to ${commands_target_file##*/}"
                 inline_commands_to_file "$src_commands_abs" "$commands_target_file" "$cmd_include" "$cmd_exclude"
             fi
         fi
@@ -983,6 +984,7 @@ main() {
 
     _snapshot_base_sources
     _build_tool_catalog
+    warm_enabled_tools_cache
     _collect_protected_dests
 
     # Load the manifest (even on dry-run) so the sweep helpers tell sync-generated

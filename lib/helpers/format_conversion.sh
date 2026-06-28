@@ -164,7 +164,7 @@ convert_md_command_to_toml() {
         return 0
     fi
 
-    ensure_dir "$(dirname "$dest_file")"
+    ensure_dir "${dest_file%/*}"
     _parse_md_frontmatter "$src_file"
 
     local description="$_FM_DESCRIPTION"
@@ -201,8 +201,7 @@ sync_commands_as_toml() {
     local count=0
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file" .md)
+        local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.toml"
         convert_md_command_to_toml "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))
@@ -225,10 +224,11 @@ convert_md_agent_to_toml() {
         return 0
     fi
 
-    ensure_dir "$(dirname "$dest_file")"
+    ensure_dir "${dest_file%/*}"
     _parse_md_frontmatter "$src_file"
 
-    local name="${_FM_NAME:-$(basename "$src_file" .md)}"
+    local name_stem="${src_file##*/}"; name_stem="${name_stem%.md}"
+    local name="${_FM_NAME:-$name_stem}"
     local description="$_FM_DESCRIPTION"
     local body="$_FM_BODY"
 
@@ -261,8 +261,7 @@ sync_agents_as_toml() {
     local count=0
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file" .md)
+        local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.toml"
         convert_md_agent_to_toml "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))
@@ -286,10 +285,11 @@ convert_md_agent_to_amazonq_json() {
         return 0
     fi
 
-    ensure_dir "$(dirname "$dest_file")"
+    ensure_dir "${dest_file%/*}"
     _parse_md_frontmatter "$src_file"
 
-    local name="${_FM_NAME:-$(basename "$src_file" .md)}"
+    local name_stem="${src_file##*/}"; name_stem="${name_stem%.md}"
+    local name="${_FM_NAME:-$name_stem}"
     local description="$_FM_DESCRIPTION"
     local model="$_FM_MODEL"
     local body="${_FM_BODY%$'\n'}"  # trim single trailing newline added by parser
@@ -344,8 +344,7 @@ sync_agents_as_amazonq_json() {
     local count=0
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file" .md)
+        local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.json"
         convert_md_agent_to_amazonq_json "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))

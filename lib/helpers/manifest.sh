@@ -20,21 +20,41 @@ manifest_path() {
     echo "$REPO_ROOT/.ai/.sync-manifest"
 }
 
+# Echo the available SHA-256 command, or empty if none is installed.
+_manifest_hash_cmd() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "sha256sum"
+    elif command -v shasum >/dev/null 2>&1; then
+        echo "shasum -a 256"
+    fi
+}
+
 # Compute sha256 of a file. Echoes the bare hash, returns 1 if no tool found.
 # Usage: manifest_compute_hash "/abs/path"
 manifest_compute_hash() {
     local file="$1"
     [[ -f "$file" ]] || return 1
 
-    local out
-    if command -v sha256sum >/dev/null 2>&1; then
-        out=$(sha256sum "$file" 2>/dev/null) || return 1
-    elif command -v shasum >/dev/null 2>&1; then
-        out=$(shasum -a 256 "$file" 2>/dev/null) || return 1
-    else
-        return 1
-    fi
+    local tool out
+    tool=$(_manifest_hash_cmd)
+    [[ -n "$tool" ]] || return 1
+    # $tool may be "shasum -a 256" — intentional word split.
+    # shellcheck disable=SC2086
+    out=$($tool "$file" 2>/dev/null) || return 1
     echo "${out%% *}"
+}
+
+# Hash many files in as few processes as possible. Reads NUL-separated paths on
+# stdin, prints one "<hash>  <path>" line per file, preserving input order
+# (xargs keeps order and splits batches to respect ARG_MAX). Emits nothing when
+# no hash tool exists. Callers pre-filter to existing files.
+_manifest_hash_stream() {
+    local tool
+    tool=$(_manifest_hash_cmd)
+    [[ -n "$tool" ]] || return 0
+    # $tool may be "shasum -a 256" — intentional word split.
+    # shellcheck disable=SC2086
+    xargs -0 $tool 2>/dev/null
 }
 
 # Linear lookup in MANIFEST_KEYS/VALUES. Echoes hash, returns 1 if missing.
@@ -81,15 +101,41 @@ manifest_load() {
 # A missing dest file is NOT drift — sync will simply rewrite it.
 manifest_check_drift() {
     SYNC_DRIFT_DETECTED=()
-    local i rel old_hash dest_abs cur_hash
+    [[ ${#MANIFEST_KEYS[@]} -gt 0 ]] || return 0
+    [[ -n "$(_manifest_hash_cmd)" ]] || return 0
+
+    # Gather every manifest entry whose dest still exists (missing = not drift).
+    local -a d_rel=() d_old=() d_abs=()
+    local i rel dest_abs
     for ((i = 0; i < ${#MANIFEST_KEYS[@]}; i++)); do
         rel="${MANIFEST_KEYS[$i]}"
-        old_hash="${MANIFEST_VALUES[$i]}"
         dest_abs="$REPO_ROOT/$rel"
         [[ -f "$dest_abs" ]] || continue
-        cur_hash=$(manifest_compute_hash "$dest_abs") || continue
-        if [[ "$cur_hash" != "$old_hash" ]]; then
-            SYNC_DRIFT_DETECTED+=("$rel")
+        d_rel+=("$rel")
+        d_old+=("${MANIFEST_VALUES[$i]}")
+        d_abs+=("$dest_abs")
+    done
+    [[ ${#d_abs[@]} -gt 0 ]] || return 0
+
+    # Hash them all in one batch, then zip results back by position.
+    local -a cur=()
+    local line
+    while IFS= read -r line; do
+        cur+=("${line%% *}")
+    done < <(printf '%s\0' "${d_abs[@]}" | _manifest_hash_stream)
+
+    # Unexpected line count → fall back to per-file hashing so correctness holds.
+    if [[ ${#cur[@]} -ne ${#d_abs[@]} ]]; then
+        cur=()
+        for dest_abs in "${d_abs[@]}"; do
+            cur+=("$(manifest_compute_hash "$dest_abs" 2>/dev/null || true)")
+        done
+    fi
+
+    for ((i = 0; i < ${#d_abs[@]}; i++)); do
+        [[ -n "${cur[$i]}" ]] || continue
+        if [[ "${cur[$i]}" != "${d_old[$i]}" ]]; then
+            SYNC_DRIFT_DETECTED+=("${d_rel[$i]}")
         fi
     done
 }
@@ -183,13 +229,32 @@ manifest_write() {
     done
 
     if [[ ${#SYNC_TOUCHED_PATHS[@]} -gt 0 ]]; then
+        # Collect touched files that still exist, hash them in one batch, then
+        # zip results back by position (xargs preserves order).
+        local -a t_rel=() t_abs=()
         for rel in "${SYNC_TOUCHED_PATHS[@]}"; do
             abs="$REPO_ROOT/$rel"
-            if [[ -f "$abs" ]]; then
-                hash=$(manifest_compute_hash "$abs") || continue
-                printf '%s\t%s\n' "$rel" "$hash" >> "$tmp"
-            fi
+            [[ -f "$abs" ]] || continue
+            t_rel+=("$rel")
+            t_abs+=("$abs")
         done
+        if [[ ${#t_abs[@]} -gt 0 ]]; then
+            local -a t_hash=()
+            local line
+            while IFS= read -r line; do
+                t_hash+=("${line%% *}")
+            done < <(printf '%s\0' "${t_abs[@]}" | _manifest_hash_stream)
+            if [[ ${#t_hash[@]} -ne ${#t_abs[@]} ]]; then
+                t_hash=()
+                for abs in "${t_abs[@]}"; do
+                    t_hash+=("$(manifest_compute_hash "$abs" 2>/dev/null || true)")
+                done
+            fi
+            for ((i = 0; i < ${#t_abs[@]}; i++)); do
+                [[ -n "${t_hash[$i]}" ]] || continue
+                printf '%s\t%s\n' "${t_rel[$i]}" "${t_hash[$i]}" >> "$tmp"
+            done
+        fi
     fi
 
     if [[ ! -s "$tmp" ]]; then

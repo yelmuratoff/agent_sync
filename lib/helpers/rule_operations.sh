@@ -163,8 +163,7 @@ append_imports() {
 
         for rule_file in "$rules_dir"/*.md; do
             if [[ -f "$rule_file" ]]; then
-                local basename
-                basename=$(basename "$rule_file")
+                local basename="${rule_file##*/}"
                 echo "@rules/${basename}"
             fi
         done
@@ -194,8 +193,7 @@ merge_rules_to_file() {
     local files_to_merge=()
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file")
+        local basename="${src_file##*/}"
         if matches_filter "$basename" "$include" "$exclude"; then
             files_to_merge+=("$src_file")
         fi
@@ -208,7 +206,7 @@ merge_rules_to_file() {
         return 0
     fi
 
-    ensure_dir "$(dirname "$dest_file")"
+    ensure_dir "${dest_file%/*}"
     rm -f "$dest_file" 2>/dev/null || true
 
     if [[ -n "$agents_file" ]] && [[ -f "$agents_file" ]]; then
@@ -257,8 +255,7 @@ copy_rules() {
     local files_to_process=()
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file")
+        local basename="${src_file##*/}"
         if matches_filter "$basename" "$include" "$exclude"; then
             files_to_process+=("$src_file")
         fi
@@ -282,8 +279,7 @@ copy_rules() {
 
     local count=0
     for src_file in "${files_to_process[@]}"; do
-        local basename
-        basename=$(basename "$src_file")
+        local basename="${src_file##*/}"
         local dest_file
 
         if [[ -n "$new_ext" ]]; then
@@ -339,8 +335,7 @@ sync_rules() {
     # 1. Copy & track expected output filenames
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        local basename
-        basename=$(basename "$src_file")
+        local basename="${src_file##*/}"
 
         if matches_filter "$basename" "$include" "$exclude"; then
             local dest_name
@@ -369,8 +364,7 @@ sync_rules() {
     # 2. Differential cleanup — remove managed files no longer in source
     for dest_file in "$dest_dir"/*; do
         [[ -f "$dest_file" ]] || continue
-        local basename
-        basename=$(basename "$dest_file")
+        local basename="${dest_file##*/}"
 
         local is_managed=false
         if [[ -n "$new_ext" ]]; then
@@ -426,7 +420,7 @@ inline_commands_to_file() {
     local src_file basename name desc
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
-        basename=$(basename "$src_file")
+        basename="${src_file##*/}"
         if ! matches_filter "$basename" "$include" "$exclude"; then
             continue
         fi
@@ -453,7 +447,7 @@ inline_commands_to_file() {
     if declare -f manifest_record_write >/dev/null 2>&1; then
         manifest_record_write "$target_file"
     fi
-    log_step "Appended command index to $(basename "$target_file")"
+    log_step "Appended command index to ${target_file##*/}"
 }
 
 # Convert each .ai/src/commands/<name>.md into a generated skill directory
@@ -492,7 +486,7 @@ sync_commands_as_skills() {
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
         local basename name skill_dir_name skill_dir skill_file
-        basename=$(basename "$src_file")
+        basename="${src_file##*/}"
         name="${basename%.md}"
 
         if ! matches_filter "$basename" "$include" "$exclude"; then
@@ -547,7 +541,8 @@ sync_commands_as_skills() {
     local d d_name
     for d in "$dest_dir"/command-*/; do
         [[ -d "$d" ]] || continue
-        d_name=$(basename "$d")
+        # Trailing slash from the */ glob: strip it before taking the leaf.
+        d_name="${d%/}"; d_name="${d_name##*/}"
         if [[ "$valid_dirs" != *"|${d_name}|"* ]]; then
             if [[ "$dry_run" == "true" ]]; then
                 log_step "Would remove obsolete generated skill: $d_name"

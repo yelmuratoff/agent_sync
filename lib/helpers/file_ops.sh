@@ -47,7 +47,7 @@ copy_file() {
         return 0
     fi
 
-    ensure_dir "$(dirname "$dest")"
+    ensure_dir "${dest%/*}"
     rm -f "$dest" 2>/dev/null || true
     cp "$src" "$dest"
 
@@ -117,8 +117,8 @@ sync_dir() {
 
     for item in "$src"/*; do
         [[ -e "$item" ]] || continue
-        local basename
-        basename=$(basename "$item")
+        # Glob results never carry a trailing slash, so ${item##*/} == basename.
+        local basename="${item##*/}"
 
         if matches_filter "$basename" "$include" "$exclude"; then
             source_items="$source_items|$basename|"
@@ -143,8 +143,7 @@ sync_dir() {
     local count_clean=0
     for dest_item in "$dest"/*; do
         [[ -e "$dest_item" ]] || continue
-        local basename
-        basename=$(basename "$dest_item")
+        local basename="${dest_item##*/}"
 
         if [[ "$source_items" != *"|$basename|"* ]]; then
             # Items the source filter would have skipped (include miss or
