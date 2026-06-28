@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.2
+
+### Changed
+
+- **Faster `sync`:** the sync engine does the same work with about half the process forks. Manifest hashing now runs as a single batched pass instead of one `sha256sum` per file (drift-check and write), per-tool config lookups resolve without per-call subshells, hot-loop `basename`/`dirname` calls use Bash parameter expansion, and the enabled-tools set is computed once per run rather than per tool. Generated output is byte-identical and `agentsync check` still passes; an 11-tool sync runs roughly 1.6× faster.
+
 ## 0.27.1
 
 ### Fixed
