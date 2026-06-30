@@ -40,8 +40,8 @@ When a doc gap is real, fix it in the **same release commit** (or a separate com
 5. **Update VERSION** — Write the new version number to `VERSION` (no `v` prefix, no trailing newline).
 6. **Commit** — `git add VERSION CHANGELOG.md <any doc files fixed above> && git commit -m "release: vX.Y.Z"`.
 7. **Leave the push to the user** — CI handles the rest:
-   - `auto-tag.yaml` creates the git tag when VERSION changes on `main`.
-   - `release.yaml` creates the GitHub Release using the CHANGELOG section as release notes.
+   - `auto-tag.yaml` creates the annotated git tag when VERSION changes on `main`, using the CHANGELOG section as the tag message.
+   - Releases are published as tags only — no GitHub Release is created. `agentsync update` discovers and pulls new versions from tags.
 
 ## CHANGELOG Format
 

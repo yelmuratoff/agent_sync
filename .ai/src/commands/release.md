@@ -49,6 +49,6 @@ Fix any doc gaps in the **same release commit** rather than punting to a "docs" 
 
 - CHANGELOG entries must describe user-facing impact, not implementation details.
 - Don't include changes that are internal refactors with no user-visible effect.
-- The `auto-tag.yaml` CI workflow creates the git tag when VERSION changes on main.
-- The `release.yaml` CI workflow creates the GitHub Release from the tag + CHANGELOG section.
+- The `auto-tag.yaml` CI workflow creates the annotated git tag (CHANGELOG section as the message) when VERSION changes on main.
+- Releases are tag-only — no GitHub Release is published. `agentsync update` pulls new versions from tags.
 - Never ship a release with known-stale docs to "fix later".
