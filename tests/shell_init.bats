@@ -34,6 +34,36 @@ teardown() { teardown_test_project; }
     [[ "$output" == *"AGENTSYNC_NO_AUTO_SYNC"* ]]
 }
 
+@test "shell-init: hook never cd's (zsh chpwd recursion regression)" {
+    run run_agentsync shell-init zsh
+    [ "$status" -eq 0 ]
+    # A `cd` inside the chpwd hook would re-fire the hook and recurse.
+    [[ "$output" != *"cd "* ]]
+    [[ "$output" == *"AGENTSYNC_REPO_ROOT="* ]]
+}
+
+@test "shell-init: hook guards against re-entrancy" {
+    run run_agentsync shell-init bash
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"_AGENTSYNC_BUSY"* ]]
+}
+
+@test "shell-init: zsh hook does not recurse on cd" {
+    command -v zsh >/dev/null 2>&1 || skip "zsh not installed"
+    mkdir -p proj/.ai/src
+    mkdir -p stub
+    printf '#!/bin/sh\nexit 0\n' > stub/agentsync
+    chmod +x stub/agentsync
+    run env PATH="$PWD/stub:$PATH" zsh -c "
+        eval \"\$(AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' shell-init zsh)\"
+        cd '$PWD/proj'
+        print OK
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"maximum nested"* ]]
+    [[ "$output" == *"OK"* ]]
+}
+
 @test "shell-init auto-detects zsh from \$SHELL" {
     run env SHELL=/usr/bin/zsh AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" shell-init
     [ "$status" -eq 0 ]

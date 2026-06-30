@@ -24,17 +24,22 @@ _shell_init_usage() {
 _shell_init_common() {
     cat <<'SNIPPET'
 _agentsync_autosync() {
+  # Never `cd` here: as a zsh chpwd hook this fires on every directory change,
+  # so a `cd` would re-trigger it and recurse (FUNCNEST blow-up). Point the sync
+  # at the project via AGENTSYNC_REPO_ROOT instead, and guard against re-entry.
+  [ -n "${_AGENTSYNC_BUSY:-}" ] && return 0
   [ -n "${AGENTSYNC_NO_AUTO_SYNC:-}" ] && return 0
   command -v agentsync >/dev/null 2>&1 || return 0
+  _AGENTSYNC_BUSY=1
   _agentsync_dir=$PWD
   while [ -n "$_agentsync_dir" ] && [ "$_agentsync_dir" != "/" ]; do
     if [ -d "$_agentsync_dir/.ai/src" ]; then
-      ( cd "$_agentsync_dir" && agentsync sync --if-stale ) || true
+      AGENTSYNC_REPO_ROOT="$_agentsync_dir" agentsync sync --if-stale || true
       break
     fi
     _agentsync_dir=${_agentsync_dir%/*}
   done
-  unset _agentsync_dir
+  unset _agentsync_dir _AGENTSYNC_BUSY
 }
 SNIPPET
 }
