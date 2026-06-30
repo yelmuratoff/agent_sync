@@ -91,3 +91,9 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"Usage: agentsync shell-init"* ]]
 }
+
+@test "shell-init --help recommends the eval form" {
+    run run_agentsync shell-init --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'eval "$(agentsync shell-init zsh)"'* ]]
+}

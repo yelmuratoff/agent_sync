@@ -268,7 +268,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 
 - `agentsync list` shows configured tools and status; `agentsync enable` / `disable <tool>` toggle them.
 - `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI).
-- **Keep outputs fresh automatically** (so you never forget to sync): `agentsync shell-init zsh >> ~/.zshrc` auto-syncs the nearest project whenever you `cd` into it (silent no-op when nothing changed); `agentsync setup-hooks [--pre-commit]` syncs on `git pull` / `checkout`; `agentsync sync --if-stale` syncs only when source changed since the last sync. See the README "Automation" section.
+- **Keep outputs fresh automatically** (so you never forget to sync): add `eval "$(agentsync shell-init zsh)"` to `~/.zshrc` to auto-sync the nearest project whenever you `cd` into it (silent no-op when nothing changed; eval'ing keeps it current across upgrades); `agentsync setup-hooks [--pre-commit]` syncs on `git pull` / `checkout`; `agentsync sync --if-stale` syncs only when source changed since the last sync. See the README "Automation" section.
 - `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
 - `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
 - `agentsync export` bundles `.ai/src/` into an archive; `agentsync import <src>` pulls a config from a repo, archive, or directory.

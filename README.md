@@ -387,11 +387,15 @@ Generated outputs regenerate from `.ai/src/`, so they go stale whenever you edit
 
 ### Shell hook (most hands-off)
 
+Add this to your `~/.zshrc` (or `~/.bashrc` with `bash`):
+
 ```bash
-agentsync shell-init zsh  >> ~/.zshrc      # or: shell-init bash >> ~/.bashrc
+eval "$(agentsync shell-init zsh)"
 ```
 
-Adds a hook that runs `agentsync sync --if-stale` for the nearest `.ai/` project whenever you `cd` into it (and when you open a shell there). It is a no-op — and silent — when nothing changed, so it costs nothing on directories that are already in sync. Across many projects, each self-heals the moment you start working in it. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the snippet.
+This regenerates the hook from `agentsync` each session — the recommended form, since upgrades and fixes apply automatically without re-editing your rc (the same pattern as `direnv`, `starship`, and `zoxide`). The hook runs `agentsync sync --if-stale` for the nearest `.ai/` project whenever you `cd` into it (and when you open a shell there). It is a no-op — and silent — when nothing changed, so it costs nothing on directories that are already in sync. Across many projects, each self-heals the moment you start working in it. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the line.
+
+Prefer to avoid the per-session `agentsync` call? Freeze a copy instead with `agentsync shell-init zsh >> ~/.zshrc`, but re-run it after each upgrade to pick up changes.
 
 ### Git hooks
 

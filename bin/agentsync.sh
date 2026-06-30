@@ -142,7 +142,7 @@ print_usage() {
     echo "    agentsync sync --if-stale"
     echo "    agentsync check"
     echo "    agentsync setup-hooks --pre-commit"
-    echo "    agentsync shell-init zsh >> ~/.zshrc"
+    echo "    eval \"\$(agentsync shell-init zsh)\"   # add to ~/.zshrc"
     echo "    agentsync generate"
     echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
     echo "    agentsync export"
