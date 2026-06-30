@@ -100,7 +100,8 @@ print_usage() {
     echo "    $(_cyan "adopt")          Promote a manual edit in a generated file back into .ai/src/"
     echo "    $(_cyan "profile")        Manage config-home profiles (work/personal variants)"
     echo "    $(_cyan "generate")       Print a prompt to auto-generate project-specific rules"
-    echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync"
+    echo "    $(_cyan "setup-hooks")    Install git hooks for automatic sync (--pre-commit optional)"
+    echo "    $(_cyan "shell-init")     Print a shell hook that auto-syncs on directory change"
     echo "    $(_cyan "export")         Bundle .ai/src/ into a shareable archive"
     echo "    $(_cyan "import")         Import config from GitHub, archive, or directory"
     echo "    $(_cyan "refresh")        Pull new template files into existing .ai/src/"
@@ -116,6 +117,7 @@ print_usage() {
     echo "    --profile <name>  Sync personal tools plus the named config-home profile"
     echo "    --dry-run         Preview changes without writing"
     echo "    --force           Overwrite destination files even if they were edited manually"
+    echo "    --if-stale        Sync only when source changed since the last sync (else no-op)"
     echo "    --workspace       Run sync in every .ai/ below cwd (bottom-up alphabetical)"
     echo ""
     echo "  $(_green "EXAMPLES")"
@@ -137,7 +139,10 @@ print_usage() {
     echo "    agentsync sync --only claude,cursor"
     echo "    agentsync sync --profile hub"
     echo "    agentsync sync --dry-run"
+    echo "    agentsync sync --if-stale"
     echo "    agentsync check"
+    echo "    agentsync setup-hooks --pre-commit"
+    echo "    agentsync shell-init zsh >> ~/.zshrc"
     echo "    agentsync generate"
     echo "    agentsync generate React + TypeScript + Next.js project with Prisma ORM"
     echo "    agentsync export"
@@ -256,7 +261,7 @@ main() {
     # These subcommands don't parse their own --help; show the top-level usage
     # instead of mis-reading -h/--help as a positional argument.
     case "$command" in
-        check|setup-hooks|doctor|list|ls|show|diff|disable|resolve)
+        check|doctor|list|ls|show|diff|disable|resolve)
             case "${2:-}" in
                 --help|-h) print_usage; exit 0 ;;
             esac
@@ -287,6 +292,7 @@ main() {
             ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
+        shell-init)    _need logging shell_init;                      shift; cmd_shell_init "$@" ;;
         generate|gen)  _need prompts generate;                         shift; cmd_generate "$*" ;;
         export)        _need yaml export;                              shift; cmd_export "$@" ;;
         import)        _need import;                                   shift; cmd_import "$@" ;;
