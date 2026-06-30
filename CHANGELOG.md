@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.1
+
+### Fixed
+
+- **`shell-init` no longer breaks zsh on `cd`:** the auto-sync hook installed by `agentsync shell-init` ran an internal `cd`, which — being a zsh `chpwd` hook — re-triggered itself and aborted every directory change with `maximum nested function level reached`. The hook now points the sync at the project via `AGENTSYNC_REPO_ROOT` instead of `cd`-ing, and guards against re-entry. If you installed the hook from 0.28.0, remove the old block from your rc file and re-run `agentsync shell-init zsh >> ~/.zshrc`.
+
 ## 0.28.0
 
 ### Added
