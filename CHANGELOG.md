@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.28.3
+
+### Fixed
+
+- **`agentsync update` no longer misreports a moved tag as a network error:** when an upstream release tag had moved, the `--tags` fetch refused to overwrite the stale local copy and aborted the whole update with a misleading "Check your network connection". The install mirrors upstream and never owns tags, so the fetch now force-syncs them; a genuine fetch failure prints git's real error instead of always blaming the network.
+
+### Changed
+
+- **Releases are published as tags only:** the GitHub Release workflow has been removed, so cutting a version no longer creates a noisy GitHub Release entry. The annotated git tag still carries the CHANGELOG section as its message, and `agentsync update` continues to discover and pull new versions from tags — the update flow is unchanged.
+
 ## 0.28.2
 
 ### Changed
