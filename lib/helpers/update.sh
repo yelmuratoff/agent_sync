@@ -28,6 +28,19 @@ _update_reconcile_install() {
     )
 }
 
+# `--force` on the tag fetch is load-bearing: the install mirrors upstream and
+# never owns tags, so when a release tag is moved upstream a plain `--tags` fetch
+# rejects it as "would clobber existing tag" and aborts the whole update. On
+# failure, echoes git's own error to stdout so the caller surfaces the real cause.
+# Usage: _update_fetch "<install_dir>"
+_update_fetch() {
+    local dir="$1"
+    local out
+    out=$(git -C "$dir" fetch --quiet --force --tags origin main 2>&1) && return 0
+    printf '%s' "$out"
+    return 1
+}
+
 cmd_update() {
     local strict=false
     local arg
@@ -69,8 +82,15 @@ cmd_update() {
     echo "  Checking for updates..."
     cd "$install_dir" || exit 1
 
-    if ! git fetch --quiet --tags origin main 2>/dev/null; then
-        echo "  $(_red "Error"): Failed to fetch updates. Check your network connection." >&2
+    local fetch_err
+    if ! fetch_err=$(_update_fetch "$install_dir"); then
+        echo "  $(_red "Error"): Failed to fetch updates from GitHub." >&2
+        if [[ -n "$fetch_err" ]]; then
+            while IFS= read -r line; do
+                echo "    $line" >&2
+            done <<< "$fetch_err"
+        fi
+        echo "  $(_dim "Check your network connection and that the remote is reachable.")" >&2
         exit 1
     fi
 
@@ -297,7 +317,6 @@ _show_changelog_sections() {
     done <<< "$sorted_versions"
 }
 
-# Fetch latest version from GitHub in background and write to cache file.
 # Called as a fire-and-forget subshell — never blocks the main process.
 _bg_fetch_latest_version() {
     local cache_file="$1"

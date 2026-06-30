@@ -55,6 +55,38 @@ _advance_upstream() {
 _install_head() { git -C "$INSTALL" rev-parse HEAD; }
 _install_origin() { git -C "$INSTALL" rev-parse origin/main; }
 
+@test "update: fetch force-syncs a local tag that diverges from upstream" {
+    # Local install has tag 0.0.1 at HEAD; upstream moves 0.0.1 to a new commit.
+    # A plain `git fetch --tags` rejects this ("would clobber existing tag") and
+    # aborts the update — _update_fetch must force past it.
+    git -C "$INSTALL" tag 0.0.1
+    local work
+    work="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_work.XXXXXX")"
+    git clone --quiet "$UPSTREAM" "$work" 2>/dev/null
+    (
+        cd "$work"
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        echo "v2" > file.txt
+        git commit --quiet -am "upstream change"
+        git tag 0.0.1
+        git push --quiet origin main
+        git push --quiet origin 0.0.1
+    )
+    rm -rf "$work"
+
+    run _update_fetch "$INSTALL"
+    [ "$status" -eq 0 ]
+    [ "$(_install_origin)" = "$(git -C "$INSTALL" rev-parse refs/tags/0.0.1)" ]
+}
+
+@test "update: fetch surfaces git's error on failure instead of hiding it" {
+    git -C "$INSTALL" remote set-url origin "file:///nonexistent/agentsync_missing_remote"
+    run _update_fetch "$INSTALL"
+    [ "$status" -eq 1 ]
+    [ -n "$output" ]
+}
+
 @test "update: reconcile fast-forwards a clean install dir" {
     _advance_upstream "v2"
     run _update_reconcile_install "$INSTALL"

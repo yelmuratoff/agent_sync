@@ -3,4 +3,4 @@
 # knob, so the info/style codes that `-S warning` would drop are listed here to
 # keep editors, hooks, and local runs consistent with CI.
 external-sources=true
-disable=SC1091,SC2129,SC2016,SC2005,SC2001
+disable=SC1091,SC2129,SC2016,SC2005,SC2001,SC2153
