@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.28.0
+
+### Added
+
+- **Auto-sync on directory change — `agentsync shell-init`:** prints a shell hook (`shell-init zsh|bash`, shell auto-detected from `$SHELL`) that runs `agentsync sync --if-stale` for the nearest `.ai/` project whenever you `cd` into it — and when you open a shell there — so generated rules/skills stop going stale between edits across many projects. It is a silent no-op when nothing changed, so it costs nothing in already-synced directories. Append it once: `agentsync shell-init zsh >> ~/.zshrc`. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the snippet.
+- **`agentsync sync --if-stale`:** a cheap staleness probe that runs a full sync only when a source input is newer than `.ai/.sync-manifest`, and otherwise exits silently. It is the primitive the shell and pre-commit hooks build on, safe to call on every prompt.
+- **`agentsync setup-hooks --pre-commit`:** optionally installs a pre-commit hook that runs `sync --if-stale` before each commit.
+
+### Fixed
+
+- **Git hooks now actually sync in real projects:** `setup-hooks` previously wrote a hook body that only invoked the in-repo `lib/sync.sh` or a `dart` wrapper, so in a normally installed project the `post-merge` / `post-checkout` hooks silently did nothing. They now call the installed `agentsync` binary (falling back to the in-repo engine), and every hook is non-fatal — a failed sync warns but never blocks the git operation.
+
 ## 0.27.2
 
 ### Changed

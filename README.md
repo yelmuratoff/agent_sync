@@ -68,7 +68,7 @@ The frontmatter above is the always-on default. Give a rule `paths:` frontmatter
 - [Supported Tools](#supported-tools)
 - [Format Conversions](#format-conversions)
 - [Adding a New Tool](#adding-a-new-tool)
-- [Git Hooks](#git-hooks)
+- [Automation](#automation)
 - [Gitignore](#gitignore)
 - [How Sync Works](#how-sync-works)
 - [Customization workflow](#customization-workflow)
@@ -185,7 +185,7 @@ agentsync <command> [options]
 | Command                  | Alias | Description                                                                                    |
 | ------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
 | `init [dir]`             |       | Create `.ai/` structure with starter templates                                                 |
-| `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--profile`, `--dry-run`, `--force`, `--workspace`) |
+| `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--profile`, `--dry-run`, `--force`, `--if-stale`, `--workspace`) |
 | `check`                  |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
 | `enable <tools…>`        |       | Opt in to one or more tools (scaffolds editable settings/hooks payloads)                        |
 | `disable <tools…>`       |       | Opt out of one or more tools                                                                    |
@@ -202,7 +202,8 @@ agentsync <command> [options]
 | `profile <cmd>`          |       | Manage config-home profiles: `add`, `list`, `remove` (work/personal tool variants)             |
 | `doctor`                 |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
 | `generate [context]`     | `gen` | Print AI prompt for project-specific config generation                                         |
-| `setup-hooks`            |       | Install git hooks for auto-sync on pull/checkout                                               |
+| `setup-hooks`            |       | Install git hooks for auto-sync on pull/checkout (`--pre-commit` to add a pre-commit hook)      |
+| `shell-init [zsh\|bash]` |       | Print a shell hook that auto-syncs the nearest project on directory change                      |
 | `export`                 |       | Bundle `.ai/src/` into a shareable archive                                                      |
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
@@ -380,13 +381,35 @@ cp .ai/src/tools/_TEMPLATE.yaml .ai/src/tools/newtool.yaml
 agentsync sync --only newtool
 ```
 
-## Git Hooks
+## Automation
+
+Generated outputs regenerate from `.ai/src/`, so they go stale whenever you edit the source (or pull a teammate's change) and forget to re-sync. Three mechanisms keep them current without you remembering — pick whichever fits your workflow (they compose).
+
+### Shell hook (most hands-off)
 
 ```bash
-agentsync setup-hooks
+agentsync shell-init zsh  >> ~/.zshrc      # or: shell-init bash >> ~/.bashrc
 ```
 
-Installs `post-merge` and `post-checkout` hooks. `agentsync sync` runs automatically on `git pull` and `git checkout`. Safe to run multiple times.
+Adds a hook that runs `agentsync sync --if-stale` for the nearest `.ai/` project whenever you `cd` into it (and when you open a shell there). It is a no-op — and silent — when nothing changed, so it costs nothing on directories that are already in sync. Across many projects, each self-heals the moment you start working in it. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the snippet.
+
+### Git hooks
+
+```bash
+agentsync setup-hooks                 # post-merge + post-checkout
+agentsync setup-hooks --pre-commit    # also add a pre-commit hook
+```
+
+Runs `agentsync sync` automatically after `git pull` / `git checkout`, so pulling a teammate's `.ai/src/` change regenerates your outputs. `--pre-commit` adds a hook that runs `sync --if-stale` before each commit. Every hook is non-fatal: a failed sync warns but never blocks the git operation. Safe to run multiple times (the block is replaced in place).
+
+### Manual / CI
+
+```bash
+agentsync sync --if-stale    # sync only if source changed since the last sync
+agentsync check              # verify outputs match source (exit 0/1, CI gate)
+```
+
+`--if-stale` is the cheap probe the shell and pre-commit hooks build on; `check` is the authoritative drift gate for CI.
 
 ## Gitignore
 
