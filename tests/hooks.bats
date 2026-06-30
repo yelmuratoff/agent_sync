@@ -51,3 +51,42 @@ teardown() { teardown_test_project; }
     grep -q "existing hook" .git/hooks/post-merge
     grep -q "AGENTSYNC AUTO SYNC" .git/hooks/post-merge
 }
+
+@test "setup-hooks: hook invokes the installed agentsync binary" {
+    run run_agentsync setup-hooks
+    [ "$status" -eq 0 ]
+    grep -q "command -v agentsync" .git/hooks/post-merge
+    grep -q "agentsync sync" .git/hooks/post-merge
+}
+
+@test "setup-hooks: hook is non-fatal on sync failure" {
+    run run_agentsync setup-hooks
+    [ "$status" -eq 0 ]
+    # The sync call is OR'd with a fallback so a failed sync never blocks git.
+    grep -q "agentsync sync ||" .git/hooks/post-merge
+}
+
+@test "setup-hooks: default run does not install a pre-commit hook" {
+    run run_agentsync setup-hooks
+    [ "$status" -eq 0 ]
+    [ ! -f ".git/hooks/pre-commit" ]
+}
+
+@test "setup-hooks --pre-commit installs a pre-commit hook" {
+    run run_agentsync setup-hooks --pre-commit
+    [ "$status" -eq 0 ]
+    [ -f ".git/hooks/pre-commit" ]
+    [ -x ".git/hooks/pre-commit" ]
+    grep -q "AGENTSYNC AUTO SYNC" .git/hooks/pre-commit
+}
+
+@test "setup-hooks --pre-commit uses --if-stale" {
+    run run_agentsync setup-hooks --pre-commit
+    [ "$status" -eq 0 ]
+    grep -q "agentsync sync --if-stale" .git/hooks/pre-commit
+}
+
+@test "setup-hooks rejects unknown options" {
+    run run_agentsync setup-hooks --bogus
+    [ "$status" -eq 2 ]
+}
