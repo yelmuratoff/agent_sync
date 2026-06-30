@@ -192,6 +192,44 @@ teardown() { teardown_test_project; }
     [ ! -f ".claude/rules/temp-rule.md" ]
 }
 
+# ── --if-stale probe ────────────────────────────────────────────────────────
+# The manifest mtime is pinned with `touch -t` (POSIX) so these stay
+# deterministic regardless of how the clone preserved sub-second mtimes.
+
+@test "drift: --if-stale is a no-op when source is older than the manifest" {
+    # Manifest in the future → nothing under .ai/src/ is newer → fresh.
+    touch -t 203012312359 .ai/.sync-manifest
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --if-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Starting AgentSync Config Sync"* ]]
+}
+
+@test "drift: --if-stale leaves the manifest untouched when fresh" {
+    touch -t 203012312359 .ai/.sync-manifest
+    local before
+    before=$(shasum -a 256 .ai/.sync-manifest | awk '{print $1}')
+    env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --if-stale >/dev/null
+    local after
+    after=$(shasum -a 256 .ai/.sync-manifest | awk '{print $1}')
+    [ "$before" = "$after" ]
+}
+
+@test "drift: --if-stale runs a full sync when source is newer than the manifest" {
+    # Manifest in the past → every source file is newer → stale.
+    touch -t 200001010000 .ai/.sync-manifest
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --if-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Starting AgentSync Config Sync"* ]]
+}
+
+@test "drift: --if-stale treats a missing manifest as stale and re-syncs" {
+    rm .ai/.sync-manifest
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync --if-stale
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Starting AgentSync Config Sync"* ]]
+    [ -f ".ai/.sync-manifest" ]
+}
+
 # ── First-run baseline ──────────────────────────────────────────────────────
 
 @test "drift: first-sync baseline message printed" {

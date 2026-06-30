@@ -59,6 +59,7 @@ fi
 # Global variables
 DRY_RUN="false"
 FORCE_SYNC="false"
+IF_STALE="false"
 ONLY_TOOLS=""
 SKIP_TOOLS=""
 SELECTED_PROFILE=""
@@ -67,8 +68,8 @@ ALLOW_POST_SYNC="${AGENTSYNC_ALLOW_POST_SYNC:-false}"
 SYNCED_COUNT=0
 SKIPPED_COUNT=0
 TOTAL_COUNT=0
-# Set true once the manifest is loaded so the sweep helpers (sync_may_prune)
-# distinguish a real sync run from a primitive/standalone helper call.
+# Gates sync_may_prune: pruning is allowed only on a real sync run (manifest
+# loaded), never on a standalone/primitive helper call.
 SYNC_MANIFEST_ACTIVE="false"
 SYNC_PRESERVED_COUNT=0
 PROJECT_CONFIG_PATH=""
@@ -118,6 +119,7 @@ Options:
   --profile <name>  Also sync this profile (default: personal + active profiles)
   --dry-run         Show what would be copied without making changes
   --force           Overwrite destination files even if they were edited manually
+  --if-stale        Sync only when source changed since the last sync (else no-op)
   --help            Show this help message
 EOF
 }
@@ -205,6 +207,10 @@ parse_args() {
                 ;;
             --force)
                 FORCE_SYNC="true"
+                shift
+                ;;
+            --if-stale)
+                IF_STALE="true"
                 shift
                 ;;
             --help|-h)
@@ -769,6 +775,39 @@ _resolve_sources() {
     fi
 }
 
+# Cheap staleness probe for --if-stale: true (0) when generated outputs may be
+# stale — the manifest is missing, or any source input has a newer mtime than it.
+# mtime + O(stat) only; deliberately not authoritative (use `check` for that).
+# Reliable for the local-edit case but not after a pull (git resets mtimes on
+# checkout), which is why the post-merge/checkout hooks run a full sync instead.
+# Must run after _resolve_sources so SOURCE_* and PROJECT_CONFIG_PATH are set.
+_sync_is_stale() {
+    local manifest
+    manifest=$(manifest_path)
+    [[ -f "$manifest" ]] || return 0
+
+    local src="$REPO_ROOT/.ai/src"
+    local -a roots=()
+    [[ -d "$src" ]] && roots+=("$src")
+    [[ -d "$REPO_ROOT/.ai/profiles" ]] && roots+=("$REPO_ROOT/.ai/profiles")
+    [[ -n "$PROJECT_CONFIG_PATH" && -f "$PROJECT_CONFIG_PATH" ]] && roots+=("$PROJECT_CONFIG_PATH")
+
+    # Honor source.* overrides that point outside .ai/src.
+    local rel abs
+    for rel in "$SOURCE_AGENTS" "$SOURCE_RULES" "$SOURCE_SKILLS" "$SOURCE_COMMANDS" "$SOURCE_SUBAGENTS"; do
+        [[ -n "$rel" ]] || continue
+        if [[ "$rel" == /* ]]; then abs="$rel"; else abs="$REPO_ROOT/$rel"; fi
+        [[ "$abs" == "$src" || "$abs" == "$src"/* ]] && continue
+        [[ -e "$abs" ]] && roots+=("$abs")
+    done
+
+    [[ ${#roots[@]} -gt 0 ]] || return 0
+
+    local newer
+    newer=$(find "${roots[@]}" -newer "$manifest" -print 2>/dev/null | head -n 1 || true)
+    [[ -n "$newer" ]]
+}
+
 # Append a tool's resolved dest paths to ENABLED_DEST_PATHS (cleanup protection)
 # and GENERATED_GITIGNORE_PATHS (gitignore payload). Directory-type targets get a
 # trailing slash so .gitignore matches the whole tree.
@@ -845,9 +884,8 @@ _snapshot_base_sources() {
     fi
 }
 
-# Build the tool catalog (ALL_TOOLS) and the profiles to sync this run
-# (PROFILES_TO_SYNC: the --profile name, else every active profile). Exits if the
-# base catalog is empty.
+# PROFILES_TO_SYNC holds the --profile name, else every active profile. Exits if
+# the base catalog is empty.
 _build_tool_catalog() {
     PROFILES_TO_SYNC=()
     local _p
@@ -943,7 +981,6 @@ _run_profile_passes() {
     done
 }
 
-# Update .gitignore, persist the manifest, and print the run summary.
 _finalize_run() {
     if [[ "$DRY_RUN" != "true" ]] && [[ "$UPDATE_GITIGNORE" == "true" ]]; then
         log_separator
@@ -971,10 +1008,19 @@ _finalize_run() {
 # Main entry point
 main() {
     parse_args "$@"
-    _print_banner
 
     _load_run_config
     _resolve_sources
+
+    # --if-stale short-circuit: skip the run, silently, when no source input is
+    # newer than the manifest. Silence on the fresh path is load-bearing — the
+    # shell-init hook calls this on every cd and must stay quiet when nothing
+    # changed; output appears only when a real sync runs.
+    if [[ "$IF_STALE" == "true" ]] && ! _sync_is_stale; then
+        return 0
+    fi
+
+    _print_banner
 
     # `shared:` overlay — must run AFTER child SOURCE_* resolution so child files
     # take precedence, and BEFORE any tool sync reads them. Torn down by the EXIT
