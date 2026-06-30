@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.2
+
+### Changed
+
+- **`shell-init` now recommends the `eval` form:** the help, README, and bundled skill now point to `eval "$(agentsync shell-init zsh)"` in your rc file rather than appending a frozen copy with `>>`. Eval-ing regenerates the hook from `agentsync` each session, so upgrades and fixes apply automatically without re-editing your rc (the same pattern as direnv/starship/zoxide). Appending the snippet directly still works for anyone who prefers to avoid the per-session call.
+
 ## 0.28.1
 
 ### Fixed
