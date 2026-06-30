@@ -251,7 +251,6 @@ cmd_engine() {
 main() {
     local command="${1:-help}"
 
-    # Update check for interactive commands
     case "$command" in
         sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|profile|help|--help|-h)
             check_for_updates
