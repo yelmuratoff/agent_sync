@@ -68,6 +68,12 @@ ALLOW_POST_SYNC="${AGENTSYNC_ALLOW_POST_SYNC:-false}"
 SYNCED_COUNT=0
 SKIPPED_COUNT=0
 TOTAL_COUNT=0
+# Display names of tools that were not synced (disabled or CLI-filtered),
+# reported as one list at the end instead of a line each.
+declare -a SKIPPED_TOOL_NAMES=()
+# Set per tool by sync_tool/cleanup_tool: did it print anything? Gates the
+# blank line between tools so silent skips leave no gaps.
+_TOOL_PRINTED_OUTPUT="false"
 # Gates sync_may_prune: pruning is allowed only on a real sync run (manifest
 # loaded), never on a standalone/primitive helper call.
 SYNC_MANIFEST_ACTIVE="false"
@@ -613,11 +619,13 @@ sync_tool() {
     display=$(tool_display_name "$tool_name")
 
     if ! should_sync_tool "$tool_name"; then
-        log_info "Skipping $display (filtered by CLI)"
+        SKIPPED_TOOL_NAMES+=("$display")
         ((SKIPPED_COUNT++)) || true
+        _TOOL_PRINTED_OUTPUT="false"
         return 0
     fi
 
+    _TOOL_PRINTED_OUTPUT="true"
     _resolve_tool_dests "$tool_name"
 
     log_info "Syncing $display..."
@@ -647,12 +655,11 @@ cleanup_tool() {
     local tool_name="$1"
     local display
     display=$(tool_display_name "$tool_name")
+    SKIPPED_TOOL_NAMES+=("$display")
+    ((SKIPPED_COUNT++)) || true
+    _TOOL_PRINTED_OUTPUT="false"
 
-    [[ "$DEFAULT_CLEANUP" != "true" ]] && {
-        log_info "Skipping $display (disabled, cleanup off)"
-        ((SKIPPED_COUNT++)) || true
-        return 0
-    }
+    [[ "$DEFAULT_CLEANUP" != "true" ]] && return 0
 
     local cleaned=false
     local key raw abs
@@ -668,12 +675,12 @@ cleanup_tool() {
         fi
     done
 
+    # A removal is a real action worth showing; a pure skip stays silent and is
+    # reported only in the end-of-run list.
     if [[ "$cleaned" == "true" ]]; then
         log_info "Cleaned up $display (disabled)"
-    else
-        log_info "Skipping $display (disabled)"
+        _TOOL_PRINTED_OUTPUT="true"
     fi
-    ((SKIPPED_COUNT++)) || true
 }
 
 # Verify the global config exists, locate the project config, and apply its
@@ -943,7 +950,9 @@ _run_personal_pass() {
         else
             cleanup_tool "$t"
         fi
-        echo ""
+        if [[ "$_TOOL_PRINTED_OUTPUT" == "true" ]]; then
+            echo ""
+        fi
     done
 }
 
@@ -974,7 +983,9 @@ _run_profile_passes() {
             [[ -z "$t" ]] && continue
             ((TOTAL_COUNT++)) || true
             sync_tool "$t"
-            echo ""
+            if [[ "$_TOOL_PRINTED_OUTPUT" == "true" ]]; then
+                echo ""
+            fi
         done < <(profile_tools "$_p")
 
         profile_cleanup_overlay
@@ -998,6 +1009,15 @@ _finalize_run() {
     if [[ $SYNC_PRESERVED_COUNT -gt 0 ]]; then
         log_warning "Preserved $SYNC_PRESERVED_COUNT user-added file(s) not in .ai/src/ — move them into .ai/src/ to manage them, or re-run with --force to prune."
     fi
+    if [[ ${#SKIPPED_TOOL_NAMES[@]} -gt 0 ]]; then
+        local _joined="" _name
+        for _name in "${SKIPPED_TOOL_NAMES[@]}"; do
+            [[ -n "$_joined" ]] && _joined+=", "
+            _joined+="$_name"
+        done
+        log_info "Skipped: $_joined"
+    fi
+
     local summary="Synced $SYNCED_COUNT/$TOTAL_COUNT tools"
     [[ $SKIPPED_COUNT -gt 0 ]] && summary="$summary ($SKIPPED_COUNT skipped)"
     [[ "$DRY_RUN" == "true" ]] && summary="$summary (dry-run)"
