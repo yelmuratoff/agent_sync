@@ -20,10 +20,10 @@ cleanup_path() {
 
     if [[ -e "$target" ]]; then
         if [[ "$dry_run" == "true" ]]; then
-            log_step "Would remove: $target (dry-run)"
+            log_step "Would remove: $(display_path "$target") (dry-run)"
         else
             rm -rf "$target"
-            log_step "Removed: $target"
+            log_step "Removed: $(display_path "$target")"
         fi
         return 0
     fi
@@ -43,7 +43,7 @@ copy_file() {
     fi
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src → $dest (dry-run)"
+        log_step "$(display_path "$src") → $(display_path "$dest") (dry-run)"
         return 0
     fi
 
@@ -55,7 +55,7 @@ copy_file() {
         manifest_record_write "$dest"
     fi
 
-    log_step "$src → $dest"
+    log_step "$(display_path "$src") → $(display_path "$dest")"
 }
 
 # Decide whether an extraneous destination entry may be pruned during a sync.
@@ -108,6 +108,10 @@ sync_dir() {
         return 1
     fi
 
+    local src_disp dest_disp
+    src_disp=$(display_path "$src")
+    dest_disp=$(display_path "$dest")
+
     if [[ "$dry_run" != "true" ]]; then
         ensure_dir "$dest"
     fi
@@ -154,14 +158,14 @@ sync_dir() {
                 continue
             fi
             if ! sync_may_prune "$dest_item"; then
-                sync_note_preserved "$dest/$basename" "$dry_run"
+                sync_note_preserved "$dest_disp/$basename" "$dry_run"
                 continue
             fi
             if [[ "$dry_run" == "true" ]]; then
-                log_step "Would remove: $dest/$basename (extraneous)"
+                log_step "Would remove: $dest_disp/$basename (extraneous)"
             else
                 rm -rf "$dest_item"
-                log_step "Removed: $dest/$basename"
+                log_step "Removed: $dest_disp/$basename"
             fi
             count_clean=$((count_clean + 1))
         fi
@@ -170,8 +174,8 @@ sync_dir() {
     local extra=""
     [[ -n "$include" ]] && extra="${extra}, include='$include'"
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src/ → $dest/ ($count_copy updates, $count_clean cleanups)${extra} (dry-run)"
+        log_step "$src_disp/ → $dest_disp/ ($count_copy updates, $count_clean cleanups)${extra} (dry-run)"
     else
-        log_step "$src/ → $dest/ ($count_copy updates, $count_clean cleanups)${extra}"
+        log_step "$src_disp/ → $dest_disp/ ($count_copy updates, $count_clean cleanups)${extra}"
     fi
 }

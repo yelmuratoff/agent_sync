@@ -65,6 +65,26 @@ log_step() {
     echo "   📁 ${msg}"
 }
 
+# Abbreviate an absolute path for readable log output: strip the repo-root
+# prefix (the common case), else fold $HOME to ~, else leave it absolute.
+# Presentation only — never feed the result back in as a real path.
+display_path() {
+    local path="$1"
+    local root="${REPO_ROOT:-}"
+    if [[ -n "$root" ]]; then
+        [[ "$path" == "$root" ]] && { echo "."; return 0; }
+        [[ "$path" == "$root"/* ]] && { echo "${path#"$root"/}"; return 0; }
+    fi
+    local home="${HOME:-}"
+    if [[ -n "$home" ]] && [[ "$path" == "$home"/* ]]; then
+        # Literal ~ for display; the result is never used as a real path.
+        # shellcheck disable=SC2088
+        echo "~/${path#"$home"/}"
+        return 0
+    fi
+    echo "$path"
+}
+
 # ✅ [DONE] Final summary
 log_done() {
     local msg="$1"

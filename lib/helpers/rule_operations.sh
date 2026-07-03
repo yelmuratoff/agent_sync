@@ -190,6 +190,10 @@ merge_rules_to_file() {
         return 1
     fi
 
+    local src_disp dest_disp
+    src_disp=$(display_path "$src_dir")
+    dest_disp=$(display_path "$dest_file")
+
     local files_to_merge=()
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
@@ -202,7 +206,7 @@ merge_rules_to_file() {
     if [[ "$dry_run" == "true" ]]; then
         local extra=""
         [[ -n "$agents_file" ]] && extra=" +agents"
-        log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged${extra}) (dry-run)"
+        log_step "$src_disp/ → $dest_disp (${#files_to_merge[@]} files merged${extra}) (dry-run)"
         return 0
     fi
 
@@ -232,7 +236,7 @@ merge_rules_to_file() {
         manifest_record_write "$dest_file"
     fi
 
-    log_step "$src_dir/ → $dest_file (${#files_to_merge[@]} files merged)"
+    log_step "$src_disp/ → $dest_disp (${#files_to_merge[@]} files merged)"
 }
 
 # Copy rule files from source to destination, optionally changing extensions and
@@ -252,6 +256,10 @@ copy_rules() {
         return 1
     fi
 
+    local src_disp dest_disp
+    src_disp=$(display_path "$src_dir")
+    dest_disp=$(display_path "$dest_dir")
+
     local files_to_process=()
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
@@ -266,7 +274,7 @@ copy_rules() {
         [[ -n "$header" ]] && extra="${extra}, +header"
         [[ -n "$include" ]] && extra="${extra}, include='$include'"
         [[ -n "$exclude" ]] && extra="${extra}, exclude='$exclude'"
-        log_step "$src_dir/ → $dest_dir/ (${#files_to_process[@]} files${extra}) (dry-run)"
+        log_step "$src_disp/ → $dest_disp/ (${#files_to_process[@]} files${extra}) (dry-run)"
         return 0
     fi
 
@@ -303,7 +311,7 @@ copy_rules() {
 
     local extra=""
     [[ -n "$header" ]] && extra="${extra}, +header"
-    log_step "$src_dir/ → $dest_dir/ ($count files${extra})"
+    log_step "$src_disp/ → $dest_disp/ ($count files${extra})"
 }
 
 # Sync rule files with differential cleanup — only removes files that were
@@ -323,6 +331,10 @@ sync_rules() {
         log_warning "Rules source not found: $src_dir"
         return 1
     fi
+
+    local src_disp dest_disp
+    src_disp=$(display_path "$src_dir")
+    dest_disp=$(display_path "$dest_dir")
 
     if [[ "$dry_run" != "true" ]]; then
         ensure_dir "$dest_dir"
@@ -375,14 +387,14 @@ sync_rules() {
 
         if [[ "$is_managed" == "true" ]] && [[ "$valid_dest_files" != *"|$basename|"* ]]; then
             if ! sync_may_prune "$dest_file"; then
-                sync_note_preserved "$dest_dir/$basename" "$dry_run"
+                sync_note_preserved "$dest_disp/$basename" "$dry_run"
                 continue
             fi
             if [[ "$dry_run" == "true" ]]; then
-                log_step "Would remove: $dest_dir/$basename (obsolete)"
+                log_step "Would remove: $dest_disp/$basename (obsolete)"
             else
                 rm -f "$dest_file"
-                log_step "Removed: $dest_dir/$basename"
+                log_step "Removed: $dest_disp/$basename"
             fi
             count_clean=$((count_clean + 1))
         fi
@@ -391,9 +403,9 @@ sync_rules() {
     local extra=""
     [[ -n "$include" ]] && extra="${extra}, include='$include'"
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_dir/ → $dest_dir/ ($count_copy updates, $count_clean cleanups)${extra} (dry-run)"
+        log_step "$src_disp/ → $dest_disp/ ($count_copy updates, $count_clean cleanups)${extra} (dry-run)"
     else
-        log_step "$src_dir/ → $dest_dir/ ($count_copy updates, $count_clean cleanups)${extra}"
+        log_step "$src_disp/ → $dest_disp/ ($count_copy updates, $count_clean cleanups)${extra}"
     fi
 }
 
@@ -475,6 +487,10 @@ sync_commands_as_skills() {
         return 0
     fi
 
+    local src_disp dest_disp
+    src_disp=$(display_path "$src_dir")
+    dest_disp=$(display_path "$dest_dir")
+
     if [[ "$dry_run" != "true" ]]; then
         ensure_dir "$dest_dir"
     fi
@@ -554,8 +570,8 @@ sync_commands_as_skills() {
     done
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_dir/*.md → $dest_dir/command-*/SKILL.md ($count generated) (dry-run)"
+        log_step "$src_disp/*.md → $dest_disp/command-*/SKILL.md ($count generated) (dry-run)"
     else
-        log_step "$src_dir/*.md → $dest_dir/command-*/SKILL.md ($count generated)"
+        log_step "$src_disp/*.md → $dest_disp/command-*/SKILL.md ($count generated)"
     fi
 }

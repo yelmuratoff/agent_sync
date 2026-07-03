@@ -160,7 +160,7 @@ convert_md_command_to_toml() {
     local dry_run="${3:-false}"
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_file → $dest_file (md→toml) (dry-run)"
+        log_step "$(display_path "$src_file") → $(display_path "$dest_file") (md→toml) (dry-run)"
         return 0
     fi
 
@@ -208,7 +208,7 @@ sync_commands_as_toml() {
     done
 
     if [[ $count -gt 0 ]]; then
-        log_step "$src_dir/ → $dest_dir/ ($count commands, md→toml)"
+        log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count commands, md→toml)"
     fi
 }
 
@@ -220,7 +220,7 @@ convert_md_agent_to_toml() {
     local dry_run="${3:-false}"
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_file → $dest_file (agent md→toml) (dry-run)"
+        log_step "$(display_path "$src_file") → $(display_path "$dest_file") (agent md→toml) (dry-run)"
         return 0
     fi
 
@@ -268,7 +268,7 @@ sync_agents_as_toml() {
     done
 
     if [[ $count -gt 0 ]]; then
-        log_step "$src_dir/ → $dest_dir/ ($count agents, md→toml)"
+        log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→toml)"
     fi
 }
 
@@ -281,7 +281,7 @@ convert_md_agent_to_amazonq_json() {
     local dry_run="${3:-false}"
 
     if [[ "$dry_run" == "true" ]]; then
-        log_step "$src_file → $dest_file (agent md→json) (dry-run)"
+        log_step "$(display_path "$src_file") → $(display_path "$dest_file") (agent md→json) (dry-run)"
         return 0
     fi
 
@@ -294,7 +294,6 @@ convert_md_agent_to_amazonq_json() {
     local model="$_FM_MODEL"
     local body="${_FM_BODY%$'\n'}"  # trim single trailing newline added by parser
 
-    # Build the tools JSON array from newline-separated tool names.
     local tools_json="[]"
     if [[ -n "$_FM_TOOLS" ]]; then
         local items=""
@@ -351,6 +350,6 @@ sync_agents_as_amazonq_json() {
     done
 
     if [[ $count -gt 0 ]]; then
-        log_step "$src_dir/ → $dest_dir/ ($count agents, md→amazonq json)"
+        log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→amazonq json)"
     fi
 }
