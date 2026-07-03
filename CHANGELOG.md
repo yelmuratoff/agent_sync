@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.4
+
+### Changed
+
+- **Readable `sync` logs:** every source→destination line now prints paths relative to the project root instead of absolute (`.ai/src/rules/ → .claude/rules/` rather than `/Users/you/.ai/src/rules/ → /Users/you/.claude/rules/`), with a `~`-relative fallback for paths outside the project. This drops the repeated home-directory prefix that pushed long lines onto a wrapped second row, so a global sync from `$HOME` is far easier to scan. Display only — what gets synced is unchanged.
+
 ## 0.28.3
 
 ### Fixed
