@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.5
+
+### Changed
+
+- **Disabled tools no longer clutter `sync` output:** a run where most tools are off used to print a `Skipping X (disabled)` line (and a blank line) for each one, burying the tool that actually synced under a wall of near-identical blocks. Skipped tools — disabled or excluded via `--only`/`--skip` — are now collected silently and reported once as a single `Skipped: a, b, c` line beside the final summary. A disabled tool whose stale output is actually removed still logs that cleanup.
+
 ## 0.28.4
 
 ### Changed
