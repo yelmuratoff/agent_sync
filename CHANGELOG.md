@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.0
+
+### Added
+
+- **`agentsync adopt --all`:** batch-adopt every drifted (manually-edited) generated file back into `.ai/src/` in one pass, instead of naming each file. It scans the sync manifest for drift, previews the plan, and after a single confirmation promotes each edit and refreshes the manifest so the next `sync` is drift-free. Transformed targets that single-file `adopt` already refuses (header-injected rules, merged/inlined files, TOML/JSON-converted commands/subagents) are skipped and listed. When two edited outputs resolve to the same source with different content — e.g. `CLAUDE.md` and `GEMINI.md` both mapping back to `.ai/src/AGENTS.md` — both are skipped rather than one silently clobbering the other, so you adopt the intended file explicitly. Honours `--dry-run` and `--yes`.
+
 ## 0.28.5
 
 ### Changed
