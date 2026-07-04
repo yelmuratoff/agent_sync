@@ -9,6 +9,10 @@
 #   - format-converted commands/subagents (toml, amazonq_json)
 #
 # After copy, updates the manifest entry so the next `sync` is idempotent.
+#
+# `--all` batch mode adopts every drifted (manually-edited) tracked output in
+# one pass: it skips refused targets and same-source conflicts (two edited
+# outputs mapping to one source with divergent content) rather than clobbering.
 
 # Outputs (set by _adopt_resolve_dest):
 _ADOPT_TOOL=""           # tool name owning the dest
@@ -18,6 +22,19 @@ _ADOPT_DEST_ABS=""       # canonical absolute dest path
 _ADOPT_SOURCE_ABS=""     # absolute source path to write
 _ADOPT_SOURCE_REL=""     # repo-relative source path (for messages)
 _ADOPT_REFUSAL=""        # non-empty = refusal reason; bail with this message
+
+# Batch-mode plan (set by _adopt_collect_all), parallel arrays over drifted
+# outputs. _ADOPT_ALL_OK[i] gates whether entry i is applied.
+_ADOPT_ALL_DEST_REL=()
+_ADOPT_ALL_DEST_ABS=()
+_ADOPT_ALL_SRC_REL=()
+_ADOPT_ALL_SRC_ABS=()
+_ADOPT_ALL_TOOL=()
+_ADOPT_ALL_RES=()
+_ADOPT_ALL_HASH=()
+_ADOPT_ALL_OK=()
+_ADOPT_ALL_SKIP_REL=()
+_ADOPT_ALL_SKIP_REASON=()
 
 _adopt_prepare_context() {
     local project_dir
@@ -348,24 +365,186 @@ _adopt_resolve_dest() {
     _ADOPT_REFUSAL="$_ADOPT_DEST_REL is not a recognised AgentSync output (no enabled tool produces it)."
 }
 
+# Drift-scan every tracked output and partition it into adoptable entries and a
+# skip list. Requires manifest_load already run. Fills the _ADOPT_ALL_* arrays.
+_adopt_collect_all() {
+    _ADOPT_ALL_DEST_REL=(); _ADOPT_ALL_DEST_ABS=()
+    _ADOPT_ALL_SRC_REL=();  _ADOPT_ALL_SRC_ABS=()
+    _ADOPT_ALL_TOOL=();     _ADOPT_ALL_RES=(); _ADOPT_ALL_HASH=()
+    _ADOPT_ALL_SKIP_REL=(); _ADOPT_ALL_SKIP_REASON=()
+
+    manifest_check_drift
+
+    local i rel cur_hash
+    for ((i = 0; i < ${#SYNC_DRIFT_DETECTED[@]}; i++)); do
+        rel="${SYNC_DRIFT_DETECTED[$i]}"
+        _adopt_resolve_dest "$REPO_ROOT/$rel"
+        if [[ -n "$_ADOPT_REFUSAL" ]]; then
+            _ADOPT_ALL_SKIP_REL+=("$rel")
+            _ADOPT_ALL_SKIP_REASON+=("$_ADOPT_REFUSAL")
+            continue
+        fi
+        cur_hash=$(manifest_compute_hash "$_ADOPT_DEST_ABS") || {
+            _ADOPT_ALL_SKIP_REL+=("$rel")
+            _ADOPT_ALL_SKIP_REASON+=("cannot hash destination")
+            continue
+        }
+        _ADOPT_ALL_DEST_REL+=("$_ADOPT_DEST_REL")
+        _ADOPT_ALL_DEST_ABS+=("$_ADOPT_DEST_ABS")
+        _ADOPT_ALL_SRC_REL+=("$_ADOPT_SOURCE_REL")
+        _ADOPT_ALL_SRC_ABS+=("$_ADOPT_SOURCE_ABS")
+        _ADOPT_ALL_TOOL+=("$_ADOPT_TOOL")
+        _ADOPT_ALL_RES+=("$_ADOPT_RESOURCE")
+        _ADOPT_ALL_HASH+=("$cur_hash")
+    done
+
+    _adopt_flag_source_conflicts
+}
+
+# Two edited outputs that resolve to the same source with different content
+# would silently clobber each other. Flag every member of such a group as not-OK
+# and divert it to the skip list, so the user adopts one explicitly.
+_adopt_flag_source_conflicts() {
+    _ADOPT_ALL_OK=()
+    local n=${#_ADOPT_ALL_DEST_REL[@]}
+    local i j ok
+    for ((i = 0; i < n; i++)); do
+        ok="true"
+        for ((j = 0; j < n; j++)); do
+            [[ $i -eq $j ]] && continue
+            if [[ "${_ADOPT_ALL_SRC_ABS[$i]}" == "${_ADOPT_ALL_SRC_ABS[$j]}" ]] \
+               && [[ "${_ADOPT_ALL_HASH[$i]}" != "${_ADOPT_ALL_HASH[$j]}" ]]; then
+                ok="false"; break
+            fi
+        done
+        _ADOPT_ALL_OK+=("$ok")
+        if [[ "$ok" == "false" ]]; then
+            _ADOPT_ALL_SKIP_REL+=("${_ADOPT_ALL_DEST_REL[$i]}")
+            _ADOPT_ALL_SKIP_REASON+=("multiple edited outputs map to ${_ADOPT_ALL_SRC_REL[$i]} — adopt one explicitly")
+        fi
+    done
+}
+
+_adopt_all_render_plan() {
+    local ok_count="$1"
+    local n=${#_ADOPT_ALL_DEST_REL[@]}
+    local i
+    echo ""
+    _bold "  Adopt plan (--all)"; echo ""
+    if [[ $ok_count -gt 0 ]]; then
+        echo "    $ok_count file(s) will be promoted to source:"; echo ""
+        for ((i = 0; i < n; i++)); do
+            [[ "${_ADOPT_ALL_OK[$i]}" == "true" ]] || continue
+            printf '    %s  %s %s %s\n' \
+                "$(_cyan "${_ADOPT_ALL_TOOL[$i]}")" \
+                "$(_yellow "${_ADOPT_ALL_DEST_REL[$i]}")" \
+                "$(_dim "→")" \
+                "$(_green "${_ADOPT_ALL_SRC_REL[$i]}")"
+        done
+        echo ""
+    fi
+    local sn=${#_ADOPT_ALL_SKIP_REL[@]}
+    if [[ $sn -gt 0 ]]; then
+        echo "    $(_dim "$sn skipped (edit .ai/src/ directly):")"
+        for ((i = 0; i < sn; i++)); do
+            printf '    %s %s %s\n' \
+                "$(_yellow "${_ADOPT_ALL_SKIP_REL[$i]}")" \
+                "$(_dim "—")" \
+                "$(_dim "${_ADOPT_ALL_SKIP_REASON[$i]}")"
+        done
+        echo ""
+    fi
+}
+
+# Copy every OK entry dest → source and refresh its manifest hash.
+_adopt_all_apply() {
+    local n=${#_ADOPT_ALL_DEST_REL[@]}
+    local i applied=0
+    echo ""
+    for ((i = 0; i < n; i++)); do
+        [[ "${_ADOPT_ALL_OK[$i]}" == "true" ]] || continue
+        ensure_dir "$(dirname "${_ADOPT_ALL_SRC_ABS[$i]}")"
+        cp "${_ADOPT_ALL_DEST_ABS[$i]}" "${_ADOPT_ALL_SRC_ABS[$i]}"
+        manifest_update_entry "${_ADOPT_ALL_DEST_REL[$i]}" "${_ADOPT_ALL_HASH[$i]}"
+        echo "$(_green "✓") $(_dim "adopted") ${_ADOPT_ALL_SRC_REL[$i]}"
+        applied=$((applied + 1))
+    done
+    echo ""
+    echo "$(_green "✓") Adopted $applied file(s) into .ai/src/ and refreshed .ai/.sync-manifest"
+    echo ""
+    echo "$(_dim "Run") $(_cyan "agentsync sync") $(_dim "to verify everything is consistent.")"
+}
+
+# Orchestrate --all: collect drift → plan → confirm → apply.
+_adopt_all() {
+    local dry_run="$1"
+    local assume_yes="$2"
+
+    _adopt_collect_all
+
+    local n=${#_ADOPT_ALL_DEST_REL[@]}
+    local ok_count=0 i
+    for ((i = 0; i < n; i++)); do
+        [[ "${_ADOPT_ALL_OK[$i]}" == "true" ]] && ok_count=$((ok_count + 1))
+    done
+    local skip_count=${#_ADOPT_ALL_SKIP_REL[@]}
+
+    if [[ $ok_count -eq 0 && $skip_count -eq 0 ]]; then
+        echo "$(_dim "Nothing to adopt: every tracked output matches its source.")"
+        return 0
+    fi
+
+    _adopt_all_render_plan "$ok_count"
+
+    if [[ $ok_count -eq 0 ]]; then
+        echo "$(_dim "No adoptable edits — the drifted files above need manual source edits.")"
+        return 0
+    fi
+
+    if [[ "$dry_run" == "true" ]]; then
+        echo "$(_dim "Dry-run — nothing written.")"
+        return 0
+    fi
+
+    if [[ "$assume_yes" != "true" ]]; then
+        if ! is_tty; then
+            echo "$(_red "Error"): refusing to adopt non-interactively without --yes." >&2
+            return 1
+        fi
+        if ! prompt_confirm "Apply these $ok_count adoption(s)?" "n"; then
+            echo "$(_dim "Cancelled.")"
+            return 0
+        fi
+    fi
+
+    _adopt_all_apply
+}
+
 cmd_adopt() {
     local dry_run="false"
     local assume_yes="false"
+    local adopt_all="false"
     local dest_arg=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --dry-run)   dry_run="true"; shift ;;
             --yes|-y)    assume_yes="true"; shift ;;
+            --all|-a)    adopt_all="true"; shift ;;
             --help|-h)
                 cat << 'EOF'
 Usage: agentsync adopt [--dry-run] [--yes] <dest-file>
+       agentsync adopt --all [--dry-run] [--yes]
 
 Promote a manual edit in a destination file back into .ai/src/ as the new
 canonical content. Refuses transformed targets (merged rules, inlined skills,
 format-converted commands/subagents).
 
+With --all, adopt every drifted (manually-edited) tracked output at once,
+skipping refused targets and same-source conflicts.
+
 Options:
+  --all,-a     Adopt every drifted output (no <dest-file>)
   --dry-run    Show the plan without writing
   --yes,-y     Skip confirmation (required outside a TTY)
 EOF
@@ -386,9 +565,14 @@ EOF
         esac
     done
 
-    if [[ -z "$dest_arg" ]]; then
+    if [[ "$adopt_all" == "true" && -n "$dest_arg" ]]; then
+        echo "$(_red "Error"): adopt --all takes no <dest-file>" >&2
+        return 2
+    fi
+    if [[ "$adopt_all" != "true" && -z "$dest_arg" ]]; then
         echo "$(_red "Error"): missing <dest-file>" >&2
         echo "Usage: agentsync adopt [--dry-run] [--yes] <dest-file>" >&2
+        echo "       agentsync adopt --all [--dry-run] [--yes]" >&2
         return 2
     fi
 
@@ -402,6 +586,11 @@ EOF
         return 1
     fi
     manifest_load
+
+    if [[ "$adopt_all" == "true" ]]; then
+        _adopt_all "$dry_run" "$assume_yes"
+        return $?
+    fi
 
     _adopt_resolve_dest "$dest_arg"
     if [[ -n "$_ADOPT_REFUSAL" ]]; then

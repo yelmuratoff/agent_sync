@@ -198,7 +198,7 @@ agentsync <command> [options]
 | `refresh`                |       | Pull new template files into existing `.ai/src/` (three-way diff; `--status` to list declined) |
 | `dedupe`                 |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
 | `migrate`                |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
-| `adopt <dest>`           |       | Promote a manual edit in a generated file back into `.ai/src/`                                 |
+| `adopt <dest>`           |       | Promote a manual edit in a generated file back into `.ai/src/` (`--all` for every drifted file) |
 | `profile <cmd>`          |       | Manage config-home profiles: `add`, `list`, `remove` (work/personal tool variants)             |
 | `doctor`                 |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
 | `generate [context]`     | `gen` | Print AI prompt for project-specific config generation                                         |
@@ -612,9 +612,12 @@ Quickly iterating in Claude Code or Cursor and edited a generated file directly?
 agentsync adopt .claude/rules/core.md            # interactive, with diff preview
 agentsync adopt --dry-run .claude/rules/core.md  # show plan, write nothing
 agentsync adopt --yes .claude/rules/core.md      # non-interactive (CI / scripts)
+agentsync adopt --all                            # adopt every drifted file at once
 ```
 
 Resolves the destination back to its source file (`.ai/src/rules/core.md`), copies the edited content, and refreshes the manifest entry — the next `sync` is drift-free.
+
+`--all` scans the manifest for every drifted (manually-edited) output and adopts them in one pass. Refused targets (below) are skipped and listed. If two edited outputs resolve to the same source with different content (e.g. `CLAUDE.md` and `GEMINI.md` both map back to `.ai/src/AGENTS.md`), both are skipped so neither silently clobbers the other — adopt one explicitly.
 
 **Refused targets** (the round-trip would corrupt your source):
 

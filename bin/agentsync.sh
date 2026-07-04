@@ -134,6 +134,7 @@ print_usage() {
     echo "    agentsync doctor"
     echo "    agentsync resolve"
     echo "    agentsync adopt .cursor/rules/core.mdc"
+    echo "    agentsync adopt --all"
     echo "    agentsync profile add hub"
     echo "    agentsync sync"
     echo "    agentsync sync --only claude,cursor"
