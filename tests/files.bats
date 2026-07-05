@@ -234,3 +234,30 @@ EOF
     rule_line=$(grep -n "Rule" "$TEST_PROJECT/merged.md" | head -1 | cut -d: -f1)
     [ "$agent_line" -lt "$rule_line" ]
 }
+
+# ── TOML conversion escaping ─────────────────────────────────────────────────
+
+@test "convert_md_command_to_toml: escapes quotes in description" {
+    cat > "$TEST_PROJECT/cmd.md" <<'MD'
+---
+description: Say "hello" to the \user
+---
+Body.
+MD
+    convert_md_command_to_toml "$TEST_PROJECT/cmd.md" "$TEST_PROJECT/cmd.toml"
+    # The description line must be a valid single-line basic string.
+    grep -qF 'description = "Say \"hello\" to the \\user"' "$TEST_PROJECT/cmd.toml"
+}
+
+@test "convert_md_agent_to_toml: escapes quotes in name and description" {
+    cat > "$TEST_PROJECT/agent.md" <<'MD'
+---
+name: my"agent
+description: A "quoted" agent
+---
+Body.
+MD
+    convert_md_agent_to_toml "$TEST_PROJECT/agent.md" "$TEST_PROJECT/agent.toml"
+    grep -qF 'name = "my\"agent"' "$TEST_PROJECT/agent.toml"
+    grep -qF 'description = "A \"quoted\" agent"' "$TEST_PROJECT/agent.toml"
+}

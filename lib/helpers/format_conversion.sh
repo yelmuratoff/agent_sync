@@ -156,6 +156,20 @@ _json_escape() {
     printf '%s' "$s"
 }
 
+# Escape a string for a TOML single-line basic string ("..."). Same escape set
+# as JSON basic strings (TOML shares \\ \" \n \r \t); an unescaped quote in a
+# name/description would otherwise close the string and break the file.
+# Usage: _toml_escape "input"  → echoes escaped string
+_toml_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
 # Convert a markdown command file to Gemini TOML format.
 # Translates !`cmd` → !{cmd} and $ARGUMENTS → {{args}}.
 # Usage: convert_md_command_to_toml "src_file" "dest_file" "dry_run"
@@ -180,7 +194,7 @@ convert_md_command_to_toml() {
 
     {
         if [[ -n "$description" ]]; then
-            echo "description = \"$description\""
+            printf 'description = "%s"\n' "$(_toml_escape "$description")"
         fi
         echo "prompt = \"\"\""
         printf '%s' "$body"
@@ -238,9 +252,9 @@ convert_md_agent_to_toml() {
     local body="$_FM_BODY"
 
     {
-        echo "name = \"$name\""
+        printf 'name = "%s"\n' "$(_toml_escape "$name")"
         if [[ -n "$description" ]]; then
-            echo "description = \"$description\""
+            printf 'description = "%s"\n' "$(_toml_escape "$description")"
         fi
         echo "developer_instructions = \"\"\""
         printf '%s' "$body"
