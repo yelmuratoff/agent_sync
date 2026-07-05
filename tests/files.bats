@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for internal file utilities (sync_dir, sync_rules, copy_rules, etc.)
+# Tests for internal file utilities (sync_dir, sync_rules, merge_rules_to_file, etc.)
 
 load test_helper
 
@@ -203,6 +203,24 @@ EOF
     merge_rules_to_file "$TEST_PROJECT/rules" "$TEST_PROJECT/merged.md"
     grep -q "Rule A" "$TEST_PROJECT/merged.md"
     grep -q "Rule B" "$TEST_PROJECT/merged.md"
+}
+
+@test "merge_rules_to_file: empty rules dir does not abort under set -u" {
+    # Regression (HIGH-2): iterating an empty array is a fatal "unbound variable"
+    # on bash 3.2 under set -u, and it fires after the dest file is removed.
+    set -u
+    mkdir -p "$TEST_PROJECT/rules"
+    run merge_rules_to_file "$TEST_PROJECT/rules" "$TEST_PROJECT/merged.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "merge_rules_to_file: empty rules dir still writes prepended agents" {
+    set -u
+    mkdir -p "$TEST_PROJECT/rules"
+    echo "# Agent" > "$TEST_PROJECT/agents.md"
+    run merge_rules_to_file "$TEST_PROJECT/rules" "$TEST_PROJECT/merged.md" "false" "" "" "$TEST_PROJECT/agents.md"
+    [ "$status" -eq 0 ]
+    grep -q "Agent" "$TEST_PROJECT/merged.md"
 }
 
 @test "merge_rules_to_file prepends agents" {

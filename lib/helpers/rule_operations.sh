@@ -221,7 +221,7 @@ merge_rules_to_file() {
     fi
 
     local first=true
-    for src_file in "${files_to_merge[@]}"; do
+    for src_file in "${files_to_merge[@]+"${files_to_merge[@]}"}"; do
         if [[ "$first" == "true" ]]; then
             first=false
         else
@@ -237,81 +237,6 @@ merge_rules_to_file() {
     fi
 
     log_step "$src_disp/ → $dest_disp (${#files_to_merge[@]} files merged)"
-}
-
-# Copy rule files from source to destination, optionally changing extensions and
-# adding a header. Performs a full wipe-and-fill (no differential cleanup).
-# Usage: copy_rules "src_dir" "dest_dir" "new_extension" "header" "dry_run" "include" "exclude"
-copy_rules() {
-    local src_dir="$1"
-    local dest_dir="$2"
-    local new_ext="$3"
-    local header="$4"
-    local dry_run="${5:-false}"
-    local include="${6:-}"
-    local exclude="${7:-}"
-
-    if [[ ! -d "$src_dir" ]]; then
-        log_warning "Rules source not found: $src_dir"
-        return 1
-    fi
-
-    local src_disp dest_disp
-    src_disp=$(display_path "$src_dir")
-    dest_disp=$(display_path "$dest_dir")
-
-    local files_to_process=()
-    for src_file in "$src_dir"/*.md; do
-        [[ -f "$src_file" ]] || continue
-        local basename="${src_file##*/}"
-        if matches_filter "$basename" "$include" "$exclude"; then
-            files_to_process+=("$src_file")
-        fi
-    done
-
-    if [[ "$dry_run" == "true" ]]; then
-        local extra=""
-        [[ -n "$header" ]] && extra="${extra}, +header"
-        [[ -n "$include" ]] && extra="${extra}, include='$include'"
-        [[ -n "$exclude" ]] && extra="${extra}, exclude='$exclude'"
-        log_step "$src_disp/ → $dest_disp/ (${#files_to_process[@]} files${extra}) (dry-run)"
-        return 0
-    fi
-
-    if [[ -z "$dest_dir" ]]; then
-        log_error "copy_rules: refusing to remove an empty dest_dir"
-        return 1
-    fi
-    rm -rf "$dest_dir" 2>/dev/null || true
-    ensure_dir "$dest_dir"
-
-    local count=0
-    for src_file in "${files_to_process[@]}"; do
-        local basename="${src_file##*/}"
-        local dest_file
-
-        if [[ -n "$new_ext" ]]; then
-            dest_file="${dest_dir}/${basename%.md}${new_ext}"
-        else
-            dest_file="${dest_dir}/${basename}"
-        fi
-
-        cp "$src_file" "$dest_file"
-
-        if [[ -n "$header" ]]; then
-            merge_or_prepend_header "$dest_file" "$header"
-        fi
-
-        if declare -f manifest_record_write >/dev/null 2>&1; then
-            manifest_record_write "$dest_file"
-        fi
-
-        count=$((count + 1))
-    done
-
-    local extra=""
-    [[ -n "$header" ]] && extra="${extra}, +header"
-    log_step "$src_disp/ → $dest_disp/ ($count files${extra})"
 }
 
 # Sync rule files with differential cleanup — only removes files that were
