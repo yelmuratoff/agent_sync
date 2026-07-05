@@ -107,3 +107,21 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [ -f "post_sync_ran" ]
 }
+
+# ── A misconfigured per-tool source must not abort the whole run ──────────────
+
+@test "sync: bad per-tool source is skipped; run completes and writes manifest" {
+    enable_tools claude cursor
+    mkdir -p .ai/src/tools
+    printf 'targets:\n  rules:\n    source: ".ai/src/DOES_NOT_EXIST"\n' > .ai/src/tools/cursor.yaml
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Rules source not found"* ]]
+    # Both tools still produced output, and the manifest was written.
+    [ -f "CLAUDE.md" ]
+    [ -f "AGENTS.md" ]
+    [ -f ".ai/.sync-manifest" ]
+    # A second sync sees no false drift.
+    run run_agentsync check
+    [ "$status" -eq 0 ]
+}

@@ -288,3 +288,26 @@ MD
     [ ! -f "$TEST_PROJECT/out/a.json" ]
     [ -f "$TEST_PROJECT/out/b.json" ]
 }
+
+# ── Missing-source is a non-fatal skip (return 0, not a set -e abort) ─────────
+
+@test "copy_file: missing source warns and returns 0" {
+    run copy_file "$TEST_PROJECT/nope.txt" "$TEST_PROJECT/dest.txt"
+    [ "$status" -eq 0 ]
+    [ ! -f "$TEST_PROJECT/dest.txt" ]
+}
+
+@test "sync_dir: missing source dir warns and returns 0" {
+    run sync_dir "$TEST_PROJECT/nope" "$TEST_PROJECT/out"
+    [ "$status" -eq 0 ]
+}
+
+@test "sync_rules: missing source dir warns and returns 0" {
+    run sync_rules "$TEST_PROJECT/nope" "$TEST_PROJECT/out" "" "" "false"
+    [ "$status" -eq 0 ]
+}
+
+@test "merge_rules_to_file: missing source dir warns and returns 0" {
+    run merge_rules_to_file "$TEST_PROJECT/nope" "$TEST_PROJECT/out.md"
+    [ "$status" -eq 0 ]
+}

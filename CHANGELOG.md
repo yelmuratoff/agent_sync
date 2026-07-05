@@ -13,6 +13,7 @@
 - **No more spurious "Kept"/"Removed" churn on shared and nested destinations.** Two tools sharing a skills dir (Codex + Antigravity both write `.agents/skills`) made the non-generating tool warn `Kept …` for the other's generated `command-*` skills, and an AGENTS file written into a rules dir (`.amazonq/rules/00-context.md`) was swept then re-copied every run. The reserved `command-*` namespace is now always excluded from the skills sweep, and no sweep prunes a file the same run already wrote.
 - **Generated command/agent TOML and Amazon Q JSON now escape quotes and backslashes**, so a `name`/`description` containing `"` no longer produces an unparseable file.
 - **Deleting a source `.md` now removes its generated TOML/JSON.** The command/agent converters had no differential cleanup, so an orphaned `.toml`/`.json` lingered forever; they now sweep obsolete generated files (preserving user-added files, like the rules sync).
+- **A misconfigured per-tool source no longer aborts the whole run.** A missing source (e.g. a typo'd `targets.rules.source`) made the copy/sync helpers return non-zero, which under `set -e` killed the entire run mid-pass — before the manifest was written — so later tools went unsynced and the next sync reported false drift. A missing source now logs its existing warning and is skipped; the run continues and finalizes normally.
 
 ### Changed
 

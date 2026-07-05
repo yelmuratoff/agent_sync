@@ -148,13 +148,14 @@ append_imports() {
     local rules_dir="$2"
 
     if [[ ! -f "$agents_file" ]]; then
+        # Warn and skip (return 0) — see copy_file: a non-zero aborts the run.
         log_warning "Agents file not found: $agents_file"
-        return 1
+        return 0
     fi
 
     if [[ ! -d "$rules_dir" ]]; then
         log_warning "Rules directory not found for imports: $rules_dir"
-        return 1
+        return 0
     fi
 
     {
@@ -186,8 +187,9 @@ merge_rules_to_file() {
     local agents_file="${6:-}"
 
     if [[ ! -d "$src_dir" ]]; then
+        # Warn and skip (return 0) — see copy_file: a non-zero aborts the run.
         log_warning "Rules source not found: $src_dir"
-        return 1
+        return 0
     fi
 
     local src_disp dest_disp
@@ -253,8 +255,9 @@ sync_rules() {
     local scoped_header="${8:-}"
 
     if [[ ! -d "$src_dir" ]]; then
+        # Warn and skip (return 0) — see copy_file: a non-zero aborts the run.
         log_warning "Rules source not found: $src_dir"
-        return 1
+        return 0
     fi
 
     local src_disp dest_disp

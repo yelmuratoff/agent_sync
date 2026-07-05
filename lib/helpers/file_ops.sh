@@ -38,8 +38,11 @@ copy_file() {
     local dry_run="${3:-false}"
 
     if [[ ! -f "$src" ]]; then
+        # Warn and skip (return 0): a non-zero here aborts the whole run under
+        # set -e — before manifest_write — over a single missing/misconfigured
+        # source, leaving other tools unsynced and the next sync seeing drift.
         log_warning "Source file not found: $src"
-        return 1
+        return 0
     fi
 
     if [[ "$dry_run" == "true" ]]; then
@@ -104,8 +107,9 @@ sync_dir() {
     local exclude="${5:-}"
 
     if [[ ! -d "$src" ]]; then
+        # Warn and skip (return 0) — see copy_file: a non-zero aborts the run.
         log_warning "Source directory not found: $src"
-        return 1
+        return 0
     fi
 
     local src_disp dest_disp
