@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.30.0
 
 ### Security
 
@@ -92,7 +92,7 @@
 
 ### Added
 
-- **`paths:`-scoped rules now translate to every tool's native trigger:** a rule that declares `paths:` frontmatter (a list of globs) is emitted with each tool's *scoped* trigger instead of the always-on header — Cursor `globs` + `alwaysApply: false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`, while Claude keeps `paths:` verbatim — so a domain rule (state, routing, data…) loads only when matching files are touched, keeping the always-on context lean. Configured via the new `targets.rules.scoped_header` option (a header string with a `{globs}` placeholder); rules without `paths:` still get the always-on `header`. Tools that inline rules into their agents file now skip a rule's frontmatter when building the index, so a scoped rule shows its heading rather than the `---` delimiter.
+- **`paths:`-scoped rules now translate to every tool's native trigger:** a rule that declares `paths:` frontmatter (a list of globs) is emitted with each tool's _scoped_ trigger instead of the always-on header — Cursor `globs` + `alwaysApply: false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`, while Claude keeps `paths:` verbatim — so a domain rule (state, routing, data…) loads only when matching files are touched, keeping the always-on context lean. Configured via the new `targets.rules.scoped_header` option (a header string with a `{globs}` placeholder); rules without `paths:` still get the always-on `header`. Tools that inline rules into their agents file now skip a rule's frontmatter when building the index, so a scoped rule shows its heading rather than the `---` delimiter.
 - **`doctor` flags always-on rule bloat:** a new advisory under a "Rules" section warns when the always-on rule set (rules without `paths:`) grows past ~20 KB / ~5k tokens, since a large always-on set dilutes attention and agents start ignoring individual instructions. Advisory only — like other techdebt detections it prints `⚠` but never affects the exit code.
 
 ## 0.26.3
@@ -121,7 +121,7 @@
 
 ### Changed
 
-- **Sync preserves hand-placed files in generated dirs:** `agentsync sync` no longer treats a tool's output directory as fully sync-owned. Previously, a file you added by hand to a generated dir (e.g. `.claude/rules/my-own.md`) was silently deleted on the next sync because it wasn't regenerated from `.ai/src/`. Sync now consults the manifest: an extraneous entry it never generated is kept — with a per-file warning and a run-summary tally ("Preserved N user-added file(s)…") — instead of removed. The file is still *unmanaged*; move it into `.ai/src/` to manage it, or run `agentsync sync --force` to restore the old prune-everything behavior. Manifest-unaware callers keep their previous semantics, so only real sync runs change.
+- **Sync preserves hand-placed files in generated dirs:** `agentsync sync` no longer treats a tool's output directory as fully sync-owned. Previously, a file you added by hand to a generated dir (e.g. `.claude/rules/my-own.md`) was silently deleted on the next sync because it wasn't regenerated from `.ai/src/`. Sync now consults the manifest: an extraneous entry it never generated is kept — with a per-file warning and a run-summary tally ("Preserved N user-added file(s)…") — instead of removed. The file is still _unmanaged_; move it into `.ai/src/` to manage it, or run `agentsync sync --force` to restore the old prune-everything behavior. Manifest-unaware callers keep their previous semantics, so only real sync runs change.
 
 ### Fixed
 
@@ -146,7 +146,7 @@
 
 ### Fixed
 
-- **`sync` and `init` refuse to run from inside the `.ai/` source directory:** running either command while the working directory was inside `.ai/` (e.g. `cd project/.ai && agentsync sync`) rooted the engine at the source tree, so `sync` wrote tool outputs *under* `.ai/` and `init` created a nested `.ai/.ai/` — instead of generating at the project level alongside `.ai/`. Both commands now detect this, stop with exit code `2`, and point you at the project root (the parent of `.ai/`): `cd "<project>" && agentsync sync`. The new `ai_dir_enclosing_root` helper in `lib/helpers/paths.sh` backs the guard. No change for runs started from the project root.
+- **`sync` and `init` refuse to run from inside the `.ai/` source directory:** running either command while the working directory was inside `.ai/` (e.g. `cd project/.ai && agentsync sync`) rooted the engine at the source tree, so `sync` wrote tool outputs _under_ `.ai/` and `init` created a nested `.ai/.ai/` — instead of generating at the project level alongside `.ai/`. Both commands now detect this, stop with exit code `2`, and point you at the project root (the parent of `.ai/`): `cd "<project>" && agentsync sync`. The new `ai_dir_enclosing_root` helper in `lib/helpers/paths.sh` backs the guard. No change for runs started from the project root.
 
 ## 0.23.2
 
@@ -237,11 +237,13 @@
 - **`agentsync doctor` — cross-project, orphan-output, and empty-skill detection:** doctor gains three new sections. **Cross-project** compares the project's source files against a walked-up parent `.ai/src/` (same walk-up as `dedupe`, bounded by git repository), flagging identical-hash duplicates as advisories and divergent files as info — `category: governance` files (see below) are upgraded from info to advisory with explicit "likely a mistake, not an override" framing. **Tool outputs** flags any `.claude/`, `.cursor/`, `.codex/`, etc. directory whose owning tool isn't enabled in this project (orphan from a prior run after the tool was disabled, or a leftover from a different project copy-pasted into the tree), plus the legacy `.agent/` (singular) layout from before v0.6 — that directory was never cleaned up by `sync` because the current engine doesn't know it exists. **Skills** flags skill directories that lack a `SKILL.md` (a no-op artifact that lists nowhere and dispatches nothing). All three detections use a new **advisory tier** that displays as a yellow ⚠ but does not increment `DOCTOR_WARNINGS` and does not change the exit code — so users who run `doctor` in pre-commit hooks or CI pipelines get the techdebt nudge without breaking the build. Hard errors (missing `.ai/`, invalid YAML) still exit 2; warnings (legacy `enabled: true`, version drift, manual edits since last sync) still exit 1; the new techdebt category is exit-0 by design.
 
 - **`shared:` resources — declarative inheritance from a parent `.ai/src/`:** new optional section in `agent_sync.yaml` that lets a nested project pull source files from its parent at sync time. Syntax is intentionally minimal — no YAML parser changes — using inline CSV for the inherit list:
+
   ```yaml
   shared:
     path: "../"
     inherit: rules,skills,commands,agents
   ```
+
   At sync, AgentSync builds a transient shadow `.ai/src/` tree under a temp directory: child's own files first, then parent files in inherited categories filling in any path the child doesn't already have (child wins on path collisions — overlay never overwrites local content). Sync then reads from the shadow tree so every enabled tool — including ones without parent-loading (Codex, Cursor, JetBrains Junie, etc.) — receives the inherited content materialized into its own output. The shadow tree is read-only from the child's perspective and is torn down via an EXIT trap, so there's no on-disk state to manage. **Manifest interaction is deliberately one-sided:** `.template-manifest` continues to track only files actually present in the child's `.ai/src/`; inherited files are not in the manifest and are never offered by `refresh` — they belong to the parent. This is the design point that came out of the v1 → v2 architectural review: a single state mechanism, no "inherited" flag bag, no second source of truth that can drift out of sync with the first. When `doctor` finds a same-path duplicate in an inherited category, it appends `(inherited via shared: — safe to delete)` to nudge users toward deletion — once deleted, parent will continue to provide the content via overlay on every subsequent sync.
 
 - **`category:` frontmatter field — declaration of intent for rules and skills:** optional `category:` in any YAML frontmatter (rules, skills, commands, agents). Today only `governance` carries behavior — when `doctor` finds a child file that diverges from its parent's same-path version and the parent file has `category: governance`, the message escalates from info ("review intent") to advisory ("governance file diverges from parent — likely a mistake, not an override"). Other category values (`domain`, `workspace`, `project`) are accepted and recorded but currently informational; future tooling can build on them without forcing existing projects to migrate. Designed so adding a category to an existing template is a non-breaking, opt-in declaration.
