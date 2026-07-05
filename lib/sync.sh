@@ -288,7 +288,7 @@ is_path_protected() {
 _resolve_one_dest() {
     local tool_name="$1" key="$2" display="$3"
     local raw abs=""
-    raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+    get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
     [[ -n "$raw" ]] || { echo ""; return 0; }
     abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || abs=""
     echo "$abs"
@@ -391,7 +391,7 @@ _inline_skills_into_file() {
 _resolve_tool_src() {
     local tool_name="$1" key="$2" default="$3" display="$4"
     local override
-    override=$(get_tool_value "$tool_name" "targets.$key.source")
+    get_tool_value_r "$tool_name" "targets.$key.source"; override="$REPLY"
     resolve_source_path "${override:-$default}" "targets.$key.source for $display"
 }
 
@@ -426,16 +426,16 @@ _sync_rules_step() {
     src_rules_abs=$(_resolve_tool_src "$tool_name" rules "$SOURCE_RULES" "$display")
 
     local rule_ext rule_header rule_scoped_header append_imports_flag rule_include rule_exclude
-    rule_ext=$(get_tool_value "$tool_name" "targets.rules.extension")
-    rule_header=$(get_tool_value "$tool_name" "targets.rules.header")
-    rule_scoped_header=$(get_tool_value "$tool_name" "targets.rules.scoped_header")
-    append_imports_flag=$(get_tool_value "$tool_name" "targets.rules.append_imports")
+    get_tool_value_r "$tool_name" "targets.rules.extension"; rule_ext="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.header"; rule_header="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.scoped_header"; rule_scoped_header="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.append_imports"; append_imports_flag="$REPLY"
     rule_include=$(get_tool_filter "$tool_name" "targets.rules.include")
     rule_exclude=$(get_tool_filter "$tool_name" "targets.rules.exclude")
 
     local merge_to_file inline_into_agents
-    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
-    inline_into_agents=$(get_tool_value "$tool_name" "targets.rules.inline_into_agents")
+    get_tool_value_r "$tool_name" "targets.rules.merge_to_file"; merge_to_file="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.inline_into_agents"; inline_into_agents="$REPLY"
 
     if [[ "$inline_into_agents" == "true" ]] && [[ -n "$dest_agents_abs" ]]; then
         if [[ "$DRY_RUN" != "true" ]]; then
@@ -446,7 +446,7 @@ _sync_rules_step() {
     elif [[ -n "$dest_rules_abs" ]]; then
         if [[ "$merge_to_file" == "true" ]]; then
             local prepend_agents_flag agents_for_prepend=""
-            prepend_agents_flag=$(get_tool_value "$tool_name" "targets.rules.prepend_agents")
+            get_tool_value_r "$tool_name" "targets.rules.prepend_agents"; prepend_agents_flag="$REPLY"
             if [[ "$prepend_agents_flag" == "true" ]] && [[ -f "$src_agents_abs" ]]; then
                 agents_for_prepend="$src_agents_abs"
             fi
@@ -482,8 +482,8 @@ _sync_skills_step() {
     skills_exclude=$(get_tool_filter "$tool_name" "targets.skills.exclude")
 
     local inline_skills merge_to_file
-    inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
-    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
+    get_tool_value_r "$tool_name" "targets.skills.inline_into_agents"; inline_skills="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.merge_to_file"; merge_to_file="$REPLY"
 
     if [[ -n "$dest_skills_abs" ]]; then
         # `command-*` is a reserved namespace for generated command-skills, owned
@@ -522,13 +522,13 @@ _sync_commands_step() {
 
     local dest_cmd_ext dest_cmd_format cmd_include cmd_exclude
     local commands_as_skills commands_inline_into_agents merge_to_file
-    dest_cmd_ext=$(get_tool_value "$tool_name" "targets.commands.extension")
-    dest_cmd_format=$(get_tool_value "$tool_name" "targets.commands.format")
+    get_tool_value_r "$tool_name" "targets.commands.extension"; dest_cmd_ext="$REPLY"
+    get_tool_value_r "$tool_name" "targets.commands.format"; dest_cmd_format="$REPLY"
     cmd_include=$(get_tool_filter "$tool_name" "targets.commands.include")
     cmd_exclude=$(get_tool_filter "$tool_name" "targets.commands.exclude")
-    commands_as_skills=$(get_tool_value "$tool_name" "targets.commands.as_skills")
-    commands_inline_into_agents=$(get_tool_value "$tool_name" "targets.commands.inline_into_agents")
-    merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
+    get_tool_value_r "$tool_name" "targets.commands.as_skills"; commands_as_skills="$REPLY"
+    get_tool_value_r "$tool_name" "targets.commands.inline_into_agents"; commands_inline_into_agents="$REPLY"
+    get_tool_value_r "$tool_name" "targets.rules.merge_to_file"; merge_to_file="$REPLY"
 
     local src_commands_abs
     src_commands_abs=$(resolve_source_path "$SOURCE_COMMANDS" "source.commands for $display")
@@ -570,8 +570,8 @@ _sync_subagents_step() {
     [[ -d "$src_subagents_abs" ]] || return 0
 
     local dest_sa_ext dest_sa_format
-    dest_sa_ext=$(get_tool_value "$tool_name" "targets.subagents.extension")
-    dest_sa_format=$(get_tool_value "$tool_name" "targets.subagents.format")
+    get_tool_value_r "$tool_name" "targets.subagents.extension"; dest_sa_ext="$REPLY"
+    get_tool_value_r "$tool_name" "targets.subagents.format"; dest_sa_format="$REPLY"
     case "$dest_sa_format" in
         toml)         sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
         amazonq_json) sync_agents_as_amazonq_json "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
@@ -638,7 +638,7 @@ sync_tool() {
     _sync_payloads_step "$tool_name" "$display"
 
     local post_sync_cmd
-    post_sync_cmd=$(get_tool_value "$tool_name" "post_sync")
+    get_tool_value_r "$tool_name" "post_sync"; post_sync_cmd="$REPLY"
     if [[ "$DRY_RUN" != "true" ]]; then
         if ! run_post_sync_hook "$display" "$post_sync_cmd"; then
             log_error "Sync failed because post-sync hook failed for $display"
@@ -664,7 +664,7 @@ cleanup_tool() {
     local cleaned=false
     local key raw abs
     for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
-        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+        get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
         [[ -z "$raw" ]] && continue
         abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || continue
         [[ -z "$abs" ]] && continue
@@ -822,7 +822,7 @@ _collect_tool_dests() {
     local tool_name="$1"
     local key raw abs rel
     for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
-        raw=$(get_tool_value "$tool_name" "targets.$key.dest")
+        get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
         [[ -z "$raw" ]] && continue
         abs=$(resolve_dest_path "$raw" "targets.$key.dest for $tool_name") || continue
         ENABLED_DEST_PATHS+=("$abs")

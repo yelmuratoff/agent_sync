@@ -60,29 +60,24 @@ tool_base_name() {
 
 # ── Layered value lookup ──────────────────────────────────────────────────────
 
-# Get an effective YAML value for a tool: user override wins, base fallback.
-# Usage: get_tool_value <tool_name> <yaml.key.path>
-# Always returns exit 0; prints empty if missing in both layers.
-get_tool_value() {
+# REPLY-returning core of get_tool_value: user override wins, base fallback, then
+# the `base:` variant tool. Sets REPLY instead of echoing, so parent-shell
+# callers avoid a command-substitution fork per lookup. Always exit 0.
+# Usage: get_tool_value_r <tool_name> <yaml.key.path>  →  reads $REPLY
+get_tool_value_r() {
     local tool_name="$1"
     local key_path="$2"
 
-    # Hot path: called dozens of times per tool per sync. Inline the dir layout
-    # (mirrors tool_resolver_user_dir / tool_resolver_base_dir) and use the
-    # REPLY-returning parser so a lookup costs zero subshell forks.
+    REPLY=""
     local user_file="$REPO_ROOT/.ai/src/tools/${tool_name}.yaml"
     if [[ -f "$user_file" ]]; then
         parse_yaml_value_r "$user_file" "$key_path"
-        if [[ -n "$REPLY" ]]; then
-            echo "$REPLY"
-            return 0
-        fi
+        [[ -n "$REPLY" ]] && return 0
     fi
 
     local base_file="$DEFAULT_REPO_ROOT/lib/templates/tools/${tool_name}.yaml"
     if [[ -f "$base_file" ]]; then
         parse_yaml_value_r "$base_file" "$key_path"
-        echo "$REPLY"
         return 0
     fi
 
@@ -95,13 +90,23 @@ get_tool_value() {
         if [[ -n "$base_tool" ]]; then
             base_tool_file=$(tool_resolver_base_file "$base_tool")
             if [[ -f "$base_tool_file" ]]; then
-                parse_yaml_value "$base_tool_file" "$key_path"
+                parse_yaml_value_r "$base_tool_file" "$key_path"
                 return 0
             fi
         fi
     fi
 
-    echo ""
+    REPLY=""
+    return 0
+}
+
+# Get an effective YAML value for a tool: user override wins, base fallback.
+# Echo wrapper kept for the many `$(...)` call sites; hot parent-shell paths
+# should call get_tool_value_r and read $REPLY to avoid the fork.
+# Usage: get_tool_value <tool_name> <yaml.key.path>
+get_tool_value() {
+    get_tool_value_r "$1" "$2"
+    echo "$REPLY"
 }
 
 # Layered strict boolean parse for 'enabled' and other flags.
@@ -333,7 +338,7 @@ resolve_payload_source() {
 
     # 2. Explicit path from tool YAML targets.<resource>.source (user-set).
     local declared
-    declared=$(get_tool_value "$tool_name" "targets.${resource}.source")
+    get_tool_value_r "$tool_name" "targets.${resource}.source"; declared="$REPLY"
     if [[ -n "$declared" ]]; then
         local declared_abs="$declared"
         [[ "$declared_abs" != /* ]] && declared_abs="$REPO_ROOT/$declared"
