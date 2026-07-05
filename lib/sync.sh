@@ -1051,6 +1051,7 @@ main() {
     _snapshot_base_sources
     _build_tool_catalog
     warm_enabled_tools_cache
+    warm_profile_tools_cache
     _collect_protected_dests
 
     # Load the manifest (even on dry-run) so the sweep helpers tell sync-generated

@@ -107,9 +107,33 @@ list_profile_tools() {
     done < <(list_profiles) | sort -u
 }
 
-# Is <tool> a variant tool owned by some profile?
+# Per-run memo of the profile-tool set. The profiles config is fixed for a run,
+# so warming once avoids re-spawning list_profile_tools (a subshell + sort) for
+# every tool checked. Mirrors warm_enabled_tools_cache in tool_resolver.sh.
+_PROFILE_TOOLS_CACHED="false"
+_PROFILE_TOOLS_SET="|"
+
+# Populate the profile-tool membership cache. MUST run in the parent shell (not a
+# $(...) subshell) so the globals it sets survive for later lookups.
+warm_profile_tools_cache() {
+    _PROFILE_TOOLS_SET="|"
+    local t
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        _PROFILE_TOOLS_SET="${_PROFILE_TOOLS_SET}${t}|"
+    done < <(list_profile_tools)
+    _PROFILE_TOOLS_CACHED="true"
+}
+
+# Is <tool> a variant tool owned by some profile? Answers from the memo when
+# warmed; otherwise falls back to a fresh scan (standalone callers, tests).
 is_profile_tool() {
-    local want="$1" t
+    local want="$1"
+    if [[ "$_PROFILE_TOOLS_CACHED" == "true" ]]; then
+        [[ "$_PROFILE_TOOLS_SET" == *"|${want}|"* ]]
+        return
+    fi
+    local t
     while IFS= read -r t; do
         [[ "$t" == "$want" ]] && return 0
     done < <(list_profile_tools)
