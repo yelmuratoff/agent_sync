@@ -311,6 +311,11 @@ sync_rules() {
         fi
 
         if [[ "$is_managed" == "true" ]] && [[ "$valid_dest_files" != *"|$basename|"* ]]; then
+            # A file this run already wrote (e.g. an AGENTS file the agents step
+            # copied into this rules dir) is a current output, not obsolete.
+            if declare -f manifest_was_touched >/dev/null 2>&1 && manifest_was_touched "$dest_file"; then
+                continue
+            fi
             if ! sync_may_prune "$dest_file"; then
                 sync_note_preserved "$dest_disp/$basename" "$dry_run"
                 continue

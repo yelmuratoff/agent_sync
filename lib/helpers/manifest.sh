@@ -157,6 +157,20 @@ manifest_record_write() {
     fi
 }
 
+# Was <abs_path> written (or rewritten) earlier in THIS sync run? A file the run
+# already produced is a current output, never obsolete — sweep loops use this to
+# skip it instead of pruning it (e.g. an AGENTS file the agents step copies into
+# a rules dir that the rules step then sweeps). Returns 0 = touched this run.
+# Usage: manifest_was_touched "/abs/path"
+manifest_was_touched() {
+    local abs_path="$1"
+    [[ -z "$abs_path" ]] && return 1
+    local rel
+    rel=$(to_repo_relative_path "$abs_path" 2>/dev/null) || return 1
+    [[ -z "$rel" ]] && return 1
+    [[ "$SYNC_TOUCHED_SET" == *"|$rel|"* ]]
+}
+
 # Record every regular file under a directory (recursively). Used after
 # operations like `cp -r` where individual leaf paths weren't tracked.
 # Usage: manifest_record_tree "/abs/dir"

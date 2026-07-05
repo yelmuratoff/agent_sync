@@ -281,3 +281,17 @@ setup() {
     count=$(grep -c "AI SYNC GENERATED START" .gitignore)
     [ "$count" -eq 1 ]
 }
+
+# ── Re-sync stability (finding 5: shared-dest / nested-agents churn) ──────────
+
+@test "sync: re-sync emits no churn for shared-dest command-* or nested agents" {
+    # A second sync must not warn "Kept" for Codex-generated
+    # .agents/skills/command-* (which Antigravity's skills step sweeps because
+    # both tools share .agents/skills), nor "Removed" the nested AGENTS file
+    # .amazonq/rules/00-context.md (written by the agents step, then swept by the
+    # rules step) only to re-copy it every run.
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Kept .agents/skills/command-"* ]]
+    [[ "$output" != *"Removed: .amazonq/rules/00-context.md"* ]]
+}

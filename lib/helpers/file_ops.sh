@@ -157,6 +157,10 @@ sync_dir() {
             if ! matches_filter "$basename" "$include" "$exclude"; then
                 continue
             fi
+            # A file/dir this run already wrote is a current output, not obsolete.
+            if declare -f manifest_was_touched >/dev/null 2>&1 && manifest_was_touched "$dest_item"; then
+                continue
+            fi
             if ! sync_may_prune "$dest_item"; then
                 sync_note_preserved "$dest_disp/$basename" "$dry_run"
                 continue

@@ -481,21 +481,21 @@ _sync_skills_step() {
     skills_include=$(get_tool_filter "$tool_name" "targets.skills.include")
     skills_exclude=$(get_tool_filter "$tool_name" "targets.skills.exclude")
 
-    local inline_skills merge_to_file commands_as_skills
+    local inline_skills merge_to_file
     inline_skills=$(get_tool_value "$tool_name" "targets.skills.inline_into_agents")
     merge_to_file=$(get_tool_value "$tool_name" "targets.rules.merge_to_file")
-    commands_as_skills=$(get_tool_value "$tool_name" "targets.commands.as_skills")
 
     if [[ -n "$dest_skills_abs" ]]; then
-        # Generated command-* skills are owned by the COMMANDS step below — tell
-        # sync_dir to leave them in place rather than sweep them as extraneous.
+        # `command-*` is a reserved namespace for generated command-skills, owned
+        # by the COMMANDS step (of whichever tool generates them into this dest).
+        # Always exclude it from the skills sweep — otherwise a tool sharing this
+        # skills dir but not generating command-* (e.g. Antigravity vs Codex on
+        # .agents/skills) sweeps another tool's generated dirs as extraneous.
         local skills_exclude_effective="$skills_exclude"
-        if [[ "$commands_as_skills" == "true" ]]; then
-            if [[ -n "$skills_exclude_effective" ]]; then
-                skills_exclude_effective="$skills_exclude_effective command-*"
-            else
-                skills_exclude_effective="command-*"
-            fi
+        if [[ -n "$skills_exclude_effective" ]]; then
+            skills_exclude_effective="$skills_exclude_effective command-*"
+        else
+            skills_exclude_effective="command-*"
         fi
         sync_dir "$src_skills_abs" "$dest_skills_abs" "$DRY_RUN" "$skills_include" "$skills_exclude_effective"
     elif [[ "$inline_skills" == "true" ]] && [[ -d "$src_skills_abs" ]]; then
