@@ -11,3 +11,10 @@ source:
 defaults:
   enabled: false
   cleanup: true
+
+# Post-sync hooks run arbitrary shell from a tool YAML, so they are gated behind
+# an out-of-repo trust signal: set allow: true here (this install-dir config) or
+# export AGENTSYNC_ALLOW_POST_SYNC=true. The in-repo agent_sync.yaml cannot
+# enable them — cloning and syncing an untrusted repo must not run its hook.
+post_sync:
+  allow: false

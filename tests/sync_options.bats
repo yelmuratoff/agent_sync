@@ -84,3 +84,26 @@ teardown() { teardown_test_project; }
             find .claude -type f -exec md5 {} \; 2>/dev/null | sort)
     [ "$hash1" = "$hash2" ]
 }
+
+# ── post_sync trust boundary ─────────────────────────────────────────────────
+
+@test "sync: in-repo post_sync.allow does NOT enable the hook" {
+    enable_tools claude
+    mkdir -p .ai/src/tools
+    printf 'post_sync: "touch post_sync_ran"\n' >> .ai/src/tools/claude.yaml
+    # An in-repo allow must be ignored — cloning a repo can't run its hook.
+    printf '\npost_sync:\n  allow: true\n' >> .ai/agent_sync.yaml
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ ! -f "post_sync_ran" ]
+    [[ "$output" == *"Skipping post-sync hook"* ]]
+}
+
+@test "sync: out-of-repo env allow runs the post_sync hook" {
+    enable_tools claude
+    mkdir -p .ai/src/tools
+    printf 'post_sync: "touch post_sync_ran"\n' >> .ai/src/tools/claude.yaml
+    AGENTSYNC_ALLOW_POST_SYNC=true run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ -f "post_sync_ran" ]
+}

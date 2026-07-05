@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **Post-sync hooks now require an out-of-repo trust signal.** A `post_sync` hook runs arbitrary shell from a tool YAML, and it used to be enabled by `post_sync.allow: true` in the project's own `.ai/agent_sync.yaml` — so cloning an untrusted repo and running `agentsync sync` could execute its hook. Enabling a hook now requires a signal outside the synced repo: `AGENTSYNC_ALLOW_POST_SYNC=true`, or `post_sync.allow: true` in the install-dir `config.yaml`. The in-repo `post_sync.allow` is no longer honored. `post_sync.skip: true` in the project file still disables hooks (skip only ever removes capability). **Action:** if you relied on in-repo `post_sync.allow`, export `AGENTSYNC_ALLOW_POST_SYNC=true` or set it in the global config.
+
+### Fixed
+
+- **Glob filters no longer collapse against the working directory.** `include`/`exclude` globs were word-split unquoted, so a pattern like `*.md` was expanded against the run's cwd (the project root) before matching. When the tested filename was absent from the cwd the real pattern was dropped — rules were silently skipped and previously-synced outputs swept. The split now runs with pathname expansion disabled (same fix in the inline-list YAML and frontmatter-tools parsers).
+- **Empty/filtered rule sets no longer abort a merge.** `merge_rules_to_file` iterated an unguarded array; on bash 3.2 under `set -u` an empty array is a fatal "unbound variable", and it fired after the destination file was removed, so an empty rules dir could delete the old output and abort before the manifest was written (causing false drift on the next sync). The dead, same-bug `copy_rules` helper was removed.
+- **No more spurious "Kept"/"Removed" churn on shared and nested destinations.** Two tools sharing a skills dir (Codex + Antigravity both write `.agents/skills`) made the non-generating tool warn `Kept …` for the other's generated `command-*` skills, and an AGENTS file written into a rules dir (`.amazonq/rules/00-context.md`) was swept then re-copied every run. The reserved `command-*` namespace is now always excluded from the skills sweep, and no sweep prunes a file the same run already wrote.
+- **Generated command/agent TOML and Amazon Q JSON now escape quotes and backslashes**, so a `name`/`description` containing `"` no longer produces an unparseable file.
+- **Deleting a source `.md` now removes its generated TOML/JSON.** The command/agent converters had no differential cleanup, so an orphaned `.toml`/`.json` lingered forever; they now sweep obsolete generated files (preserving user-added files, like the rules sync).
+
+### Changed
+
+- **Faster sync.** Removed hot-path `$(...)` forks in the tool-config resolver (`get_tool_value_r` sets `REPLY` instead of echoing) and memoized the profile-tool lookup once per run. On an 11-tool sync this cuts user+sys CPU ~9% on macOS (larger on Git Bash/Windows, where forks cost more); output is byte-identical.
+
 ## 0.29.0
 
 ### Added

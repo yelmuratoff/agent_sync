@@ -692,22 +692,30 @@ _load_run_config() {
         exit 1
     fi
 
+    # A post-sync hook runs arbitrary shell from a tool YAML. Enable it ONLY from
+    # an out-of-repo signal — the env var or the install-dir global config —
+    # never the in-repo agent_sync.yaml, so cloning and syncing an untrusted
+    # repo cannot execute its hook.
+    local global_allow_post_sync
+    global_allow_post_sync=$(parse_yaml_value "$global_config" "post_sync.allow")
+    if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$global_allow_post_sync" == "true" ]]; then
+        ALLOW_POST_SYNC="true"
+    fi
+
     resolve_project_config_path
     [[ -n "$PROJECT_CONFIG_PATH" ]] || return 0
 
-    local cfg_default_enabled cfg_default_cleanup cfg_allow_post_sync cfg_skip_post_sync
+    local cfg_default_enabled cfg_default_cleanup cfg_skip_post_sync
     cfg_default_enabled=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.enabled")
     cfg_default_cleanup=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "defaults.cleanup")
-    cfg_allow_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.allow")
     cfg_skip_post_sync=$(parse_yaml_value "$PROJECT_CONFIG_PATH" "post_sync.skip")
 
     # shellcheck disable=SC2034
     [[ -n "$cfg_default_enabled" ]] && DEFAULT_ENABLED="$cfg_default_enabled"
     [[ -n "$cfg_default_cleanup" ]] && DEFAULT_CLEANUP="$cfg_default_cleanup"
 
-    if [[ -z "${AGENTSYNC_ALLOW_POST_SYNC:-}" ]] && [[ "$cfg_allow_post_sync" == "true" ]]; then
-        ALLOW_POST_SYNC="true"
-    fi
+    # post_sync.skip in the project config still applies — skip only disables
+    # hooks, so honoring it from an in-repo file grants no new capability.
     if [[ -z "${AGENTSYNC_SKIP_POST_SYNC:-}" ]] && [[ "$cfg_skip_post_sync" == "true" ]]; then
         SKIP_POST_SYNC="true"
     fi
