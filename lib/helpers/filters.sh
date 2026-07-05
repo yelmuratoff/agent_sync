@@ -11,22 +11,32 @@ matches_filter() {
     local include="$2"
     local exclude="$3"
 
-    if [[ -n "$exclude" ]]; then
-        local pat
-        for pat in $exclude; do
-            # shellcheck disable=SC2053
-            if [[ $filename == $pat ]]; then
-                return 1
-            fi
-        done
-    fi
+    # Split the space-separated globs into arrays with pathname expansion OFF —
+    # otherwise a pattern like `*.md` expands against the cwd during the split
+    # (the run's cwd is the project root), silently dropping the real pattern.
+    # The `[[ == $pat ]]` match below is glob-pattern matching, unaffected by -f.
+    local -a inc_pats=() exc_pats=()
+    local reglob=1; case $- in *f*) reglob=0 ;; esac
+    set -f
+    # shellcheck disable=SC2206
+    [[ -n "$exclude" ]] && exc_pats=($exclude)
+    # shellcheck disable=SC2206
+    [[ -n "$include" ]] && inc_pats=($include)
+    (( reglob )) && set +f
+
+    local pat
+    for pat in ${exc_pats[@]+"${exc_pats[@]}"}; do
+        # shellcheck disable=SC2053
+        if [[ $filename == $pat ]]; then
+            return 1
+        fi
+    done
 
     if [[ -z "$include" ]]; then
         return 0
     fi
 
-    local pat
-    for pat in $include; do
+    for pat in ${inc_pats[@]+"${inc_pats[@]}"}; do
         # shellcheck disable=SC2053
         if [[ $filename == $pat ]]; then
             return 0

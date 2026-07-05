@@ -143,12 +143,17 @@ parse_yaml_list() {
     inline_value=$(parse_yaml_value "$file" "$key_path")
     if [[ "$inline_value" =~ ^\[(.*)\]$ ]]; then
         local items="${BASH_REMATCH[1]}"
-        local IFS=','
         local item
+        # Split on commas with pathname expansion OFF so a list item like `*.md`
+        # is not glob-expanded against the cwd during the split.
+        local reglob=1; case $- in *f*) reglob=0 ;; esac
+        set -f
+        local IFS=','
         for item in $items; do
             _yaml_normalize_scalar_reply "$item"
             [[ -n "$REPLY" ]] && echo "$REPLY"
         done
+        (( reglob )) && set +f
         return 0
     fi
 

@@ -45,6 +45,34 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "matches_filter: include glob still matches when cwd holds matching files" {
+    # Regression (HIGH-1): the pattern must not undergo pathname expansion
+    # against the cwd. With `README.md` present, an unquoted `for pat in $include`
+    # would expand `*.md` to `README.md` and drop the real pattern.
+    cd "$TEST_PROJECT"
+    : > "$TEST_PROJECT/README.md"
+    : > "$TEST_PROJECT/other.md"
+    run matches_filter "core.md" "*.md" ""
+    [ "$status" -eq 0 ]
+}
+
+@test "matches_filter: exclude glob still rejects when cwd holds matching files" {
+    cd "$TEST_PROJECT"
+    : > "$TEST_PROJECT/README.md"
+    run matches_filter "secret.md" "" "*.md"
+    [ "$status" -eq 1 ]
+}
+
+@test "matches_filter: multi-pattern include is unaffected by cwd files" {
+    cd "$TEST_PROJECT"
+    : > "$TEST_PROJECT/a.md"
+    : > "$TEST_PROJECT/b.txt"
+    run matches_filter "core.md" "*.txt *.md" ""
+    [ "$status" -eq 0 ]
+    run matches_filter "core.yaml" "*.txt *.md" ""
+    [ "$status" -eq 1 ]
+}
+
 # ── ensure_dir ───────────────────────────────────────────────────────────────
 
 @test "ensure_dir creates missing directory" {

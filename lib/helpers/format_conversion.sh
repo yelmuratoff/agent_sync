@@ -67,6 +67,10 @@ _parse_md_frontmatter() {
                     # Inline list: tools: [Read, Grep, Glob]
                     local raw="${BASH_REMATCH[1]}"
                     local IFS_OLD="$IFS"
+                    # Split on commas with pathname expansion OFF so a tool token
+                    # containing a glob char is not expanded against the cwd.
+                    local reglob=1; case $- in *f*) reglob=0 ;; esac
+                    set -f
                     IFS=','
                     local item
                     for item in $raw; do
@@ -76,6 +80,7 @@ _parse_md_frontmatter() {
                         [[ -n "$item" ]] && _FM_TOOLS+="${item}"$'\n'
                     done
                     IFS="$IFS_OLD"
+                    (( reglob )) && set +f
                 elif [[ "$line" =~ ^tools:[[:space:]]*$ ]]; then
                     in_tools_list=true
                 elif [[ "$line" =~ ^description:[[:space:]]*\>$ ]]; then
