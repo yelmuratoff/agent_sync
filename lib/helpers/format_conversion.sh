@@ -206,6 +206,39 @@ convert_md_command_to_toml() {
     fi
 }
 
+# Differential cleanup for the generated-file converters: remove files in
+# <dest_dir> ending in <ext> whose basename is no longer in <valid_set> (a
+# "|name.ext|…|" membership string of this run's outputs). Mirrors sync_rules'
+# sweep — skips files written this run and honors sync_may_prune so user-added
+# files are preserved. A no-op when the dest dir is absent.
+# Usage: _sweep_generated "$dest_dir" "$valid_set" "$ext" "$dry_run"
+_sweep_generated() {
+    local dest_dir="$1" valid_set="$2" ext="$3" dry_run="${4:-false}"
+    [[ -d "$dest_dir" ]] || return 0
+    local dest_disp
+    dest_disp=$(display_path "$dest_dir")
+    local f basename
+    for f in "$dest_dir"/*"$ext"; do
+        [[ -f "$f" ]] || continue
+        basename="${f##*/}"
+        [[ "$valid_set" == *"|$basename|"* ]] && continue
+        if declare -f manifest_was_touched >/dev/null 2>&1 && manifest_was_touched "$f"; then
+            continue
+        fi
+        if declare -f sync_may_prune >/dev/null 2>&1 && ! sync_may_prune "$f"; then
+            declare -f sync_note_preserved >/dev/null 2>&1 && \
+                sync_note_preserved "$dest_disp/$basename" "$dry_run"
+            continue
+        fi
+        if [[ "$dry_run" == "true" ]]; then
+            log_step "Would remove: $dest_disp/$basename (obsolete)"
+        else
+            rm -f "$f"
+            log_step "Removed: $dest_disp/$basename"
+        fi
+    done
+}
+
 # Sync a directory of markdown command files, converting each to TOML.
 # Usage: sync_commands_as_toml "src_dir" "dest_dir" "dry_run"
 sync_commands_as_toml() {
@@ -217,14 +250,17 @@ sync_commands_as_toml() {
         return 0
     fi
 
-    local count=0
+    local count=0 valid="|"
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
         local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.toml"
+        valid="${valid}${basename}.toml|"
         convert_md_command_to_toml "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))
     done
+
+    _sweep_generated "$dest_dir" "$valid" ".toml" "$dry_run"
 
     if [[ $count -gt 0 ]]; then
         log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count commands, md→toml)"
@@ -277,14 +313,17 @@ sync_agents_as_toml() {
         return 0
     fi
 
-    local count=0
+    local count=0 valid="|"
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
         local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.toml"
+        valid="${valid}${basename}.toml|"
         convert_md_agent_to_toml "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))
     done
+
+    _sweep_generated "$dest_dir" "$valid" ".toml" "$dry_run"
 
     if [[ $count -gt 0 ]]; then
         log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→toml)"
@@ -359,14 +398,17 @@ sync_agents_as_amazonq_json() {
         return 0
     fi
 
-    local count=0
+    local count=0 valid="|"
     for src_file in "$src_dir"/*.md; do
         [[ -f "$src_file" ]] || continue
         local basename="${src_file##*/}"; basename="${basename%.md}"
         local dest_file="$dest_dir/$basename.json"
+        valid="${valid}${basename}.json|"
         convert_md_agent_to_amazonq_json "$src_file" "$dest_file" "$dry_run"
         count=$((count + 1))
     done
+
+    _sweep_generated "$dest_dir" "$valid" ".json" "$dry_run"
 
     if [[ $count -gt 0 ]]; then
         log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→amazonq json)"

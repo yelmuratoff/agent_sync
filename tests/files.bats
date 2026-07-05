@@ -261,3 +261,30 @@ MD
     grep -qF 'name = "my\"agent"' "$TEST_PROJECT/agent.toml"
     grep -qF 'description = "A \"quoted\" agent"' "$TEST_PROJECT/agent.toml"
 }
+
+@test "sync_commands_as_toml: differential cleanup removes orphaned toml" {
+    mkdir -p "$TEST_PROJECT/cmds"
+    printf -- '---\ndescription: A\n---\nBody\n' > "$TEST_PROJECT/cmds/a.md"
+    printf -- '---\ndescription: B\n---\nBody\n' > "$TEST_PROJECT/cmds/b.md"
+    sync_commands_as_toml "$TEST_PROJECT/cmds" "$TEST_PROJECT/out"
+    [ -f "$TEST_PROJECT/out/a.toml" ]
+    [ -f "$TEST_PROJECT/out/b.toml" ]
+    # Delete a source; re-sync must drop the orphaned generated file.
+    rm "$TEST_PROJECT/cmds/b.md"
+    sync_commands_as_toml "$TEST_PROJECT/cmds" "$TEST_PROJECT/out"
+    [ -f "$TEST_PROJECT/out/a.toml" ]
+    [ ! -f "$TEST_PROJECT/out/b.toml" ]
+}
+
+@test "sync_agents_as_amazonq_json: differential cleanup removes orphaned json" {
+    mkdir -p "$TEST_PROJECT/agents"
+    printf -- '---\nname: a\ndescription: A\n---\nBody\n' > "$TEST_PROJECT/agents/a.md"
+    printf -- '---\nname: b\ndescription: B\n---\nBody\n' > "$TEST_PROJECT/agents/b.md"
+    sync_agents_as_amazonq_json "$TEST_PROJECT/agents" "$TEST_PROJECT/out"
+    [ -f "$TEST_PROJECT/out/a.json" ]
+    [ -f "$TEST_PROJECT/out/b.json" ]
+    rm "$TEST_PROJECT/agents/a.md"
+    sync_agents_as_amazonq_json "$TEST_PROJECT/agents" "$TEST_PROJECT/out"
+    [ ! -f "$TEST_PROJECT/out/a.json" ]
+    [ -f "$TEST_PROJECT/out/b.json" ]
+}
