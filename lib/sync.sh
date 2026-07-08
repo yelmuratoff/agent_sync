@@ -288,6 +288,9 @@ is_path_protected() {
 _resolve_one_dest() {
     local tool_name="$1" key="$2" display="$3"
     local raw abs=""
+    if [[ "$(get_tool_bool "$tool_name" "targets.$key.enabled")" == "false" ]]; then
+        echo ""; return 0
+    fi
     get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
     [[ -n "$raw" ]] || { echo ""; return 0; }
     abs=$(resolve_dest_path "$raw" "targets.$key.dest for $display") || abs=""

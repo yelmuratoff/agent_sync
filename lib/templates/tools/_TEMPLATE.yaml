@@ -15,12 +15,20 @@ enabled: false
 # base: claude
 # profile_home: ".claude-hub"
 
-# Define where files should be copied
+# Define where files should be copied. Every target below also accepts
+# `enabled: false` to opt this tool out of that whole category — even when a
+# dest would still resolve (e.g. inherited from the base tool via `base:`).
+# Omit it, or use any other value, to keep the default (enabled).
 targets:
   # The "Identity" file (AGENTS.md)
   agents:
     # Destination path relative to repo root
     dest: ".tool/AGENTS.md"
+
+    # Optional: opt this tool out of this category entirely (works on any target).
+    # Handy for `base:` variants that inherit a category they should not emit —
+    # e.g. a profile that lets the base config own the rules.
+    # enabled: false
 
     # Optional: Override source file (default is .ai/src/AGENTS.md)
     # source: ".ai/src/AGENTS.tiny.md"
