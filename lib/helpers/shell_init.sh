@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# agentsync shell-init — prints a shell snippet that keeps the nearest project's
-# generated outputs fresh by running `sync --if-stale` on every directory change.
+# agentsync shell-init — prints a shell snippet that keeps a project's generated
+# outputs fresh by running `sync --if-stale` when entering its root directory.
 # The snippet is meant to be appended to a shell rc file or eval'd; it must emit
 # nothing but the snippet on stdout so redirection into ~/.zshrc stays clean.
 
@@ -8,8 +8,8 @@ _shell_init_usage() {
     echo "Usage: agentsync shell-init [zsh|bash]"
     echo ""
     echo "  Prints a shell snippet that runs 'agentsync sync --if-stale' for the"
-    echo "  nearest .ai/ project whenever you change directory, so generated"
-    echo "  outputs never go stale between edits."
+    echo "  current .ai/ project when you enter its root directory, so generated"
+    echo "  outputs stay fresh without syncing parent projects from descendants."
     echo ""
     echo "  Recommended: add one of these to your rc file. Eval'ing it regenerates"
     echo "  the hook each session, so upgrades and fixes apply without re-editing:"
@@ -24,9 +24,7 @@ _shell_init_usage() {
     echo "  Set AGENTSYNC_NO_AUTO_SYNC=1 to disable without removing the snippet."
 }
 
-# The auto-sync function, identical across shells: walk up from \$PWD to the
-# nearest .ai/src and run a staleness-gated sync there (silent when fresh). The
-# quoted heredoc keeps every expansion for the user's shell, not this one.
+# The quoted heredoc keeps every expansion for the user's shell, not this one.
 _shell_init_common() {
     cat <<'SNIPPET'
 _agentsync_autosync() {
@@ -37,15 +35,10 @@ _agentsync_autosync() {
   [ -n "${AGENTSYNC_NO_AUTO_SYNC:-}" ] && return 0
   command -v agentsync >/dev/null 2>&1 || return 0
   _AGENTSYNC_BUSY=1
-  _agentsync_dir=$PWD
-  while [ -n "$_agentsync_dir" ] && [ "$_agentsync_dir" != "/" ]; do
-    if [ -d "$_agentsync_dir/.ai/src" ]; then
-      AGENTSYNC_REPO_ROOT="$_agentsync_dir" agentsync sync --if-stale || true
-      break
-    fi
-    _agentsync_dir=${_agentsync_dir%/*}
-  done
-  unset _agentsync_dir _AGENTSYNC_BUSY
+  if [ -d "$PWD/.ai/src" ]; then
+    AGENTSYNC_REPO_ROOT="$PWD" agentsync sync --if-stale || true
+  fi
+  unset _AGENTSYNC_BUSY
 }
 SNIPPET
 }
