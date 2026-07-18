@@ -125,3 +125,24 @@ teardown() { teardown_test_project; }
     run run_agentsync check
     [ "$status" -eq 0 ]
 }
+
+# ── Per-target enabled: false opts a tool out of one whole category ───────────
+
+@test "sync: targets.<cat>.enabled false skips that category, keeps the rest" {
+    enable_tools claude
+    mkdir -p .ai/src/tools
+    printf 'targets:\n  rules:\n    enabled: false\n' > .ai/src/tools/claude.yaml
+    run run_agentsync sync --only claude
+    [ "$status" -eq 0 ]
+    # Non-opted-out categories still sync…
+    [ -f "CLAUDE.md" ]
+    # …but the opted-out category is skipped entirely.
+    [ ! -d ".claude/rules" ]
+}
+
+@test "sync: a category with no enabled flag stays on (default)" {
+    enable_tools claude
+    run run_agentsync sync --only claude
+    [ "$status" -eq 0 ]
+    [ -d ".claude/rules" ]
+}

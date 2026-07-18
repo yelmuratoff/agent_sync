@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.31.0
+
+### Added
+
+- **Per-target category opt-out.** Set `targets.<category>.enabled: false` in a tool YAML to skip that category while continuing to sync the tool's other outputs. This is especially useful for `base:` profile variants that should inherit most destinations but let another config own one category.
+
+### Fixed
+
+- **Shell auto-sync now runs only at an AgentSync project root.** The `chpwd` hook previously walked up from every descendant to the nearest `.ai/src`, repeatedly checking the same parent workspace on ordinary navigation and resurfacing its drift errors. It now syncs only when the current directory itself contains `.ai/src`.
+
 ## 0.30.0
 
 ### Security

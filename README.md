@@ -393,7 +393,7 @@ Add this to your `~/.zshrc` (or `~/.bashrc` with `bash`):
 eval "$(agentsync shell-init zsh)"
 ```
 
-This regenerates the hook from `agentsync` each session — the recommended form, since upgrades and fixes apply automatically without re-editing your rc (the same pattern as `direnv`, `starship`, and `zoxide`). The hook runs `agentsync sync --if-stale` for the nearest `.ai/` project whenever you `cd` into it (and when you open a shell there). It is a no-op — and silent — when nothing changed, so it costs nothing on directories that are already in sync. Across many projects, each self-heals the moment you start working in it. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the line.
+This regenerates the hook from `agentsync` each session — the recommended form, since upgrades and fixes apply automatically without re-editing your rc (the same pattern as `direnv`, `starship`, and `zoxide`). The hook runs `agentsync sync --if-stale` when the current directory itself is an `.ai/` project root (including when a shell opens there). It does not walk up to a parent project while you navigate its descendants. The command is a no-op — and silent — when nothing changed. Set `AGENTSYNC_NO_AUTO_SYNC=1` to disable without removing the line.
 
 Prefer to avoid the per-session `agentsync` call? Freeze a copy instead with `agentsync shell-init zsh >> ~/.zshrc`, but re-run it after each upgrade to pick up changes.
 
@@ -628,7 +628,7 @@ Resolves the destination back to its source file (`.ai/src/rules/core.md`), copi
 
 For these, edit `.ai/src/` directly. AgentSync names the offending file when it refuses.
 
-### Disabling sync for specific tools
+### Disabling sync for tools or categories
 
 If you want to keep managing a tool manually, disable it in its YAML config:
 
@@ -642,6 +642,20 @@ Or exclude it at sync time:
 ```bash
 agentsync sync --skip cursor
 ```
+
+To keep the tool enabled but omit one output category, set that target's
+`enabled` flag to `false`. All other categories continue to sync normally:
+
+```yaml
+# .ai/src/tools/claude-hub.yaml
+base: claude
+targets:
+  rules:
+    enabled: false
+```
+
+This works for every entry under `targets:` and is useful when a `base:`
+variant inherits a destination that another config should own.
 
 ## Workspaces — nested AgentSync projects
 

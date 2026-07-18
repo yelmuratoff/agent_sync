@@ -22,10 +22,54 @@ teardown() { teardown_test_project; }
     [[ "$output" == *"agentsync sync --if-stale"* ]]
 }
 
-@test "shell-init walks up to the nearest .ai/src" {
+@test "shell-init checks the current directory for .ai/src" {
     run run_agentsync shell-init bash
     [ "$status" -eq 0 ]
-    [[ "$output" == *".ai/src"* ]]
+    [[ "$output" == *'"$PWD/.ai/src"'* ]]
+}
+
+@test "shell-init does not sync a parent project from a nested directory" {
+    mkdir -p project/.ai/src project/nested stub
+    printf '#!/bin/sh\nprintf "%%s\\n" "$AGENTSYNC_REPO_ROOT" >> "$AGENTSYNC_TEST_LOG"\n' > stub/agentsync
+    chmod +x stub/agentsync
+
+    run env \
+        PATH="$PWD/stub:$PATH" \
+        AGENTSYNC_TEST_LOG="$PWD/autosync.log" \
+        AGENTSYNC_HOME="$REPO_ROOT" \
+        AGENTSYNC_BIN="$AGENTSYNC_BIN" \
+        TEST_PROJECT_ROOT="$PWD/project" \
+        bash -c '
+            eval "$(bash "$AGENTSYNC_BIN" shell-init bash)"
+            cd "$TEST_PROJECT_ROOT/nested"
+            _agentsync_autosync
+        '
+
+    [ "$status" -eq 0 ]
+    [ ! -e autosync.log ]
+}
+
+@test "shell-init syncs when the current directory is a project root" {
+    mkdir -p project/.ai/src stub
+    printf '#!/bin/sh\nprintf "%%s\\n" "$AGENTSYNC_REPO_ROOT" >> "$AGENTSYNC_TEST_LOG"\n' > stub/agentsync
+    chmod +x stub/agentsync
+
+    run env \
+        PATH="$PWD/stub:$PATH" \
+        AGENTSYNC_TEST_LOG="$PWD/autosync.log" \
+        AGENTSYNC_HOME="$REPO_ROOT" \
+        AGENTSYNC_BIN="$AGENTSYNC_BIN" \
+        TEST_PROJECT_ROOT="$PWD/project" \
+        bash -c '
+            eval "$(bash "$AGENTSYNC_BIN" shell-init bash)"
+            cd "$TEST_PROJECT_ROOT"
+            _agentsync_autosync
+        '
+
+    [ "$status" -eq 0 ]
+    [ "$(wc -l < autosync.log | tr -d ' ')" -eq 1 ]
+    IFS= read -r synced_root < autosync.log
+    [ "${synced_root##*/}" = "project" ]
 }
 
 @test "shell-init snippet honors the AGENTSYNC_NO_AUTO_SYNC kill switch" {
