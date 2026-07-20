@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for agentsync sync.
-# Uses setup_file/teardown_file — init+sync runs ONCE, all tests are readonly checks.
+# Uses setup_file/teardown_file — init+sync runs ONCE against a shared fixture.
+# A few tests intentionally re-run sync, so tests within this file must not race.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
 
 load test_helper
 
@@ -18,7 +20,7 @@ setup_file() {
 
     # Tests assert sync output for these tools — enable explicitly.
     # init defaults all tools to disabled; users opt in per project.
-    enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity
+    enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity kimi opencode
 
     # Path-scoped rule (leads with YAML frontmatter) — regression fixture for the
     # inline-into-agents rule inventory title extraction.
@@ -161,6 +163,39 @@ setup() {
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null 2>&1
     [ -d ".agents/skills/command-fix-issue" ]
     [ -d ".agents/skills/command-review" ]
+}
+
+# ── Kimi Code ────────────────────────────────────────────────────────────────
+
+@test "sync: Kimi Code emits native skills and command skills" {
+    [ -f ".kimi-code/AGENTS.md" ]
+    grep -q '^## Rules$' ".kimi-code/AGENTS.md"
+    [ -d ".kimi-code/skills" ]
+    [ -f ".kimi-code/skills/command-review/SKILL.md" ]
+}
+
+@test "sync: Kimi Code emits project MCP config" {
+    [ -f ".kimi-code/mcp.json" ]
+    grep -q '"mcpServers"' ".kimi-code/mcp.json"
+}
+
+# ── OpenCode ─────────────────────────────────────────────────────────────────
+
+@test "sync: OpenCode emits native skills and commands" {
+    [ -d ".opencode/skills" ]
+    [ -f ".opencode/commands/review.md" ]
+}
+
+@test "sync: OpenCode converts portable subagents safely" {
+    [ -f ".opencode/agents/code-reviewer.md" ]
+    grep -q '^mode: subagent$' ".opencode/agents/code-reviewer.md"
+    grep -q '^  "\*": deny$' ".opencode/agents/code-reviewer.md"
+    grep -q '^  "read": allow$' ".opencode/agents/code-reviewer.md"
+}
+
+@test "sync: OpenCode emits project settings" {
+    [ -f "opencode.json" ]
+    grep -q 'https://opencode.ai/config.json' "opencode.json"
 }
 
 # ── Hooks (per-tool) ─────────────────────────────────────────────────────────

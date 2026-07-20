@@ -263,6 +263,16 @@ JSON
     [[ "$output" != *".cursor/ — orphan"* ]]
 }
 
+@test "doctor recognizes Kimi Code and OpenCode output ownership" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools kimi opencode
+    mkdir -p .kimi-code/skills .opencode/skills
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".kimi-code/ — orphan"* ]]
+    [[ "$output" != *".opencode/ — orphan"* ]]
+}
+
 @test "doctor detects identical-hash duplicate against parent .ai/src/" {
     # Parent has rules/shared.md; child below it has identical file. Child's
     # doctor should flag it as a duplicate and point at `agentsync dedupe`.

@@ -6,7 +6,7 @@
 #   - merged rule files (merge_to_file / prepend_agents)
 #   - inlined rules / skills (inline_into_agents)
 #   - header-injected rules (cursor/junie style frontmatter)
-#   - format-converted commands/subagents (toml, amazonq_json)
+#   - format-converted commands/subagents (toml, amazonq_json, opencode_md)
 #
 # After copy, updates the manifest entry so the next `sync` is idempotent.
 #
@@ -293,7 +293,7 @@ _adopt_resolve_dir_source() {
         subagents)
             local fmt
             fmt=$(get_tool_value "$tool" "targets.subagents.format")
-            if [[ "$fmt" == "toml" ]] || [[ "$fmt" == "amazonq_json" ]]; then
+            if [[ "$fmt" == "toml" ]] || [[ "$fmt" == "amazonq_json" ]] || [[ "$fmt" == "opencode_md" ]]; then
                 _ADOPT_REFUSAL="$tool serializes subagents as $fmt. Conversion is not reversible — edit $SOURCE_SUBAGENTS/ instead."
                 return 0
             fi

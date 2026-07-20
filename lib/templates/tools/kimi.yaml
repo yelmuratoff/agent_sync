@@ -1,0 +1,19 @@
+name: "Kimi Code"
+enabled: false
+
+targets:
+  agents:
+    dest: ".kimi-code/AGENTS.md"
+
+  rules:
+    inline_into_agents: true
+
+  skills:
+    dest: ".kimi-code/skills"
+
+  commands:
+    as_skills: true
+
+  mcp:
+    source: ".ai/src/mcp/kimi.json"
+    dest: ".kimi-code/mcp.json"

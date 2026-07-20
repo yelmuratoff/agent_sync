@@ -289,6 +289,67 @@ MD
     [ -f "$TEST_PROJECT/out/b.json" ]
 }
 
+@test "convert_md_agent_to_opencode_md: converts allowlisted tools to safe permissions" {
+    cat > "$TEST_PROJECT/agent.md" <<'MD'
+---
+name: reviewer
+description: Read-only reviewer
+model: sonnet
+tools: [Read, Grep, Glob]
+---
+Review the change.
+MD
+    convert_md_agent_to_opencode_md "$TEST_PROJECT/agent.md" "$TEST_PROJECT/reviewer.md"
+    grep -q '^description: "Read-only reviewer"$' "$TEST_PROJECT/reviewer.md"
+    grep -q '^mode: subagent$' "$TEST_PROJECT/reviewer.md"
+    grep -q '^  "\*": deny$' "$TEST_PROJECT/reviewer.md"
+    grep -q '^  "read": allow$' "$TEST_PROJECT/reviewer.md"
+    ! grep -q '^model:' "$TEST_PROJECT/reviewer.md"
+    grep -q '^Review the change\.$' "$TEST_PROJECT/reviewer.md"
+}
+
+@test "convert_md_agent_to_opencode_md: preserves provider models and readonly restrictions" {
+    cat > "$TEST_PROJECT/agent.md" <<'MD'
+---
+name: planner
+model: zai/glm-5
+readonly: true
+---
+Plan the change.
+MD
+    convert_md_agent_to_opencode_md "$TEST_PROJECT/agent.md" "$TEST_PROJECT/planner.md"
+    grep -q '^description: "planner"$' "$TEST_PROJECT/planner.md"
+    grep -q '^model: "zai/glm-5"$' "$TEST_PROJECT/planner.md"
+    grep -q '^  edit: deny$' "$TEST_PROJECT/planner.md"
+    grep -q '^  bash: deny$' "$TEST_PROJECT/planner.md"
+}
+
+@test "convert_md_agent_to_opencode_md: keeps an empty tools allowlist deny-by-default" {
+    cat > "$TEST_PROJECT/agent.md" <<'MD'
+---
+description: No-tools agent
+tools: []
+---
+Answer from context only.
+MD
+    convert_md_agent_to_opencode_md "$TEST_PROJECT/agent.md" "$TEST_PROJECT/no-tools.md"
+    grep -q '^  "\*": deny$' "$TEST_PROJECT/no-tools.md"
+    [ "$(grep -c ': allow$' "$TEST_PROJECT/no-tools.md")" -eq 0 ]
+}
+
+@test "sync_agents_as_opencode_md: differential cleanup removes orphaned markdown" {
+    mkdir -p "$TEST_PROJECT/agents"
+    printf -- '---\ndescription: A\n---\nBody\n' > "$TEST_PROJECT/agents/a.md"
+    printf -- '---\ndescription: B\n---\nBody\n' > "$TEST_PROJECT/agents/b.md"
+    sync_agents_as_opencode_md "$TEST_PROJECT/agents" "$TEST_PROJECT/out"
+    [ -f "$TEST_PROJECT/out/a.md" ]
+    [ -f "$TEST_PROJECT/out/b.md" ]
+    rm "$TEST_PROJECT/agents/a.md"
+    sync_agents_as_opencode_md "$TEST_PROJECT/agents" "$TEST_PROJECT/out"
+    [ ! -f "$TEST_PROJECT/out/a.md" ]
+    [ -f "$TEST_PROJECT/out/b.md" ]
+}
+
 # ── Missing-source is a non-fatal skip (return 0, not a set -e abort) ─────────
 
 @test "copy_file: missing source warns and returns 0" {

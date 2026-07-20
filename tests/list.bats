@@ -19,6 +19,8 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"Claude Code"* ]]
     [[ "$output" == *"Cursor"* ]]
+    [[ "$output" == *"Kimi Code"* ]]
+    [[ "$output" == *"OpenCode"* ]]
 }
 
 @test "list shows available for unenabled tools" {

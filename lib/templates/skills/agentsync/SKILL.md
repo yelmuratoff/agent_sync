@@ -23,7 +23,7 @@ Create and maintain AI agent instructions in the AgentSync format.
 │   └── fix-issue.md
 ├── agents/                     # Subagent personas (.md files)
 │   └── code-reviewer.md
-├── mcp.json                    # Shared MCP servers — applied to every tool
+├── mcp.json                    # Shared MCP servers for compatible targets
 └── tools/                      # Per-tool config and overrides
     ├── claude.yaml             #   tool config: dest paths, format options
     └── claude/                 #   per-tool payload overrides (opt-in)
@@ -159,9 +159,9 @@ When one tool needs a different server map, `agentsync customize <tool> mcp` cre
 
 For tools without separate rules/skills directories, use inline options:
 
-- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie.
+- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie, Kimi Code, OpenCode.
 - **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Junie, Cline, Amazon Q, Zed.
-- **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex.
+- **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex, Kimi Code.
 - **`inline_into_agents: true`** (commands) — appends a `## Commands` index (one `` `/<name>` — description `` line per command) to the agents file. For tools that have neither a commands dir nor a skills dir. Requires `targets.agents.dest` (or `rules.merge_to_file` fallback). Used by: Amazon Q, Zed.
 - **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Zed.
 - **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q, Cline.
@@ -281,6 +281,6 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
-- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, and Antigravity. Tools without a command surface get a conversion: Codex emits a generated skill under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
-- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML and Amazon Q as custom-agent JSON. Cline, Zed, Windsurf, and Antigravity have no subagent surface, so they get none.
-- The shared `.ai/src/mcp.json` reaches every tool; per-tool settings and hooks each have their own format under `.ai/src/tools/<tool>/`.
+- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex and Kimi Code emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
+- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, and OpenCode as safe Markdown with translated permissions. Cline, Kimi Code, Zed, Windsurf, and Antigravity have no custom subagent surface, so they get none.
+- The shared `.ai/src/mcp.json` reaches every tool with a compatible `mcpServers` target. OpenCode keeps MCP inside `opencode.json`; per-tool settings and hooks each have their own format under `.ai/src/tools/<tool>/`.

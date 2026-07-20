@@ -71,8 +71,6 @@ TOTAL_COUNT=0
 # Display names of tools that were not synced (disabled or CLI-filtered),
 # reported as one list at the end instead of a line each.
 declare -a SKIPPED_TOOL_NAMES=()
-# Set per tool by sync_tool/cleanup_tool: did it print anything? Gates the
-# blank line between tools so silent skips leave no gaps.
 _TOOL_PRINTED_OUTPUT="false"
 # Gates sync_may_prune: pruning is allowed only on a real sync run (manifest
 # loaded), never on a standalone/primitive helper call.
@@ -562,7 +560,7 @@ _sync_commands_step() {
     fi
 }
 
-# Sync SUBAGENTS in the tool's native format (markdown, TOML, or Amazon Q JSON).
+# Sync SUBAGENTS in the tool's native format.
 _sync_subagents_step() {
     local tool_name="$1" display="$2"
     local dest_subagents_abs="$_ST_DEST_SUBAGENTS"
@@ -578,6 +576,7 @@ _sync_subagents_step() {
     case "$dest_sa_format" in
         toml)         sync_agents_as_toml "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
         amazonq_json) sync_agents_as_amazonq_json "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
+        opencode_md)  sync_agents_as_opencode_md "$src_subagents_abs" "$dest_subagents_abs" "$DRY_RUN" ;;
         *)            sync_rules "$src_subagents_abs" "$dest_subagents_abs" "$dest_sa_ext" "" "$DRY_RUN" "" "" ;;
     esac
 }

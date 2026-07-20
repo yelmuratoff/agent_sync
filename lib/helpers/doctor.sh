@@ -353,6 +353,8 @@ _DOCTOR_OUTPUT_DIR_MAP=(
     ".claude|claude"
     ".cursor|cursor"
     ".codex|codex"
+    ".kimi-code|kimi"
+    ".opencode|opencode"
     ".windsurf|windsurf"
     ".gemini|gemini"
     ".junie|junie"

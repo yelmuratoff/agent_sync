@@ -208,6 +208,23 @@ teardown() {
     grep -q "^    - cursor$" ".ai/agent_sync.yaml"
 }
 
+@test "init auto-detects Kimi Code and OpenCode markers" {
+    mkdir -p .kimi-code .opencode
+    run run_agentsync init
+    [ "$status" -eq 0 ]
+
+    grep -q "^    - kimi$" ".ai/agent_sync.yaml"
+    grep -q "^    - opencode$" ".ai/agent_sync.yaml"
+}
+
+@test "init does not treat generic AGENTS.md as a Codex marker" {
+    echo "# Shared agent instructions" > AGENTS.md
+    run run_agentsync init
+    [ "$status" -eq 0 ]
+
+    ! grep -q "^    - codex$" ".ai/agent_sync.yaml"
+}
+
 # ── Phase 4: interactive init, --yes, --dry-run ─────────────────────────────
 
 @test "init --dry-run shows plan without writing" {

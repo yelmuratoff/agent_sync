@@ -4,7 +4,8 @@
 # Model:
 #   - Tool configs are NOT copied to .ai/src/tools/. They live in the install-dir
 #     base and are referenced via tools.enabled list in agent_sync.yaml. Users
-#     create per-tool override files only when they want to customize.
+#     Per-tool files stay absent until customization so they cannot shadow
+#     install-dir defaults.
 #   - Per-tool payloads (hooks, mcp, settings) are NOT eagerly copied either.
 #     They are scaffolded only for tools the user has opted into (auto-detected
 #     from filesystem markers, passed via --tools, or explicitly enabled later).
@@ -53,9 +54,6 @@ _init_merge_lists() {
     echo "$out"
 }
 
-# Create only the directories that will actually hold files. Payload dirs
-# (settings/mcp/hooks) are created lazily when `_init_copy_tool_payloads`
-# copies a file into them.
 _init_create_directories() {
     local ai_dir="$1"
     local content_list="$2"
@@ -151,8 +149,8 @@ RULE_EOF
 }
 
 # Copy per-tool payload files (settings, hooks) ONLY for tools in the list.
-# MCP is intentionally excluded: in 0.11+ every tool gets MCP from the shared
-# .ai/src/mcp.json (or base template). Scaffolding empty per-tool MCP files
+# MCP is intentionally excluded: in 0.11+ every tool with an MCP target gets it
+# from the shared .ai/src/mcp.json (or base template). Scaffolding empty per-tool MCP files
 # would shadow that shared source. Use `agentsync add mcp <server>` to create
 # a shared source, or `agentsync customize <tool> mcp` for a per-tool override.
 #
@@ -194,7 +192,9 @@ _init_detect_enabled_tools() {
         "cursor|$root/.cursor|$root/.cursorrules"
         "copilot|$root/.github/copilot-instructions.md|$root/.github/instructions|$root/.github/prompts"
         "gemini|$root/.gemini|$root/GEMINI.md"
-        "codex|$root/.codex|$root/AGENTS.md"
+        "codex|$root/.codex"
+        "kimi|$root/.kimi-code"
+        "opencode|$root/.opencode|$root/opencode.json|$root/opencode.jsonc"
         "windsurf|$root/.windsurf|$root/.windsurfrules"
         "junie|$root/.junie"
         "cline|$root/.clinerules"
@@ -470,8 +470,6 @@ _init_print_plan() {
 
 # ── agentsync upgrade-config ──────────────────────────────────────────────────
 
-# Update the agentsync_version pin in agent_sync.yaml to the current CLI
-# version. Creates the key if missing.
 cmd_upgrade_config() {
     local project_dir
     project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
@@ -692,7 +690,6 @@ HELP
         echo "$(_bold "AgentSync init") — $(_dim "$target_dir")"
         echo ""
 
-        # Step 1: pick tools.
         local available_tools
         available_tools=$(_init_list_available_tools "$templates_dir" | tr '\n' ' ' | sed 's/ $//')
         if [[ -n "$available_tools" ]]; then
@@ -712,7 +709,6 @@ HELP
             echo ""
         fi
 
-        # Step 2: pick content sections.
         local picked_content
         picked_content=$(prompt_multiselect \
             "Content sections:" \

@@ -2,8 +2,8 @@
 # Markdown frontmatter parsing and MD→TOML format conversion.
 # Depends on: logging.sh, filters.sh, file_ops.sh
 
-# Parse YAML frontmatter from a markdown file.
-# Sets globals: _FM_NAME, _FM_DESCRIPTION, _FM_MODEL, _FM_TOOLS (newline-sep), _FM_BODY
+# Sets globals: _FM_NAME, _FM_DESCRIPTION, _FM_MODEL, _FM_TOOLS (newline-sep),
+# _FM_TOOLS_DECLARED, _FM_READONLY, _FM_BODY
 # Usage: _parse_md_frontmatter "file"
 _parse_md_frontmatter() {
     local src_file="$1"
@@ -11,6 +11,8 @@ _parse_md_frontmatter() {
     _FM_DESCRIPTION=""
     _FM_MODEL=""
     _FM_TOOLS=""
+    _FM_TOOLS_DECLARED="false"
+    _FM_READONLY=""
     _FM_BODY=""
 
     local in_frontmatter=false
@@ -65,6 +67,7 @@ _parse_md_frontmatter() {
                     _FM_MODEL="${_FM_MODEL#\'}" ; _FM_MODEL="${_FM_MODEL%\'}"
                 elif [[ "$line" =~ ^tools:[[:space:]]*\[(.*)\][[:space:]]*$ ]]; then
                     # Inline list: tools: [Read, Grep, Glob]
+                    _FM_TOOLS_DECLARED="true"
                     local raw="${BASH_REMATCH[1]}"
                     local IFS_OLD="$IFS"
                     # Split on commas with pathname expansion OFF so a tool token
@@ -82,7 +85,12 @@ _parse_md_frontmatter() {
                     IFS="$IFS_OLD"
                     (( reglob )) && set +f
                 elif [[ "$line" =~ ^tools:[[:space:]]*$ ]]; then
+                    _FM_TOOLS_DECLARED="true"
                     in_tools_list=true
+                elif [[ "$line" =~ ^readonly:[[:space:]]*(.*) ]]; then
+                    _FM_READONLY="${BASH_REMATCH[1]}"
+                    _FM_READONLY="${_FM_READONLY#\"}" ; _FM_READONLY="${_FM_READONLY%\"}"
+                    _FM_READONLY="${_FM_READONLY#\'}" ; _FM_READONLY="${_FM_READONLY%\'}"
                 elif [[ "$line" =~ ^description:[[:space:]]*\>$ ]]; then
                     in_multiline_desc=true
                     _FM_DESCRIPTION=""
@@ -104,10 +112,6 @@ _parse_md_frontmatter() {
 # Only handles top-level `key: value` inside the leading `---` delimiters.
 # Echoes the value (without surrounding quotes) on stdout; empty if no
 # frontmatter or field absent. Stops scanning after the closing `---`.
-#
-# Used to read optional fields like `category:` without dragging in the
-# full _parse_md_frontmatter state machine — keeps the call site cheap
-# when doctor scans dozens of files.
 #
 # Usage: read_frontmatter_field "file.md" "category"
 read_frontmatter_field() {
@@ -412,5 +416,100 @@ sync_agents_as_amazonq_json() {
 
     if [[ $count -gt 0 ]]; then
         log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→amazonq json)"
+    fi
+}
+
+# Portable model aliases such as "sonnet" are intentionally omitted; OpenCode
+# only receives a model when the source uses its provider/model form.
+# A portable tools list is treated as an allowlist so read-only agents do not
+# silently gain OpenCode's default edit and shell permissions.
+# Usage: convert_md_agent_to_opencode_md "src_file" "dest_file" "dry_run"
+convert_md_agent_to_opencode_md() {
+    local src_file="$1"
+    local dest_file="$2"
+    local dry_run="${3:-false}"
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_step "$(display_path "$src_file") → $(display_path "$dest_file") (agent md→opencode md) (dry-run)"
+        return 0
+    fi
+
+    ensure_dir "${dest_file%/*}"
+    _parse_md_frontmatter "$src_file"
+
+    local name_stem="${src_file##*/}"; name_stem="${name_stem%.md}"
+    local description="${_FM_DESCRIPTION:-${_FM_NAME:-$name_stem}}"
+    local model="$_FM_MODEL"
+    local body="$_FM_BODY"
+    local permissions=""
+
+    if [[ "$_FM_TOOLS_DECLARED" == "true" ]]; then
+        permissions='  "*": deny'$'\n'
+        local seen="|" tool mapped
+        while IFS= read -r tool; do
+            [[ -z "$tool" ]] && continue
+            case "$tool" in
+                Read) mapped="read" ;;
+                Grep) mapped="grep" ;;
+                Glob) mapped="glob" ;;
+                Bash) mapped="bash" ;;
+                Write|Edit) mapped="edit" ;;
+                WebFetch) mapped="webfetch" ;;
+                WebSearch) mapped="websearch" ;;
+                Task) mapped="task" ;;
+                *) mapped=$(printf '%s' "$tool" | tr '[:upper:]' '[:lower:]') ;;
+            esac
+            [[ "$seen" == *"|${mapped}|"* ]] && continue
+            permissions+="  \"$(_json_escape "$mapped")\": allow"$'\n'
+            seen="${seen}${mapped}|"
+        done <<< "$_FM_TOOLS"
+    elif [[ "$_FM_READONLY" == "true" ]]; then
+        permissions='  edit: deny'$'\n''  bash: deny'$'\n'
+    fi
+
+    {
+        echo "---"
+        if [[ -n "$description" ]]; then
+            printf 'description: "%s"\n' "$(_json_escape "$description")"
+        fi
+        echo "mode: subagent"
+        if [[ "$model" == */* ]]; then
+            printf 'model: "%s"\n' "$(_json_escape "$model")"
+        fi
+        if [[ -n "$permissions" ]]; then
+            echo "permission:"
+            printf '%s' "$permissions"
+        fi
+        echo "---"
+        printf '%s' "$body"
+    } > "$dest_file"
+
+    if declare -f manifest_record_write >/dev/null 2>&1; then
+        manifest_record_write "$dest_file"
+    fi
+}
+
+# Usage: sync_agents_as_opencode_md "src_dir" "dest_dir" "dry_run"
+sync_agents_as_opencode_md() {
+    local src_dir="$1"
+    local dest_dir="$2"
+    local dry_run="${3:-false}"
+
+    [[ -d "$src_dir" ]] || return 0
+
+    local count=0 valid="|" src_file
+    for src_file in "$src_dir"/*.md; do
+        [[ -f "$src_file" ]] || continue
+        local basename="${src_file##*/}"
+        local dest_file="$dest_dir/$basename"
+        valid="${valid}${basename}|"
+        convert_md_agent_to_opencode_md "$src_file" "$dest_file" "$dry_run"
+        count=$((count + 1))
+    done
+
+    _sweep_generated "$dest_dir" "$valid" ".md" "$dry_run"
+
+    if [[ $count -gt 0 ]]; then
+        log_step "$(display_path "$src_dir")/ → $(display_path "$dest_dir")/ ($count agents, md→opencode md)"
     fi
 }

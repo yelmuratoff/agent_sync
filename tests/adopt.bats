@@ -93,6 +93,19 @@ teardown() { teardown_test_project; }
     [[ "$output" == *"toml"* ]]
 }
 
+@test "adopt: refuses converted OpenCode subagent" {
+    enable_tools opencode
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    local agent_file
+    agent_file=$(find .opencode/agents -name '*.md' 2>/dev/null | head -1)
+    [ -n "$agent_file" ]
+    echo "# edit" >> "$agent_file"
+
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" adopt --yes "$agent_file"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"opencode_md"* ]]
+}
+
 @test "adopt: refuses unknown destination" {
     enable_tools claude
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null

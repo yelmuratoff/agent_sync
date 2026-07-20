@@ -111,6 +111,7 @@ targets:
   # subagents:
   #   dest: ".tool/agents"
   #   # extension: ".agent.md"    # Optional: change file extension
+  #   # format: opencode_md        # Optional: convert portable frontmatter
 
   # Settings/permissions (optional, file copy)
   # settings:
