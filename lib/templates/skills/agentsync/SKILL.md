@@ -153,7 +153,11 @@ One shared `.ai/src/mcp.json` reaches every enabled tool, so you define a server
 }
 ```
 
-When one tool needs a different server map, `agentsync customize <tool> mcp` creates `.ai/src/tools/<tool>/mcp.json`, which shadows the shared file for that tool only.
+When one tool needs a different server map, `.ai/src/tools/<tool>/mcp.json` shadows the shared file for that tool only. `agentsync customize <tool> mcp` scaffolds it when the target ships a copyable base.
+
+OpenCode is composed rather than copied: canonical `{ "mcpServers": { ... } }` input becomes the top-level `mcp` map in `opencode.json`. Put a divergent map at `.ai/src/tools/opencode/mcp.json`. Keep `mcp` out of the OpenCode settings override while canonical MCP exists; `sync` and `doctor` reject ambiguous ownership instead of overwriting either source.
+
+OpenCode hooks use `.ai/src/tools/opencode/hooks.ts` → `.opencode/plugins/agentsync.ts`. AgentSync owns only that plugin file. Kimi hooks are global-only in `$KIMI_CODE_HOME/config.toml` and remain outside project sync.
 
 ## Inline Options
 
@@ -283,4 +287,5 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
 - Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex and Kimi Code emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
 - Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, and OpenCode as safe Markdown with translated permissions. Cline, Kimi Code, Zed, Windsurf, and Antigravity have no custom subagent surface, so they get none.
-- The shared `.ai/src/mcp.json` reaches every tool with a compatible `mcpServers` target. OpenCode keeps MCP inside `opencode.json`; per-tool settings and hooks each have their own format under `.ai/src/tools/<tool>/`.
+- The shared `.ai/src/mcp.json` reaches every MCP target. OpenCode converts and atomically composes it into `opencode.json`; do not duplicate `mcp` in the OpenCode settings override.
+- AgentSync owns `.opencode/plugins/agentsync.ts`, not sibling OpenCode plugins, custom tools, themes, TUI preferences, or credentials. Kimi custom agents and project hooks are unavailable; leave Kimi's global config untouched.

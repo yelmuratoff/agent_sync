@@ -32,7 +32,7 @@
 - Consumes: committed design `docs/specs/2026-07-20-kimi-opencode-complete-support-design.md` at `05829ab`.
 - Produces: a non-`main` feature workspace containing the already verified Kimi/OpenCode baseline and this plan.
 
-- [ ] **Step 1: Invoke `using-git-worktrees` and inspect the dirty workspace**
+- [x] **Step 1: Invoke `using-git-worktrees` and inspect the dirty workspace**
 
 Run:
 
@@ -43,7 +43,7 @@ git status --short
 
 Expected: current branch is `main`; only the previously reported Kimi/OpenCode implementation files and this plan are dirty/untracked.
 
-- [ ] **Step 2: Move the dirty implementation onto an isolated feature branch using the safe path selected by the worktree skill**
+- [x] **Step 2: Move the dirty implementation onto an isolated feature branch using the safe path selected by the worktree skill**
 
 The resulting branch name is:
 
@@ -53,7 +53,7 @@ feat/kimi-opencode-complete-support
 
 The existing working-tree files must be preserved byte-for-byte. Do not stash, reset, clean, or discard them.
 
-- [ ] **Step 3: Re-run the baseline verification before adding new behavior**
+- [x] **Step 3: Re-run the baseline verification before adding new behavior**
 
 Run:
 
@@ -65,7 +65,7 @@ git diff --check
 
 Expected: 494 Bats tests pass; ShellCheck and whitespace checks exit 0.
 
-- [ ] **Step 4: Commit the approved baseline and plan on the feature branch**
+- [x] **Step 4: Commit the approved baseline and plan on the feature branch**
 
 ```bash
 git add README.md docs/plans/2026-07-20-kimi-opencode-complete-support.md \
@@ -94,7 +94,7 @@ Expected: the feature branch is clean and contains the initial target support pl
 - Consumes: `resolve_payload_source <tool> <resource>`, `describe_payload_source`, `manifest_record_write`, `ensure_dir`, and OpenCode's resolved settings source.
 - Produces: `sync_opencode_config <settings_src> <mcp_src> <dest> <dry_run>`; a final `opencode.json` whose non-MCP fields are preserved and whose canonical local servers are converted to OpenCode syntax.
 
-- [ ] **Step 1: Write the failing CLI-level happy-path tests**
+- [x] **Step 1: Write the failing CLI-level happy-path tests**
 
 Create `tests/opencode.bats`:
 
@@ -137,7 +137,7 @@ JSON
 }
 ```
 
-- [ ] **Step 2: Run the tests and confirm the missing behavior**
+- [x] **Step 2: Run the tests and confirm the missing behavior**
 
 Run:
 
@@ -147,7 +147,7 @@ bats tests/opencode.bats --tap
 
 Expected: FAIL because `opencode.json` contains settings but no converted `mcp` object.
 
-- [ ] **Step 3: Add the OpenCode MCP target**
+- [x] **Step 3: Add the OpenCode MCP target**
 
 Extend `lib/templates/tools/opencode.yaml`:
 
@@ -159,7 +159,7 @@ Extend `lib/templates/tools/opencode.yaml`:
 
 Do not add `lib/templates/mcp/opencode.json`; absence of a canonical MCP source must preserve a settings-owned `mcp` field for compatibility.
 
-- [ ] **Step 4: Implement the atomic composer**
+- [x] **Step 4: Implement the atomic composer**
 
 Create `lib/helpers/opencode.sh` with this public contract:
 
@@ -216,7 +216,7 @@ Use an AWK exit code map so stderr names the cause:
 
 `sync_opencode_config` translates each code into `log_error` output containing the source path and, where available, the server and field from an AWK diagnostic side file.
 
-- [ ] **Step 5: Dispatch the composer from sync**
+- [x] **Step 5: Dispatch the composer from sync**
 
 Source `helpers/opencode.sh` in `lib/sync.sh`. In `_sync_payloads_step`, resolve settings and MCP before writing either destination. When `targets.mcp.format` is `opencode_json`, call:
 
@@ -227,7 +227,7 @@ sync_opencode_config "$src_settings_abs" "$src_mcp_abs" \
 
 Skip the ordinary settings and MCP copy branches for that tool. Keep the hooks branch unchanged.
 
-- [ ] **Step 6: Run the slice tests and confirm green**
+- [x] **Step 6: Run the slice tests and confirm green**
 
 ```bash
 bats tests/opencode.bats tests/resource_resolver.bats tests/sync.bats --tap
@@ -235,7 +235,7 @@ bats tests/opencode.bats tests/resource_resolver.bats tests/sync.bats --tap
 
 Expected: all selected tests pass; existing MCP targets remain byte-for-byte copies.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/helpers/opencode.sh lib/sync.sh lib/templates/tools/opencode.yaml tests/opencode.bats
@@ -255,7 +255,7 @@ git commit -m "feat: compose canonical MCP into OpenCode settings"
 - Consumes: `sync_opencode_config` from Task 1.
 - Produces: strict local/remote conversion, dry-run validation, atomic failure, ownership-conflict handling, and stable manifest hashes.
 
-- [ ] **Step 1: Add a failing remote conversion test**
+- [x] **Step 1: Add a failing remote conversion test**
 
 ```bash
 @test "opencode: remote MCP preserves supported options" {
@@ -270,7 +270,7 @@ JSON
 }
 ```
 
-- [ ] **Step 2: Add a table of failing validation tests**
+- [x] **Step 2: Add a table of failing validation tests**
 
 Cover these exact inputs and expected diagnostics:
 
@@ -284,11 +284,11 @@ Cover these exact inputs and expected diagnostics:
 
 Add a conflict test where `.ai/src/tools/opencode/settings.json` contains `mcp` and `.ai/src/mcp.json` exists. Expected: non-zero with instructions naming both `.ai/src/tools/opencode/settings.json` and `.ai/src/mcp.json`.
 
-- [ ] **Step 3: Add atomicity and dry-run tests**
+- [x] **Step 3: Add atomicity and dry-run tests**
 
 For malformed MCP, pre-create `opencode.json` with `ORIGINAL`, run sync, and assert the file still contains exactly `ORIGINAL` and the manifest hash is unchanged. For `--dry-run`, assert validation still fails on malformed input and no `opencode.json` is created for valid input.
 
-- [ ] **Step 4: Add remote conversion and every validation branch**
+- [x] **Step 4: Add remote conversion and every validation branch**
 
 Extend the AWK allowlists:
 
@@ -300,7 +300,7 @@ types:  omitted|stdio for local; omitted|http|sse|streamable-http for remote
 
 Require string values inside `args`, `env`, and `headers`; boolean `enabled`; numeric non-negative `timeout`; boolean/object `oauth`. Preserve valid JSON string escapes rather than decoding and re-encoding them.
 
-- [ ] **Step 5: Run focused and drift tests**
+- [x] **Step 5: Run focused and drift tests**
 
 ```bash
 bats tests/opencode.bats tests/drift.bats --tap
@@ -308,7 +308,7 @@ bats tests/opencode.bats tests/drift.bats --tap
 
 Expected: all tests pass, including second-sync byte-identical manifest behavior.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/helpers/opencode.sh tests/opencode.bats tests/drift.bats
@@ -330,7 +330,7 @@ git commit -m "feat: validate OpenCode MCP composition"
 - Consumes: existing per-tool payload resolution and `customize <tool> hooks` flow.
 - Produces: one managed project plugin at `.opencode/plugins/agentsync.ts`; sibling plugins remain outside AgentSync ownership.
 
-- [ ] **Step 1: Write failing hook fallback and override tests**
+- [x] **Step 1: Write failing hook fallback and override tests**
 
 ```bash
 @test "opencode hooks fall back to the native base plugin" {
@@ -355,7 +355,7 @@ git commit -m "feat: validate OpenCode MCP composition"
 }
 ```
 
-- [ ] **Step 2: Run and confirm missing destination**
+- [x] **Step 2: Run and confirm missing destination**
 
 ```bash
 bats tests/resource_resolver.bats --filter 'opencode hook' --tap
@@ -363,7 +363,7 @@ bats tests/resource_resolver.bats --filter 'opencode hook' --tap
 
 Expected: FAIL because OpenCode declares no hooks target or base template.
 
-- [ ] **Step 3: Add the valid no-op plugin template and target**
+- [x] **Step 3: Add the valid no-op plugin template and target**
 
 Create `lib/templates/hooks/opencode.ts`:
 
@@ -383,7 +383,7 @@ Extend `lib/templates/tools/opencode.yaml`:
 
 The declared legacy source permits existing resolver behavior; canonical customization writes `.ai/src/tools/opencode/hooks.ts` and wins.
 
-- [ ] **Step 4: Test customize, doctor ownership, and native sync output**
+- [x] **Step 4: Test customize, doctor ownership, and native sync output**
 
 Add assertions that `agentsync customize opencode hooks --yes` creates `.ai/src/tools/opencode/hooks.ts`, `agentsync list` marks the H column, and doctor does not classify `.opencode/plugins/` as orphaned while OpenCode is enabled.
 
@@ -395,7 +395,7 @@ bats tests/resource_resolver.bats tests/sync.bats tests/doctor.bats --tap
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/templates/hooks/opencode.ts lib/templates/tools/opencode.yaml \
@@ -418,7 +418,7 @@ git commit -m "feat: sync native OpenCode hooks"
 - Consumes: `targets.mcp.format: opencode_json`, `resolve_payload_source`, `_find_any_payload_override`, and OpenCode helper predicates.
 - Produces: conditional adopt refusal for composed `opencode.json`, adoptable native hook payload, fatal doctor ownership conflicts, and advisory Kimi global-hook guidance.
 
-- [ ] **Step 1: Write failing adopt tests**
+- [x] **Step 1: Write failing adopt tests**
 
 ```bash
 @test "adopt: refuses composed OpenCode settings" {
@@ -441,7 +441,7 @@ git commit -m "feat: sync native OpenCode hooks"
 }
 ```
 
-- [ ] **Step 2: Add conditional adopt refusal**
+- [x] **Step 2: Add conditional adopt refusal**
 
 When `_adopt_try_tool` matches OpenCode settings, inspect `targets.mcp.format`. If it is `opencode_json` and `resolve_payload_source "$tool" mcp` returns a file, set:
 
@@ -452,7 +452,7 @@ OpenCode opencode.json is composed from settings and MCP (multi-source). Edit
 
 When no MCP source resolves, retain existing one-to-one settings adoption.
 
-- [ ] **Step 3: Write failing doctor tests**
+- [x] **Step 3: Write failing doctor tests**
 
 Add tests for:
 
@@ -462,7 +462,7 @@ settings.mcp + canonical MCP -> doctor exit 2 and names both sources
 enabled OpenCode + .opencode/plugins -> no orphan advisory
 ```
 
-- [ ] **Step 4: Implement diagnostics through the shared OpenCode parser**
+- [x] **Step 4: Implement diagnostics through the shared OpenCode parser**
 
 Expose `opencode_settings_has_mcp <file>` from `lib/helpers/opencode.sh` using the same top-level JSON parser as composition. Load `opencode` in the doctor dispatch:
 
@@ -472,7 +472,7 @@ doctor) _need yaml tool_resolver edit_paths opencode doctor; cmd_doctor ;;
 
 Doctor calls the predicate only when OpenCode is enabled and canonical MCP resolves. A conflict calls `_doctor_fail`; a Kimi hook attempt calls `_doctor_advise` and leaves the exit code unchanged.
 
-- [ ] **Step 5: Run adoption and diagnostic tests**
+- [x] **Step 5: Run adoption and diagnostic tests**
 
 ```bash
 bats tests/adopt.bats tests/doctor.bats tests/opencode.bats --tap
@@ -480,7 +480,7 @@ bats tests/adopt.bats tests/doctor.bats tests/opencode.bats --tap
 
 Expected: all selected tests pass and every ownership ambiguity has one explicit source path.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bin/agentsync.sh lib/helpers/adopt.sh lib/helpers/doctor.sh \
@@ -502,13 +502,13 @@ git commit -m "feat: diagnose OpenCode and Kimi ownership boundaries"
 - Consumes: completed Kimi/OpenCode behavior from Tasks 1–4 and the approved design spec.
 - Produces: accurate capability tables, migration guidance, Kimi global-hook boundary, OpenCode MCP/hook instructions, and release-ready verification evidence.
 
-- [ ] **Step 1: Read the AgentSync skill-writing reference before editing the shipped skill**
+- [x] **Step 1: Read the AgentSync skill-writing reference before editing the shipped skill**
 
 ```bash
 sed -n '1,420p' /Users/yelamanyelmuratov/.agents/skills/agentsync/references/writing-skills.md
 ```
 
-- [ ] **Step 2: Update docs and the shipped skill**
+- [x] **Step 2: Update docs and the shipped skill**
 
 Replace the manual OpenCode MCP guidance with:
 
@@ -525,7 +525,7 @@ Document Kimi hooks as global-only in `$KIMI_CODE_HOME/config.toml`; state that 
 
 Add `format: opencode_json` to `_TEMPLATE.yaml` as an MCP composition format, distinct from the existing subagent `opencode_md` format.
 
-- [ ] **Step 3: Extend the full sync assertions**
+- [x] **Step 3: Extend the full sync assertions**
 
 In `tests/sync.bats`, assert the seeded full sync creates:
 
@@ -542,7 +542,7 @@ opencode.json
 
 Keep the file-level serial guard because multiple tests re-run sync against one fixture.
 
-- [ ] **Step 4: Run targeted static and format checks**
+- [x] **Step 4: Run targeted static and format checks**
 
 ```bash
 bash -n bin/agentsync.sh lib/sync.sh lib/helpers/adopt.sh \
@@ -554,13 +554,13 @@ git diff --check
 
 Expected: every command exits 0.
 
-- [ ] **Step 5: Validate JSON and skill frontmatter**
+- [x] **Step 5: Validate JSON and skill frontmatter**
 
 Run the AgentSync skill's `skills-ref` validator when installed. Otherwise use its documented Python YAML fallback for frontmatter validation. Parse every touched JSON template with Python in the development environment; Python remains a test-only tool and is not called by AgentSync runtime code.
 
 Expected: all templates and skill frontmatter parse successfully.
 
-- [ ] **Step 6: Run the complete test and product checks**
+- [x] **Step 6: Run the complete test and product checks**
 
 ```bash
 bats --jobs 4 tests/ --tap
@@ -569,7 +569,7 @@ AGENTSYNC_SKIP_POST_SYNC=true bash lib/check.sh
 
 Expected: the complete Bats suite passes with no failures and `lib/check.sh` prints `AgentSync configurations are safe and synced.`
 
-- [ ] **Step 7: Review the diff and commit**
+- [x] **Step 7: Review the diff and commit**
 
 Review every changed file for comments, unrelated refactors, generated output, secrets, and accidental ownership of excluded OpenCode/Kimi surfaces.
 

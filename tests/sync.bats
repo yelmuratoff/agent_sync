@@ -198,6 +198,11 @@ setup() {
     grep -q 'https://opencode.ai/config.json' "opencode.json"
 }
 
+@test "sync: OpenCode emits the managed native plugin" {
+    [ -f ".opencode/plugins/agentsync.ts" ]
+    grep -q 'AgentSyncHooks' ".opencode/plugins/agentsync.ts"
+}
+
 # ── Hooks (per-tool) ─────────────────────────────────────────────────────────
 
 @test "sync: Cursor hooks.json exists" {

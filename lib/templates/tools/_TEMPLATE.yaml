@@ -122,6 +122,7 @@ targets:
   # mcp:
   #   source: ".ai/src/mcp/tool.json"
   #   dest: ".tool/.mcp.json"
+  #   # format: opencode_json     # Optional: compose into OpenCode settings
 
   # Hooks (optional, file copy)
   # hooks:

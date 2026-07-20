@@ -122,7 +122,7 @@ agentsync sync                        # 5. Distribute to all enabled tools
 
 2. **`agentsync enable <tool>`** — Adds the tool to `tools.enabled` _and_ scaffolds editable copies of its settings / hooks at `.ai/src/tools/<tool>/`, then prints the exact file path to edit plus the shared MCP path. Pass `--no-scaffold` to skip materializing files; pass `--yes` to accept the TTY confirm non-interactively.
 
-3. **`agentsync add mcp <server>`** — Writes an MCP server entry into the shared `.ai/src/mcp.json`. On the next `sync`, every enabled tool gets the same server map — no copy-pasting across five JSON files. Use `agentsync customize <tool> mcp` only when a tool needs a divergent map.
+3. **`agentsync add mcp <server>`** — Writes an MCP server entry into the shared `.ai/src/mcp.json`. On the next `sync`, every enabled MCP target gets the server map in its native format. Put a divergent map at `.ai/src/tools/<tool>/mcp.json`; `agentsync customize <tool> mcp` scaffolds it when that target ships a copyable base.
 
 4. **`agentsync generate`** — Prints a detailed prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your project description and generates a complete `.ai/src/` config tailored to your stack: project-specific AGENTS.md, rules, skills, commands, agents, and settings. Pass optional context: `agentsync generate "React + Next.js + Prisma"`. Use `| pbcopy` (macOS) or `| xclip` (Linux) to copy to clipboard.
 
@@ -173,8 +173,8 @@ AgentSync supports two source layouts:
 | **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. For tools without a native commands surface, AgentSync converts commands to generated skills or an inlined index. | Claude, Cursor, Copilot (`.prompt.md`), Gemini (TOML), Junie, Cline, Windsurf, Antigravity, OpenCode; Codex and Kimi Code (as skills); Amazon Q, Zed (inlined) |
 | **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Converted when the target needs a different schema. | Claude, Cursor, Copilot (`.agent.md`), Gemini, Junie, Codex (TOML), Amazon Q (JSON), OpenCode (safe MD) |
 | **settings/** | Permissions & config. Per-tool files (`claude.json`, `gemini.json`, `codex.toml`, `opencode.json`, `zed.json`). Controls allow/deny rules. Claude hooks also go here. | Claude, Gemini, Codex, OpenCode, Zed |
-| **mcp/**      | MCP server configs. Per-tool JSON files. Define external tool servers. | Claude, Cursor, Windsurf, Junie, Amazon Q, Kimi Code |
-| **hooks/**    | Event hooks. Per-tool JSON files. Scripts that run before/after tool actions (file edits, shell commands, etc.).                                                                                                                                                                                                                              | Cursor, Copilot, Codex, Windsurf                           |
+| **mcp.json**  | Shared canonical `mcpServers` map. Copied to compatible targets and converted into OpenCode's top-level `mcp` map. | Claude, Cursor, Windsurf, Junie, Amazon Q, Kimi Code, OpenCode |
+| **hooks/**    | Event hooks and native project plugins. Per-tool overrides can be JSON or TypeScript. | Cursor, Copilot, Codex, Windsurf, OpenCode |
 | **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                                                                                                                                                | —                                                           |
 
 ## CLI Commands
@@ -335,7 +335,8 @@ targets:
 | `format: "toml"`                | Auto-convert MD→TOML (Gemini commands, Codex subagents)                                                                |
 | `format: "amazonq_json"`        | Auto-convert subagent MD→Amazon Q CLI custom-agent JSON (Amazon Q subagents)                                           |
 | `format: "opencode_md"`         | Convert portable subagent frontmatter to safe OpenCode Markdown (OpenCode subagents)                                  |
-| `source` (settings/mcp/hooks)   | Required — per-tool source file path                                                                                   |
+| `format: "opencode_json"`       | Compose canonical `mcpServers` into OpenCode's top-level `mcp` settings map                                            |
+| `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
 
 ## Supported Tools
 
@@ -347,7 +348,7 @@ targets:
 | **Gemini CLI**         | `gemini.yaml`      | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents, settings.json                              |
 | **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), subagents (MD→TOML), hooks.json, config.toml |
 | **Kimi Code**          | `kimi.yaml`        | .kimi-code/AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), mcp.json                         |
-| **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD conversion), opencode.json                       |
+| **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
 | **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
 | **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
@@ -375,6 +376,7 @@ AgentSync auto-converts between formats during sync:
 | Agents `.md`   | `.toml` (developer_instructions field)           | Codex                       |
 | Agents `.md`   | `.json` (Amazon Q CLI custom-agent)              | Amazon Q                    |
 | Agents `.md`   | Safe OpenCode Markdown (`mode` + permissions)    | OpenCode                    |
+| MCP `mcpServers` | OpenCode top-level `mcp` (`local` / `remote`)  | OpenCode                    |
 
 You write everything in Markdown. AgentSync handles the rest.
 
@@ -384,7 +386,9 @@ AgentSync targets coding tools and their filesystem formats, not model vendors. 
 
 - **Kimi model in another tool:** configure the provider with [Kimi's official third-party-agent setup](https://www.kimi.com/code/docs/en/third-party-tools/other-coding-agents), then keep syncing the existing Claude/Cline/OpenCode target. Use the `kimi` target only for the standalone Kimi Code CLI.
 - **GLM Coding Plan:** authenticate Z.AI using its official [Claude Code](https://docs.z.ai/devpack/tool/claude) or [OpenCode](https://docs.z.ai/devpack/tool/opencode) flow. Keep API keys in the provider's credential store or environment, never in `.ai/src/`.
-- **OpenCode MCP:** OpenCode stores MCP servers inside `opencode.json`, not in the shared `mcpServers` document. Run `agentsync customize opencode settings`, add the `mcp` section following the [OpenCode config schema](https://opencode.ai/docs/mcp-servers/), and keep credentials as `{env:VARIABLE_NAME}` references.
+- **OpenCode MCP:** shared `.ai/src/mcp.json` is converted into OpenCode's top-level `mcp` map. Use `.ai/src/tools/opencode/mcp.json` for a divergent canonical server map. Move any existing `mcp` field out of `.ai/src/tools/opencode/settings.json` before enabling canonical MCP; `sync` and `doctor` name both files when ownership is ambiguous.
+- **OpenCode hooks:** customize `.ai/src/tools/opencode/hooks.ts`; AgentSync owns only `.opencode/plugins/agentsync.ts` and preserves sibling plugins. Custom tools under `.opencode/tools/`, other plugins, themes, TUI preferences, and credentials remain tool-owned.
+- **Kimi hooks and agents:** Kimi Code exposes built-in agents but no project custom-agent surface. Its hooks live globally in `$KIMI_CODE_HOME/config.toml`, so AgentSync intentionally leaves that file untouched.
 
 ```bash
 agentsync enable kimi opencode     # enable the standalone coding tools
@@ -482,7 +486,7 @@ Three commands cover every customization, each with a single responsibility.
 **Mental model:**
 
 - `enable` is the entry point. One command turns a tool on _and_ gives you the file to edit.
-- Shared MCP is the default for compatible targets. `add mcp` writes to `.ai/src/mcp.json`; OpenCode is configured through its `opencode.json` settings override because its schema differs.
+- Shared MCP is the default. `add mcp` writes canonical `mcpServers` to `.ai/src/mcp.json`; OpenCode converts that map and composes it with its settings atomically.
 - `customize` is the escape hatch. Use it only when you need a per-tool override that diverges from the shared source, or when `enable --no-scaffold` skipped materializing a file you later want.
 
 All three write to **`.ai/src/tools/<tool>/`** (per-tool) or **`.ai/src/mcp.json`** (shared). Nothing is scattered across `.ai/src/hooks/`, `.ai/src/mcp/`, `.ai/src/settings/` — the old flat layout is kept around for backward compatibility (see [migrate](#migrating-from-the-0-10-flat-layout)).
@@ -503,7 +507,7 @@ Every payload resource — tool YAML, hooks, MCP config, settings — follows th
 | Resource  | Base path                             | Per-tool override                     | Shared override    |
 | --------- | ------------------------------------- | ------------------------------------- | ------------------ |
 | tool YAML | `lib/templates/tools/<tool>.yaml`     | `.ai/src/tools/<tool>.yaml`           | —                  |
-| hooks     | `lib/templates/hooks/<tool>.json`     | `.ai/src/tools/<tool>/hooks.json`     | —                  |
+| hooks     | `lib/templates/hooks/<tool>.<ext>`    | `.ai/src/tools/<tool>/hooks.<ext>`    | —                  |
 | mcp       | `lib/templates/mcp/<tool>.json`       | `.ai/src/tools/<tool>/mcp.json`       | `.ai/src/mcp.json` |
 | settings  | `lib/templates/settings/<tool>.<ext>` | `.ai/src/tools/<tool>/settings.<ext>` | —                  |
 
@@ -513,7 +517,7 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 
 - **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 13 tools you don't use.
 - **Updates flow through.** Because the base lives in the install dir, `agentsync update` improves every project that hasn't locked the file in as an override.
-- **Shared MCP is shared where schemas match.** One `.ai/src/mcp.json` reaches every enabled tool with an `mcpServers` target. OpenCode's MCP map lives inside `opencode.json`, so manage it through the OpenCode settings override.
+- **Shared MCP is converted where schemas differ.** One `.ai/src/mcp.json` reaches every enabled MCP target. OpenCode's adapter validates local and remote transports, then atomically composes the result into `opencode.json`.
 - **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/tools/cursor/hooks.json`. Delete the file later to resume inheriting.
 - **Safe hooks.** `customize <tool> hooks` prints the base content first and requires `--yes` in non-interactive mode — you never scaffold executable intent silently.
 - **`simplify` prunes noise.** Scaffolded payloads that are still byte-identical to base are flagged by `agentsync simplify` and removed with `--apply`, so you don't accidentally pin yesterday's defaults forever.
