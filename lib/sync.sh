@@ -44,6 +44,8 @@ source "$SCRIPT_DIR/helpers/manifest.sh"
 source "$SCRIPT_DIR/helpers/shared.sh"
 # shellcheck source=helpers/profiles.sh
 source "$SCRIPT_DIR/helpers/profiles.sh"
+# shellcheck source=helpers/opencode.sh
+source "$SCRIPT_DIR/helpers/opencode.sh"
 
 # Tool outputs are written as siblings of `.ai/`. A run rooted inside the
 # `.ai/` tree would nest generated files under the source dir, so refuse and
@@ -587,17 +589,31 @@ _sync_payloads_step() {
     local tool_name="$1" display="$2"
     local dest_settings_abs="$_ST_DEST_SETTINGS" dest_mcp_abs="$_ST_DEST_MCP" dest_hooks_abs="$_ST_DEST_HOOKS"
 
+    local mcp_format src_settings_abs="" src_mcp_abs=""
+    get_tool_value_r "$tool_name" "targets.mcp.format"; mcp_format="$REPLY"
     if [[ -n "$dest_settings_abs" ]]; then
-        local src_settings_abs
         src_settings_abs=$(resolve_payload_source "$tool_name" "settings")
+    fi
+    if [[ -n "$dest_mcp_abs" ]]; then
+        src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
+    fi
+
+    if [[ "$mcp_format" == "opencode_json" ]]; then
+        if [[ -n "$src_settings_abs" ]] && [[ -f "$src_settings_abs" ]]; then
+            if [[ -n "$src_mcp_abs" ]] && [[ -f "$src_mcp_abs" ]]; then
+                sync_opencode_config "$src_settings_abs" "$src_mcp_abs" "$dest_settings_abs" "$DRY_RUN"
+                local mcp_label
+                mcp_label=$(describe_payload_source "$src_mcp_abs" "$tool_name" "mcp")
+                [[ -n "$mcp_label" ]] && log_step "mcp source: $mcp_label"
+            else
+                copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
+            fi
+        fi
+    else
         if [[ -n "$src_settings_abs" ]] && [[ -f "$src_settings_abs" ]]; then
             copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
         fi
-    fi
 
-    if [[ -n "$dest_mcp_abs" ]]; then
-        local src_mcp_abs
-        src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
         if [[ -n "$src_mcp_abs" ]] && [[ -f "$src_mcp_abs" ]]; then
             local mcp_label
             mcp_label=$(describe_payload_source "$src_mcp_abs" "$tool_name" "mcp")

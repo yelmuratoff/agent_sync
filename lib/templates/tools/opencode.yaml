@@ -21,3 +21,8 @@ targets:
   settings:
     source: ".ai/src/settings/opencode.json"
     dest: "opencode.json"
+
+  mcp:
+    dest: "opencode.json"
+    extension: json
+    format: opencode_json
