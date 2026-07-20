@@ -204,6 +204,41 @@ teardown() {
     [[ "$output" == *"mcp source: base"* ]]
 }
 
+@test "opencode hooks fall back to the native base plugin" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools opencode
+
+    run run_agentsync sync
+
+    [ "$status" -eq 0 ]
+    [ -f .opencode/plugins/agentsync.ts ]
+    grep -q 'AgentSyncHooks' .opencode/plugins/agentsync.ts
+}
+
+@test "opencode hook override wins and preserves sibling plugins" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools opencode
+    mkdir -p .ai/src/tools/opencode .opencode/plugins
+    printf '%s\n' 'export const AgentSyncHooks = async () => ({ marker: "override" })' > .ai/src/tools/opencode/hooks.ts
+    printf '%s\n' 'export const UserPlugin = async () => ({})' > .opencode/plugins/user.ts
+
+    run run_agentsync sync
+
+    [ "$status" -eq 0 ]
+    grep -q 'marker: "override"' .opencode/plugins/agentsync.ts
+    [ -f .opencode/plugins/user.ts ]
+}
+
+@test "customize creates the canonical OpenCode hook override" {
+    run_agentsync init --no-detect >/dev/null
+
+    run run_agentsync customize opencode hooks --yes
+
+    [ "$status" -eq 0 ]
+    [ -f .ai/src/tools/opencode/hooks.ts ]
+    grep -q 'AgentSyncHooks' .ai/src/tools/opencode/hooks.ts
+}
+
 @test "skills exclude accepts a block-style list" {
     run_agentsync init --no-detect >/dev/null
     enable_tools claude

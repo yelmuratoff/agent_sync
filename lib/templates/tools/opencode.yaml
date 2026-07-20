@@ -26,3 +26,7 @@ targets:
     dest: "opencode.json"
     extension: json
     format: opencode_json
+
+  hooks:
+    source: ".ai/src/hooks/opencode.ts"
+    dest: ".opencode/plugins/agentsync.ts"
