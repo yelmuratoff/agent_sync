@@ -273,6 +273,35 @@ JSON
     [[ "$output" != *".opencode/ — orphan"* ]]
 }
 
+@test "doctor fails when OpenCode settings and canonical MCP both own mcp" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools opencode
+    mkdir -p .ai/src/tools/opencode
+    printf '%s\n' '{"mcp":{}}' > .ai/src/tools/opencode/settings.json
+    printf '%s\n' '{"mcpServers":{}}' > .ai/src/mcp.json
+
+    run run_agentsync doctor
+
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"OpenCode MCP ownership conflict"* ]]
+    [[ "$output" == *".ai/src/tools/opencode/settings.json"* ]]
+    [[ "$output" == *".ai/src/mcp.json"* ]]
+}
+
+@test "doctor advises that Kimi hooks are global-only" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools kimi
+    mkdir -p .ai/src/tools/kimi
+    printf '%s\n' '[hooks]' > .ai/src/tools/kimi/hooks.toml
+
+    run run_agentsync doctor
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Kimi hooks are global-only"* ]]
+    [[ "$output" == *'KIMI_CODE_HOME/config.toml'* ]]
+    [[ "$output" == *"leaves it untouched"* ]]
+}
+
 @test "doctor detects identical-hash duplicate against parent .ai/src/" {
     # Parent has rules/shared.md; child below it has identical file. Child's
     # doctor should flag it as a duplicate and point at `agentsync dedupe`.

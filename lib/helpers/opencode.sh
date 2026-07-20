@@ -6,11 +6,12 @@ _opencode_compose_json() {
     local settings_src="$1"
     local mcp_src="$2"
     local output="$3"
+    local mode="${4:-compose}"
     local diagnostic_file
     diagnostic_file=$(mktemp "${TMPDIR:-/tmp}/agentsync_opencode_diag.XXXXXX") || return 1
 
     local rc=0
-    awk -v settings_path="$settings_src" -v mcp_path="$mcp_src" -v diagnostic_path="$diagnostic_file" '
+    awk -v settings_path="$settings_src" -v mcp_path="$mcp_src" -v diagnostic_path="$diagnostic_file" -v mode="$mode" '
 function fail(code, message) {
     if (error_code == 0) {
         error_code = code
@@ -372,6 +373,12 @@ BEGIN {
         exit error_code
     }
 
+    settings_has_mcp = 0
+    for (i = 1; i <= settings_count; i++) {
+        if (settings_key[i] == "mcp") settings_has_mcp = 1
+    }
+    if (mode == "inspect-settings") exit(settings_has_mcp ? 0 : 1)
+
     mcp_text = read_file(mcp_path)
     if (error_code == 0 && !walk_root(mcp_text, "canonical", 21) && error_message == "") fail(21, "malformed canonical MCP JSON")
     if (error_code != 0) {
@@ -379,11 +386,9 @@ BEGIN {
         exit error_code
     }
 
-    for (i = 1; i <= settings_count; i++) {
-        if (settings_key[i] == "mcp") {
-            print "settings and canonical source both define OpenCode MCP ownership" > diagnostic_path
-            exit 24
-        }
+    if (settings_has_mcp) {
+        print "settings and canonical source both define OpenCode MCP ownership" > diagnostic_path
+        exit 24
     }
 
     mcp_servers = ""
@@ -433,6 +438,16 @@ BEGIN {
 
     IFS= read -r OPENCODE_JSON_DIAGNOSTIC < "$diagnostic_file" || true
     rm -f "$diagnostic_file"
+    return "$rc"
+}
+
+opencode_settings_has_mcp() {
+    local settings_src="$1"
+    local output
+    output=$(mktemp "${TMPDIR:-/tmp}/agentsync_opencode_inspect.XXXXXX") || return 2
+    local rc=0
+    _opencode_compose_json "$settings_src" "" "$output" "inspect-settings" || rc=$?
+    rm -f "$output"
     return "$rc"
 }
 

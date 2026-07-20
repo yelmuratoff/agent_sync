@@ -155,6 +155,16 @@ _adopt_try_tool() {
     fi
     if [[ -n "$tool_settings" ]] && [[ "$target_abs" == "$tool_settings" ]]; then
         _ADOPT_TOOL="$tool"; _ADOPT_RESOURCE="settings"
+        local mcp_format mcp_source settings_source
+        mcp_format=$(get_tool_value "$tool" "targets.mcp.format")
+        if [[ "$mcp_format" == "opencode_json" ]]; then
+            mcp_source=$(resolve_payload_source "$tool" "mcp")
+            if [[ -n "$mcp_source" ]] && [[ -f "$mcp_source" ]]; then
+                settings_source=$(resolve_payload_source "$tool" "settings")
+                _ADOPT_REFUSAL="OpenCode opencode.json is a multi-source output. Edit ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} separately."
+                return 0
+            fi
+        fi
         _adopt_resolve_payload_target "$tool" "settings"
         return 0
     fi

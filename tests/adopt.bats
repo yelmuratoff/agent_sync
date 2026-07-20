@@ -56,6 +56,31 @@ teardown() { teardown_test_project; }
     grep -q "manualEdit" .ai/src/tools/claude/settings.json
 }
 
+@test "adopt: refuses composed OpenCode settings" {
+    enable_tools opencode
+    printf '%s\n' '{"mcpServers":{"x":{"command":"x"}}}' > .ai/src/mcp.json
+    run_agentsync sync >/dev/null
+    printf '\n' >> opencode.json
+
+    run run_agentsync adopt --yes opencode.json
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"multi-source"* ]]
+    [[ "$output" == *".ai/src/mcp.json"* ]]
+    [[ "$output" == *"settings"* ]]
+}
+
+@test "adopt: OpenCode hooks remain one-to-one" {
+    enable_tools opencode
+    run_agentsync sync >/dev/null
+    printf '\n// user hook\n' >> .opencode/plugins/agentsync.ts
+
+    run run_agentsync adopt --yes .opencode/plugins/agentsync.ts
+
+    [ "$status" -eq 0 ]
+    grep -q 'user hook' .ai/src/tools/opencode/hooks.ts
+}
+
 @test "adopt: skill file round-trips" {
     enable_tools claude
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null

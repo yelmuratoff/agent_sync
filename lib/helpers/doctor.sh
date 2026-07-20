@@ -278,6 +278,36 @@ _doctor_check_commands_config() {
     fi
 }
 
+_doctor_check_payload_ownership() {
+    local tool="$1"
+    if [[ "$tool" == "opencode" ]]; then
+        local settings_source mcp_source rc
+        settings_source=$(resolve_payload_source "$tool" "settings")
+        mcp_source=$(resolve_payload_source "$tool" "mcp")
+        if [[ -f "$settings_source" ]] && [[ -f "$mcp_source" ]]; then
+            rc=0
+            opencode_settings_has_mcp "$settings_source" || rc=$?
+            if [[ $rc -eq 0 ]]; then
+                _doctor_fail "OpenCode MCP ownership conflict: ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} both define mcp. Move the canonical server map into one source."
+            fi
+        fi
+    elif [[ "$tool" == "kimi" ]]; then
+        local hook_source=""
+        hook_source=$(_find_new_payload_override "$tool" "hooks")
+        if [[ -z "$hook_source" ]]; then
+            local candidate
+            for candidate in "$REPO_ROOT/.ai/src/hooks/kimi".*; do
+                [[ -f "$candidate" ]] || continue
+                hook_source="$candidate"
+                break
+            done
+        fi
+        if [[ -n "$hook_source" ]]; then
+            _doctor_advise "Kimi hooks are global-only in \$KIMI_CODE_HOME/config.toml; AgentSync leaves it untouched. Remove ${hook_source#"$REPO_ROOT/"} from project sources."
+        fi
+    fi
+}
+
 # ── Empty skill detection ────────────────────────────────────────────────────
 #
 # A skill is a directory under .ai/src/skills/<name>/ with a SKILL.md inside.
@@ -592,6 +622,7 @@ cmd_doctor() {
                 _doctor_fail "$tool: unknown — no base template and no override"
             fi
             _doctor_check_commands_config "$tool"
+            _doctor_check_payload_ownership "$tool"
         done <<< "$enabled"
     fi
     echo ""

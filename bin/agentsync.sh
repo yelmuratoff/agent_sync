@@ -306,7 +306,7 @@ main() {
         show)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_show "$@" ;;
         diff)          _need yaml yaml_edit tool_resolver snapshot customize;   shift; cmd_diff "$@" ;;
         resolve)       _need yaml yaml_edit tool_resolver snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
-        doctor)        _need yaml tool_resolver edit_paths doctor;     cmd_doctor ;;
+        doctor)        _need yaml tool_resolver edit_paths opencode doctor; cmd_doctor ;;
         dedupe)        _need yaml yaml_edit prompts paths template_manifest dedupe; shift; cmd_dedupe "$@" ;;
         adopt)         _need yaml tool_resolver paths logging filters file_ops prompts manifest cli_colors adopt; shift; cmd_adopt "$@" ;;
         profile)       _need yaml yaml_edit tool_resolver profiles paths logging prompts profile; shift; cmd_profile "$@" ;;
