@@ -139,7 +139,7 @@ CASES
 }
 
 @test "opencode: preserves valid JSON escapes" {
-    write_shared_mcp '{"mcpServers":{"escaped\u002dname":{"command":"tool\\bin","args":["line\nvalue"],"env":{"QUOTE":"a\"b"}}}}'
+    write_shared_mcp '{"mcp\u0053ervers":{"escaped\u002dname":{"comm\u0061nd":"tool\\bin","args":["line\nvalue"],"env":{"QUOTE":"a\"b"}}}}'
 
     run run_agentsync sync
 
@@ -155,6 +155,15 @@ CASES
 
     [ "$status" -ne 0 ]
     [[ "$output" == *"unsupported top-level field 'version'"* ]]
+}
+
+@test "opencode: rejects duplicate keys" {
+    write_shared_mcp '{"mcpServers":{"x":{"command":"a","command":"b"}}}'
+
+    run run_agentsync sync
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"duplicate server field 'command'"* ]]
 }
 
 @test "opencode: rejects settings and canonical MCP ownership conflict" {

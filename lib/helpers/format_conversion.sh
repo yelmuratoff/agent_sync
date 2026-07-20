@@ -457,7 +457,7 @@ convert_md_agent_to_opencode_md() {
                 WebFetch) mapped="webfetch" ;;
                 WebSearch) mapped="websearch" ;;
                 Task) mapped="task" ;;
-                *) mapped=$(printf '%s' "$tool" | tr '[:upper:]' '[:lower:]') ;;
+                *) continue ;;
             esac
             [[ "$seen" == *"|${mapped}|"* ]] && continue
             permissions+="  \"$(_json_escape "$mapped")\": allow"$'\n'

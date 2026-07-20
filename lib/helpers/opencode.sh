@@ -38,6 +38,17 @@ function skip_space() {
     }
 }
 
+function decode_unicode_escape(hex,    digits, value, i, digit) {
+    digits = "0123456789abcdef"
+    value = 0
+    for (i = 1; i <= 4; i++) {
+        digit = index(digits, tolower(substr(hex, i, 1))) - 1
+        value = value * 16 + digit
+    }
+    if (value <= 127) return sprintf("%c", value)
+    return "\\u" hex
+}
+
 function parse_string(    start, char, escape, hex, decoded) {
     if (substr(json, position, 1) != "\"") return fail(active_error, "expected a JSON string")
     start = position++
@@ -57,7 +68,7 @@ function parse_string(    start, char, escape, hex, decoded) {
             if (escape == "u") {
                 hex = substr(json, position + 1, 4)
                 if (length(hex) != 4 || hex !~ /^[0-9A-Fa-f]{4}$/) return fail(active_error, "invalid Unicode escape")
-                decoded = decoded "?"
+                decoded = decoded decode_unicode_escape(hex)
                 position += 5
                 continue
             }
@@ -153,18 +164,27 @@ function parse_value(    rest, char) {
     return fail(active_error, "invalid JSON value")
 }
 
-function store_member(mode, key, raw_key, raw_value) {
+function store_member(mode, key, raw_key, raw_value,    i) {
     if (mode == "settings") {
+        for (i = 1; i <= settings_count; i++) {
+            if (settings_key[i] == key) return fail(20, "duplicate settings field \047" key "\047")
+        }
         settings_count++
         settings_key[settings_count] = key
         settings_raw_key[settings_count] = raw_key
         settings_value[settings_count] = raw_value
     } else if (mode == "canonical") {
+        for (i = 1; i <= canonical_count; i++) {
+            if (canonical_key[i] == key) return fail(active_error, "duplicate canonical MCP field \047" key "\047")
+        }
         canonical_count++
         canonical_key[canonical_count] = key
         canonical_raw_key[canonical_count] = raw_key
         canonical_value[canonical_count] = raw_value
     } else if (mode == "server") {
+        for (i = 1; i <= server_field_count; i++) {
+            if (server_field_key[i] == key) return fail(23, "duplicate server field \047" key "\047")
+        }
         server_field_count++
         server_field_key[server_field_count] = key
         server_field_value[server_field_count] = raw_value
@@ -297,9 +317,9 @@ function append_property(output, name, value) {
     return output "\"" name "\": " value
 }
 
-function convert_server(raw_key, raw_value,    i, field, value, kind, command, url, type, args, env, headers, enabled, timeout, oauth, output, inner) {
-    delete server_field_key
-    delete server_field_value
+function convert_server(raw_key, raw_value,    i, field, value, kind, command, url, type, args, env, headers, enabled, timeout, oauth, output, inner, clear_index) {
+    for (clear_index in server_field_key) delete server_field_key[clear_index]
+    for (clear_index in server_field_value) delete server_field_value[clear_index]
     server_field_count = 0
     if (!walk_root(raw_value, "server", 23)) return ""
     for (i = 1; i <= server_field_count; i++) {
@@ -404,12 +424,13 @@ BEGIN {
         exit 22
     }
 
-    delete canonical_key
-    delete canonical_value
+    for (clear_index in canonical_key) delete canonical_key[clear_index]
+    for (clear_index in canonical_raw_key) delete canonical_raw_key[clear_index]
+    for (clear_index in canonical_value) delete canonical_value[clear_index]
     canonical_count = 0
-    if (!walk_root(mcp_servers, "canonical", 21)) {
+    if (!walk_root(mcp_servers, "canonical", 23)) {
         print error_message > diagnostic_path
-        exit 21
+        exit error_code
     }
     for (i = 1; i <= canonical_count; i++) {
         if (json_kind(canonical_value[i]) != "object") {
@@ -478,9 +499,15 @@ sync_opencode_config() {
         rm -f "$rendered"
         return 1
     }
-    cp "$rendered" "$destination_tmp"
+    if ! cp "$rendered" "$destination_tmp"; then
+        rm -f "$rendered" "$destination_tmp"
+        return 1
+    fi
     rm -f "$rendered"
-    mv "$destination_tmp" "$dest"
+    if ! mv "$destination_tmp" "$dest"; then
+        rm -f "$destination_tmp"
+        return 1
+    fi
     declare -f manifest_record_write >/dev/null 2>&1 && manifest_record_write "$dest"
     log_step "$(display_path "$settings_src") + $(display_path "$mcp_src") → $(display_path "$dest")"
 }

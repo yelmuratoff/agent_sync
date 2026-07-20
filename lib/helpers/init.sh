@@ -149,9 +149,8 @@ RULE_EOF
 }
 
 # Copy per-tool payload files (settings, hooks) ONLY for tools in the list.
-# MCP is intentionally excluded: in 0.11+ every tool with an MCP target gets it
-# from the shared .ai/src/mcp.json (or base template). Scaffolding empty per-tool MCP files
-# would shadow that shared source. Use `agentsync add mcp <server>` to create
+# MCP is excluded because an empty per-tool file would shadow the shared
+# .ai/src/mcp.json or base template. Use `agentsync add mcp <server>` to create
 # a shared source, or `agentsync customize <tool> mcp` for a per-tool override.
 #
 # Creates destination directories lazily (only when a file is actually copied).

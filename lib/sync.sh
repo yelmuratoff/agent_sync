@@ -562,7 +562,6 @@ _sync_commands_step() {
     fi
 }
 
-# Sync SUBAGENTS in the tool's native format.
 _sync_subagents_step() {
     local tool_name="$1" display="$2"
     local dest_subagents_abs="$_ST_DEST_SUBAGENTS"

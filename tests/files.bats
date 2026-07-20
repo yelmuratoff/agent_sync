@@ -295,7 +295,7 @@ MD
 name: reviewer
 description: Read-only reviewer
 model: sonnet
-tools: [Read, Grep, Glob]
+tools: [Read, Grep, Glob, CustomDanger]
 ---
 Review the change.
 MD
@@ -304,6 +304,8 @@ MD
     grep -q '^mode: subagent$' "$TEST_PROJECT/reviewer.md"
     grep -q '^  "\*": deny$' "$TEST_PROJECT/reviewer.md"
     grep -q '^  "read": allow$' "$TEST_PROJECT/reviewer.md"
+    run grep -q 'customdanger' "$TEST_PROJECT/reviewer.md"
+    [ "$status" -ne 0 ]
     ! grep -q '^model:' "$TEST_PROJECT/reviewer.md"
     grep -q '^Review the change\.$' "$TEST_PROJECT/reviewer.md"
 }
