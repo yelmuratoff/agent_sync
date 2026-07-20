@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.32.0
+
+### Added
+
+- **First-class Kimi Code target.** AgentSync now syncs project instructions with inline rule references, native skills, commands as `command-*` skills, and canonical MCP configuration into Kimi Code's project layout. Kimi's built-in agents and global-only hooks remain outside project sync.
+- **Complete OpenCode agent-layer target.** OpenCode now receives project instructions, inline rule references, skills, native commands, portable subagents converted to safe OpenCode Markdown, settings, canonical MCP, and an AgentSync-owned project plugin for hooks.
+- **Ownership diagnostics for composed OpenCode configuration.** `sync`, `doctor`, and `adopt` now surface conflicting settings/MCP sources and multi-source outputs explicitly instead of silently choosing an owner.
+
+### Changed
+
+- **Canonical MCP now composes into OpenCode atomically.** The shared `mcpServers` map is validated, converted to OpenCode's local/remote schema, and merged into the top-level `mcp` field while preserving unrelated settings. A per-tool canonical MCP override still takes precedence over the shared source.
+- **Tool support documentation now separates coding tools from model providers.** Kimi Code is documented as a standalone target, while Kimi models and GLM/Z.AI provider setups continue to use the target for their host tool. The documented ownership boundary excludes credentials, UI preferences, arbitrary OpenCode extensions, and Kimi's global runtime home.
+
+### Security
+
+- **Portable OpenCode subagents keep unknown tools denied by default.** Permission conversion grants only recognized portable tools; misspelled or unsupported tool names can no longer broaden a generated subagent's access.
+
 ## 0.31.0
 
 ### Added

@@ -1,7 +1,7 @@
 # Kimi Code and OpenCode Complete Agent-Layer Support
 
 Date: 2026-07-20
-Status: Proposed
+Status: Implemented in 0.32.0
 
 ## Objective
 
