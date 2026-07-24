@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.1
+
+### CI
+
+- **Windows backup safety tests now exercise real symlinks.** Git Bash normally turns `ln -s` targets into copies, so the backup containment tests were checking ordinary in-project directories and incorrectly reporting three security guards as failures. The shared fixture now requests native symlinks with `MSYS=winsymlinks:nativestrict` and verifies each link before the test continues.
+
 ## 0.33.0
 
 ### Added
