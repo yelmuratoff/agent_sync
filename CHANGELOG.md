@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.33.0
+
+### Added
+
+- **Transactional `init` and `sync`.** Before either command changes managed files, AgentSync now creates a complete snapshot under the Git-ignored `.ai/backups/` store. If the operation fails midway, it automatically restores the exact pre-operation state, including removing destinations that did not exist before the run.
+- **Manual rollback for accidental syncs.** `agentsync rollback` restores the latest snapshot, while `agentsync rollback <backup-id>` selects an older one. Use `rollback --list` to inspect available snapshots, `--dry-run` to preview every restore/remove action, and `--yes` for non-interactive recovery. Every rollback first creates its own safety snapshot, so the rollback can itself be undone.
+
+### Changed
+
+- **Bounded, low-noise backup lifecycle.** Successful operations retain the latest 10 complete snapshots by default; set `AGENTSYNC_BACKUP_LIMIT` to another non-negative value or `0` for unlimited history. Dry runs, fresh `sync --if-stale` calls, drift-preflight failures, and isolated `agentsync check` runs do not create snapshots.
+- **Recovery covers the full managed write set.** Tool and profile destinations, disabled-tool cleanup targets, `.ai/.sync-manifest`, and AgentSync's `.gitignore` block are restored together. Arbitrary side effects from trusted `post_sync` hooks outside declared destinations remain outside the rollback boundary.
+
+### Security
+
+- **Snapshot restore stays inside the project.** Backup creation and rollback reject the repository root, the backup store itself, paths outside the repository, path traversal, and symlink escapes. Incomplete snapshots are ignored, metadata pointers are replaced atomically, and nested destinations are collapsed before copying.
+
 ## 0.32.0
 
 ### Added
