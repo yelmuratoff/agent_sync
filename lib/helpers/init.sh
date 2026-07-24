@@ -20,6 +20,12 @@ _INIT_CONTENT_DEFAULT="agents,rules,skills,commands,subagents"
 # Valid content sections accepted by --content.
 _INIT_CONTENT_VALID="agents rules skills commands subagents"
 
+# Transaction state is activated only after validation, planning, and any
+# interactive confirmation have completed.
+INIT_BACKUP_PATH=""
+INIT_TRANSACTION_ACTIVE="false"
+INIT_BACKUP_TARGETS=()
+
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 # Does $1 appear in whitespace-separated list $2? Returns 0/1.
@@ -52,6 +58,60 @@ _init_merge_lists() {
         out="${out:+$out }$token"
     done
     echo "$out"
+}
+
+_init_collect_backup_targets() {
+    local target_dir="$1"
+    local templates_dir="$2"
+    local tool_list="$3"
+
+    # Configure the shared path/tool resolver for the project being initialized.
+    REPO_ROOT="$target_dir"
+    # Cross-module contract: paths.sh validates destinations against this root.
+    # shellcheck disable=SC2034
+    REPO_ROOT_CANONICAL="$(cd -P "$target_dir" && pwd)"
+    # Cross-module contract: tool_resolver.sh resolves base templates from here.
+    # shellcheck disable=SC2034
+    if [[ -n "$templates_dir" ]]; then
+        DEFAULT_REPO_ROOT="$(cd "$templates_dir/../.." && pwd)"
+    else
+        DEFAULT_REPO_ROOT="${_AGENTSYNC_ENGINE_ROOT:-$target_dir}"
+    fi
+
+    INIT_BACKUP_TARGETS=(
+        "$target_dir/.ai/src"
+        "$target_dir/.ai/agent_sync.yaml"
+        "$target_dir/.ai/.template-manifest"
+    )
+
+    local tool key raw abs
+    for tool in $tool_list; do
+        for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
+            if [[ "$(get_tool_bool "$tool" "targets.$key.enabled")" == "false" ]]; then
+                continue
+            fi
+            get_tool_value_r "$tool" "targets.$key.dest"; raw="$REPLY"
+            [[ -n "$raw" ]] || continue
+            abs=$(resolve_dest_path "$raw" "targets.$key.dest for $tool") || continue
+            INIT_BACKUP_TARGETS+=("$abs")
+        done
+    done
+}
+
+_init_on_exit() {
+    local status=$?
+    trap - EXIT
+
+    if [[ "$INIT_TRANSACTION_ACTIVE" == "true" ]] && [[ $status -ne 0 ]]; then
+        echo "$(_yellow "Warning"): Init failed; restoring pre-init state..." >&2
+        if backup_restore "$REPO_ROOT" "$INIT_BACKUP_PATH"; then
+            echo "Restored pre-init state from ${INIT_BACKUP_PATH#"$REPO_ROOT"/}" >&2
+        else
+            echo "$(_red "Error"): Automatic restore failed. Backup retained at ${INIT_BACKUP_PATH#"$REPO_ROOT"/}" >&2
+        fi
+    fi
+
+    exit "$status"
 }
 
 _init_create_directories() {
@@ -570,6 +630,9 @@ Usage: agentsync init [<dir>] [OPTIONS]
 Scaffold .ai/ in a project. Minimal by default — only tools you opt in to
 get per-tool payload scaffolding (settings/mcp/hooks).
 
+Before writing, init snapshots its .ai/ paths and the selected tools' existing
+destinations under .ai/backups/ so a partial setup can be restored safely.
+
 In a terminal, `init` opens an interactive wizard that lets you pick tools
 and content sections. In non-TTY environments (CI, scripts), it runs silently
 with auto-detected defaults. Pass --yes or any of --tools/--content/--no-detect
@@ -740,6 +803,17 @@ HELP
     echo "$(_bold "Initializing AgentSync") in $(_cyan "$target_dir")"
     echo ""
 
+    _init_collect_backup_targets "$target_dir" "$templates_dir" "$tool_list"
+    INIT_BACKUP_PATH=$(backup_create \
+        "$target_dir" \
+        "init" \
+        "${INIT_BACKUP_TARGETS[@]+"${INIT_BACKUP_TARGETS[@]}"}") || {
+        echo "$(_red "Error"): Could not back up init targets; no project files were changed." >&2
+        return 1
+    }
+    INIT_TRANSACTION_ACTIVE="true"
+    trap _init_on_exit EXIT
+
     _init_create_directories "$ai_dir" "$content_list"
     _init_copy_source_templates "$ai_dir" "$templates_dir" "$content_list"
 
@@ -761,4 +835,12 @@ HELP
     fi
 
     _init_print_summary "$ai_dir" "$tool_list" "$payload_lines" "$detect_source"
+    echo "Backup: ${INIT_BACKUP_PATH#"$target_dir"/}"
+    echo ""
+
+    if ! backup_prune "$target_dir"; then
+        echo "$(_yellow "Warning"): Could not prune old AgentSync backups." >&2
+    fi
+    INIT_TRANSACTION_ACTIVE="false"
+    trap - EXIT
 }

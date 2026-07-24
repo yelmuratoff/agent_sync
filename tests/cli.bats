@@ -10,6 +10,7 @@ load test_helper
     [[ "$output" == *"COMMANDS"* ]]
     [[ "$output" == *"init"* ]]
     [[ "$output" == *"sync"* ]]
+    [[ "$output" == *"rollback"* ]]
 }
 
 @test "--help shows usage" {
@@ -46,4 +47,12 @@ load test_helper
     run run_agentsync
     [ "$status" -eq 0 ]
     [[ "$output" == *"COMMANDS"* ]]
+}
+
+@test "rollback --help documents safe restore options" {
+    run run_agentsync rollback --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--list"* ]]
+    [[ "$output" == *"--dry-run"* ]]
+    [[ "$output" == *"--yes"* ]]
 }

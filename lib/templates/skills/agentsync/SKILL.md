@@ -1,6 +1,6 @@
 ---
 name: agentsync
-description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `add` / `customize` / `resolve` / `simplify` / `profile` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
+description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `rollback` / `add` / `customize` / `resolve` / `simplify` / `profile` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
 ---
 
 # Working with AgentSync
@@ -272,6 +272,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 
 - `agentsync list` shows configured tools and status; `agentsync enable` / `disable <tool>` toggle them.
 - `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI).
+- `agentsync init` and `sync` snapshot every path they may mutate under the Git-ignored `.ai/backups/` and automatically restore it on failure. Use `agentsync rollback --list`, preview with `rollback [<id>] --dry-run`, and restore the latest or selected snapshot with `rollback [<id>]`; pass `--yes` outside a TTY. Rollback creates a safety snapshot first, so it can itself be undone.
 - **Keep outputs fresh automatically** (so you never forget to sync): add `eval "$(agentsync shell-init zsh)"` to `~/.zshrc` to auto-sync when the current directory is an AgentSync project root, without syncing parent projects from nested directories (silent no-op when nothing changed; eval'ing keeps it current across upgrades); `agentsync setup-hooks [--pre-commit]` syncs on `git pull` / `checkout`; `agentsync sync --if-stale` syncs only when source changed since the last sync. See the README "Automation" section.
 - `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
 - `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
@@ -282,6 +283,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it. If you edited a generated file while iterating, `agentsync adopt <path>` promotes that edit back into the matching source file — or `agentsync adopt --all` to promote every drifted file at once (refused targets and same-source conflicts are skipped and listed).
+- Backups cover declared tool destinations and AgentSync's manifest/.gitignore state. A trusted `post_sync` hook can mutate arbitrary paths; side effects outside declared destinations are not automatically reversible. After a successful operation, history is pruned to the latest 10 snapshots by default; `AGENTSYNC_BACKUP_LIMIT=0` keeps all.
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.

@@ -10,6 +10,14 @@ teardown_file() { teardown_seed_project; }
 setup() { clone_seed; }
 teardown() { teardown_test_project; }
 
+complete_backup_count() {
+    local count=0 snapshot
+    for snapshot in .ai/backups/*; do
+        [[ -f "$snapshot/.complete" ]] && count=$((count + 1))
+    done
+    echo "$count"
+}
+
 # ── --only / --skip / --dry-run ──────────────────────────────────────────────
 
 @test "sync --only filters to single tool" {
@@ -39,10 +47,13 @@ teardown() { teardown_test_project; }
 
 @test "sync --dry-run does not create files" {
     enable_tools claude
+    local backups_before
+    backups_before=$(complete_backup_count)
     run run_agentsync sync --dry-run
     [ "$status" -eq 0 ]
     [ ! -f "CLAUDE.md" ]
     [[ "$output" == *"dry-run"* ]]
+    [ "$(complete_backup_count)" -eq "$backups_before" ]
 }
 
 @test "sync skips disabled tools" {
@@ -83,6 +94,66 @@ teardown() { teardown_test_project; }
     hash2=$(find .claude -type f -exec md5sum {} \; 2>/dev/null | sort || \
             find .claude -type f -exec md5 {} \; 2>/dev/null | sort)
     [ "$hash1" = "$hash2" ]
+}
+
+# ── Transactional backups ────────────────────────────────────────────────────
+
+@test "sync backs up the pre-sync target state" {
+    enable_tools claude
+    printf 'before-sync\n' > CLAUDE.md
+
+    run run_agentsync sync --only claude
+    [ "$status" -eq 0 ]
+
+    local snapshot_id snapshot
+    snapshot_id=$(cat .ai/backups/.latest)
+    snapshot=".ai/backups/$snapshot_id"
+    grep -q '^operation=sync$' "$snapshot/metadata"
+    [ "$(cat "$snapshot/files/CLAUDE.md")" = "before-sync" ]
+    grep -q $'^missing\t.claude/rules$' "$snapshot/targets.tsv"
+}
+
+@test "sync restores every target when a post-sync hook fails" {
+    enable_tools claude
+    printf 'before-sync\n' > CLAUDE.md
+    printf 'before-gitignore\n' > .gitignore
+    mkdir -p .ai/src/tools
+    printf 'post_sync: "false"\n' > .ai/src/tools/claude.yaml
+
+    AGENTSYNC_ALLOW_POST_SYNC=true run run_agentsync sync --only claude
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Restored pre-sync state"* ]]
+
+    [ "$(cat CLAUDE.md)" = "before-sync" ]
+    [ "$(cat .gitignore)" = "before-gitignore" ]
+    [ ! -e ".claude/rules" ]
+    [ ! -e ".claude/skills" ]
+    [ ! -e ".ai/.sync-manifest" ]
+}
+
+@test "sync preflight failures do not create a backup" {
+    enable_tools claude
+    run_agentsync sync --only claude >/dev/null
+    printf '\nmanual edit\n' >> CLAUDE.md
+    local backups_before
+    backups_before=$(complete_backup_count)
+
+    run run_agentsync sync --only claude
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Manual edits detected"* ]]
+    [ "$(complete_backup_count)" -eq "$backups_before" ]
+}
+
+@test "sync --if-stale no-op does not create a backup" {
+    enable_tools claude
+    run_agentsync sync --only claude >/dev/null
+    local backups_before
+    backups_before=$(complete_backup_count)
+
+    run run_agentsync sync --only claude --if-stale
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ "$(complete_backup_count)" -eq "$backups_before" ]
 }
 
 # ── post_sync trust boundary ─────────────────────────────────────────────────

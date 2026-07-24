@@ -30,6 +30,8 @@ source "$SCRIPT_DIR/helpers/paths.sh"
 source "$SCRIPT_DIR/helpers/filters.sh"
 # shellcheck source=helpers/file_ops.sh
 source "$SCRIPT_DIR/helpers/file_ops.sh"
+# shellcheck source=helpers/backup.sh
+source "$SCRIPT_DIR/helpers/backup.sh"
 # shellcheck source=helpers/rule_operations.sh
 source "$SCRIPT_DIR/helpers/rule_operations.sh"
 # shellcheck source=helpers/format_conversion.sh
@@ -97,8 +99,15 @@ UPDATE_GITIGNORE="true"
 
 # Paths claimed by enabled tools — cleanup must not delete these
 declare -a ENABLED_DEST_PATHS=()
+# Destinations resolved by the most recent _collect_tool_dests call.
+declare -a LAST_COLLECTED_DESTS=()
 # Repo-relative dest paths fed to .gitignore (dirs carry a trailing slash)
 declare -a GENERATED_GITIGNORE_PATHS=()
+
+# Transaction state for restoring every path a real sync may mutate.
+declare -a SYNC_BACKUP_TARGETS=()
+SYNC_BACKUP_PATH=""
+SYNC_TRANSACTION_ACTIVE="false"
 
 # Personal/base SOURCE_* snapshot + base src dir for the profile passes (set by
 # _snapshot_base_sources, read by _run_profile_passes).
@@ -118,6 +127,10 @@ usage() {
 AgentSync Config Sync Script
 
 Usage: $(basename "$0") [OPTIONS]
+
+Real sync runs snapshot every destination they may change and automatically
+restore that snapshot if the run fails. Use 'agentsync rollback' to restore a
+successful run manually.
 
 Options:
   --only <tools>    Sync only specified tools (comma-separated)
@@ -846,11 +859,13 @@ _sync_is_stale() {
 _collect_tool_dests() {
     local tool_name="$1"
     local key raw abs rel
+    LAST_COLLECTED_DESTS=()
     for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
         get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
         [[ -z "$raw" ]] && continue
         abs=$(resolve_dest_path "$raw" "targets.$key.dest for $tool_name") || continue
         ENABLED_DEST_PATHS+=("$abs")
+        LAST_COLLECTED_DESTS+=("$abs")
         rel=$(to_repo_relative_path "$abs")
         case "$key" in
             rules|skills|commands|subagents) GENERATED_GITIGNORE_PATHS+=("$rel/") ;;
@@ -949,18 +964,101 @@ _build_tool_catalog() {
 # tools are always collected so .gitignore stays stable across --profile
 # selections and cleanup never sweeps a dormant profile's output.
 _collect_protected_dests() {
-    local t
+    SYNC_BACKUP_TARGETS=()
+
+    local selected_profile_tools="|"
+    local profile t
+    for profile in "${PROFILES_TO_SYNC[@]+"${PROFILES_TO_SYNC[@]}"}"; do
+        while IFS= read -r t; do
+            [[ -n "$t" ]] || continue
+            selected_profile_tools+="$t|"
+        done < <(profile_tools "$profile")
+    done
+
     for t in "${ALL_TOOLS[@]}"; do
-        is_tool_enabled "$t" || continue
         is_profile_tool "$t" && continue
-        _collect_tool_dests "$t"
+        if is_tool_enabled "$t"; then
+            _collect_tool_dests "$t"
+            if should_sync_tool "$t"; then
+                SYNC_BACKUP_TARGETS+=("${LAST_COLLECTED_DESTS[@]+"${LAST_COLLECTED_DESTS[@]}"}")
+            fi
+        elif [[ "$DEFAULT_CLEANUP" == "true" ]]; then
+            _collect_tool_backup_dests "$t" "false"
+        fi
     done
 
     local _pt
     while IFS= read -r _pt; do
         [[ -z "$_pt" ]] && continue
         _collect_tool_dests "$_pt"
+        if [[ "$selected_profile_tools" == *"|$_pt|"* ]] && should_sync_tool "$_pt"; then
+            SYNC_BACKUP_TARGETS+=("${LAST_COLLECTED_DESTS[@]+"${LAST_COLLECTED_DESTS[@]}"}")
+        fi
     done < <(list_profile_tools)
+}
+
+# Append one tool's destinations to the transaction target list. Enabled tools
+# honor per-category `enabled: false`; disabled-tool cleanup does not.
+_collect_tool_backup_dests() {
+    local tool_name="$1"
+    local honor_target_enabled="$2"
+    local key raw abs
+    for key in "${AGENTSYNC_TARGET_KEYS[@]}"; do
+        if [[ "$honor_target_enabled" == "true" ]] && \
+           [[ "$(get_tool_bool "$tool_name" "targets.$key.enabled")" == "false" ]]; then
+            continue
+        fi
+        get_tool_value_r "$tool_name" "targets.$key.dest"; raw="$REPLY"
+        [[ -n "$raw" ]] || continue
+        abs=$(resolve_dest_path "$raw" "targets.$key.dest for $tool_name") || continue
+        SYNC_BACKUP_TARGETS+=("$abs")
+    done
+}
+
+# Add AgentSync's own manifest/.gitignore state to the destinations collected
+# alongside cleanup protection. Reusing those resolved paths avoids parsing
+# every enabled tool YAML twice per sync.
+_collect_sync_backup_targets() {
+    if [[ "$UPDATE_GITIGNORE" == "true" ]]; then
+        SYNC_BACKUP_TARGETS+=("$REPO_ROOT/.gitignore")
+    fi
+    SYNC_BACKUP_TARGETS+=("$REPO_ROOT/.ai/.sync-manifest")
+}
+
+_start_sync_transaction() {
+    [[ "$DRY_RUN" != "true" ]] || return 0
+    # `agentsync check` regenerates inside an isolated temporary clone and
+    # diffs it against the project; persisting a backup there would itself be
+    # reported as drift. Real init/sync commands never set this internal flag.
+    [[ "${AGENTSYNC_INTERNAL_SKIP_BACKUP:-false}" != "true" ]] || return 0
+    _collect_sync_backup_targets
+    SYNC_BACKUP_PATH=$(backup_create \
+        "$REPO_ROOT" \
+        "sync" \
+        "${SYNC_BACKUP_TARGETS[@]+"${SYNC_BACKUP_TARGETS[@]}"}") || {
+        log_error "Could not back up sync targets; no files were changed."
+        return 1
+    }
+    SYNC_TRANSACTION_ACTIVE="true"
+}
+
+_sync_on_exit() {
+    local status=$?
+    trap - EXIT
+
+    shared_cleanup_overlay || true
+    profile_cleanup_overlay || true
+
+    if [[ "$SYNC_TRANSACTION_ACTIVE" == "true" ]] && [[ $status -ne 0 ]]; then
+        log_warning "Sync failed; restoring pre-sync state..."
+        if backup_restore "$REPO_ROOT" "$SYNC_BACKUP_PATH"; then
+            log_info "Restored pre-sync state from $(display_path "$SYNC_BACKUP_PATH")"
+        else
+            log_error "Automatic restore failed. Backup retained at $(display_path "$SYNC_BACKUP_PATH")"
+        fi
+    fi
+
+    exit "$status"
 }
 
 # Sync enabled personal tools and clean up disabled ones. Profile variant tools
@@ -1046,6 +1144,9 @@ _finalize_run() {
     local summary="Synced $SYNCED_COUNT/$TOTAL_COUNT tools"
     [[ $SKIPPED_COUNT -gt 0 ]] && summary="$summary ($SKIPPED_COUNT skipped)"
     [[ "$DRY_RUN" == "true" ]] && summary="$summary (dry-run)"
+    if [[ -n "$SYNC_BACKUP_PATH" ]]; then
+        log_info "Backup: $(display_path "$SYNC_BACKUP_PATH")"
+    fi
     log_done "$summary"
     log_separator
 }
@@ -1071,7 +1172,7 @@ main() {
     # take precedence, and BEFORE any tool sync reads them. Torn down by the EXIT
     # trap below.
     shared_setup_overlay
-    trap 'shared_cleanup_overlay; profile_cleanup_overlay' EXIT
+    trap _sync_on_exit EXIT
 
     _snapshot_base_sources
     _build_tool_catalog
@@ -1087,9 +1188,14 @@ main() {
     SYNC_MANIFEST_ACTIVE="true"
 
     _check_drift_or_exit
+    _start_sync_transaction
     _run_personal_pass
     _run_profile_passes
     _finalize_run
+    if [[ -n "$SYNC_BACKUP_PATH" ]] && ! backup_prune "$REPO_ROOT"; then
+        log_warning "Could not prune old AgentSync backups."
+    fi
+    SYNC_TRANSACTION_ACTIVE="false"
 }
 
 main "$@"

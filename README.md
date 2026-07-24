@@ -187,6 +187,7 @@ agentsync <command> [options]
 | ------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
 | `init [dir]`             |       | Create `.ai/` structure with starter templates                                                 |
 | `sync`                   |       | Sync to all enabled tools (`--only`, `--skip`, `--profile`, `--dry-run`, `--force`, `--if-stale`, `--workspace`) |
+| `rollback [backup-id]`   |       | Restore managed targets from the latest or selected backup (`--list`, `--dry-run`, `--yes`)     |
 | `check`                  |       | Verify outputs match source (CI-friendly, exit code 0/1)                                       |
 | `enable <tools…>`        |       | Opt in to one or more tools (scaffolds editable settings/hooks payloads)                        |
 | `disable <tools…>`       |       | Opt out of one or more tools                                                                    |
@@ -224,6 +225,9 @@ agentsync sync --profile hub          # Personal tools + the named profile (conf
 agentsync sync --dry-run              # Preview without writing
 agentsync sync --force                # Overwrite edited files and prune hand-added files in generated dirs
 agentsync sync --workspace            # Run sync in every .ai/ below cwd (bottom-up alphabetical)
+agentsync rollback --list             # List init/sync/rollback snapshots
+agentsync rollback --dry-run          # Preview restoring the latest snapshot
+agentsync rollback <backup-id> --yes  # Restore one snapshot non-interactively
 ```
 
 ### Generate
@@ -609,6 +613,23 @@ If you already have tool-specific configs (`.claude/rules/`, `.cursor/rules/`, c
 | **settings.json, .mcp.json, hooks.json**                         | **Fully replaced** from their respective source files.                                                                                    |
 | **Skills, commands, agents directories**                         | Synced contents replace existing files. Extra files are **removed**.                                                                      |
 | **.gitignore**                                                   | Only the `AI SYNC GENERATED START/END` block is managed. Your other entries are safe.                                                     |
+
+### Transactional backups and rollback
+
+Before a real `init` or `sync` writes anything, AgentSync copies every path the operation may change into `.ai/backups/<backup-id>/`. The backup store ignores itself in Git. Dry runs, fresh `sync --if-stale` calls, and syncs rejected by drift preflight do not create snapshots.
+
+If an operation exits with an error, AgentSync automatically restores its pre-operation snapshot, including paths that did not exist before the run. Successful snapshots remain available for an accidental-sync rollback:
+
+```bash
+agentsync rollback --list                 # show complete snapshots
+agentsync rollback --dry-run              # preview the latest snapshot
+agentsync rollback                        # restore latest (interactive)
+agentsync rollback <backup-id> --yes       # restore a selected snapshot
+```
+
+Rollback creates its own safety snapshot first, so its output prints an ID that can undo the rollback. After each successful operation, AgentSync prunes the history to the latest 10 snapshots by default; set `AGENTSYNC_BACKUP_LIMIT=0` to keep the full history or another non-negative integer to change the limit.
+
+The transaction covers declared tool destinations plus `.ai/.sync-manifest` and the managed `.gitignore` state. A trusted `post_sync` hook can execute arbitrary commands; side effects it makes outside those paths are outside AgentSync's rollback boundary.
 
 ### Drift detection
 

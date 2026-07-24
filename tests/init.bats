@@ -208,6 +208,35 @@ teardown() {
     grep -q "^    - cursor$" ".ai/agent_sync.yaml"
 }
 
+@test "init backs up existing destinations for enabled tools" {
+    mkdir -p .claude
+    printf 'claude-before\n' > CLAUDE.md
+    printf 'settings-before\n' > .claude/settings.json
+
+    run run_agentsync init --tools claude
+    [ "$status" -eq 0 ]
+
+    local snapshot_id snapshot
+    snapshot_id=$(cat .ai/backups/.latest)
+    snapshot=".ai/backups/$snapshot_id"
+    grep -q '^operation=init$' "$snapshot/metadata"
+    [ "$(cat "$snapshot/files/CLAUDE.md")" = "claude-before" ]
+    [ "$(cat "$snapshot/files/.claude/settings.json")" = "settings-before" ]
+}
+
+@test "init restores pre-init state after a partial scaffold failure" {
+    mkdir -p .ai/agent_sync.yaml
+    printf 'keep\n' > .ai/agent_sync.yaml/sentinel
+
+    run run_agentsync init --no-detect
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Restored pre-init state"* ]]
+
+    [ ! -e ".ai/src" ]
+    [ -f ".ai/agent_sync.yaml/sentinel" ]
+    [ ! -e ".ai/.template-manifest" ]
+}
+
 @test "init auto-detects Kimi Code and OpenCode markers" {
     mkdir -p .kimi-code .opencode
     run run_agentsync init

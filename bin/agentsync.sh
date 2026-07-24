@@ -84,6 +84,7 @@ print_usage() {
     echo "  $(_green "COMMANDS")"
     echo "    $(_cyan "init")           Create .ai/ structure in current project"
     echo "    $(_cyan "sync")           Sync instructions to all enabled tools"
+    echo "    $(_cyan "rollback")       Restore targets from the latest backup"
     echo "    $(_cyan "check")          Verify outputs are in sync with source"
     echo "    $(_cyan "list")           Show available tools and their status"
     echo "    $(_cyan "enable")         Opt in to one or more tools"
@@ -141,6 +142,8 @@ print_usage() {
     echo "    agentsync sync --profile hub"
     echo "    agentsync sync --dry-run"
     echo "    agentsync sync --if-stale"
+    echo "    agentsync rollback"
+    echo "    agentsync rollback --list"
     echo "    agentsync check"
     echo "    agentsync setup-hooks --pre-commit"
     echo "    eval \"\$(agentsync shell-init zsh)\"   # add to ~/.zshrc"
@@ -253,7 +256,7 @@ main() {
     local command="${1:-help}"
 
     case "$command" in
-        sync|init|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|profile|help|--help|-h)
+        sync|init|rollback|check|list|ls|setup-hooks|export|import|refresh|enable|disable|add|adopt|customize|simplify|migrate|show|diff|resolve|doctor|dedupe|profile|help|--help|-h)
             check_for_updates
             ;;
     esac
@@ -269,7 +272,7 @@ main() {
     esac
 
     case "$command" in
-        init)          _need prompts yaml tool_resolver template_manifest paths init; shift; cmd_init "$@" ;;
+        init)          _need prompts yaml logging tool_resolver template_manifest paths backup init; shift; cmd_init "$@" ;;
         sync)
             shift
             # --workspace fan-out: run sync in every .ai/ below cwd before
@@ -290,6 +293,7 @@ main() {
                 cmd_engine "sync.sh" "$@"
             fi
             ;;
+        rollback)      _need prompts backup;                           shift; cmd_rollback "$@" ;;
         check)         shift; cmd_engine "check.sh" "$@" ;;
         setup-hooks)   shift; cmd_engine "setup_hooks.sh" "$@" ;;
         shell-init)    _need logging shell_init;                      shift; cmd_shell_init "$@" ;;
