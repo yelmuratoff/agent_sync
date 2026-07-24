@@ -103,7 +103,7 @@ teardown() {
     BACKUP_OUTSIDE="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_backup_outside.XXXXXX")"
     mkdir -p "$BACKUP_OUTSIDE/rules"
     printf 'outside\n' > "$BACKUP_OUTSIDE/rules/sentinel"
-    ln -s "$BACKUP_OUTSIDE" .claude
+    create_test_symlink "$BACKUP_OUTSIDE" .claude
 
     run backup_restore "$TEST_PROJECT" "$snapshot"
     [ "$status" -ne 0 ]
@@ -112,7 +112,7 @@ teardown() {
 
 @test "backup refuses a store reached through a symlink outside the project" {
     BACKUP_OUTSIDE="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_backup_store.XXXXXX")"
-    ln -s "$BACKUP_OUTSIDE" .ai
+    create_test_symlink "$BACKUP_OUTSIDE" .ai
     printf 'source\n' > AGENTS.md
 
     run backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md"
@@ -143,8 +143,8 @@ teardown() {
     printf 'outside-ignore\n' > "$BACKUP_OUTSIDE/ignore"
     printf 'outside-latest\n' > "$BACKUP_OUTSIDE/latest"
     rm .ai/backups/.gitignore
-    ln -s "$BACKUP_OUTSIDE/ignore" .ai/backups/.gitignore
-    ln -s "$BACKUP_OUTSIDE/latest" ".ai/backups/.latest.tmp.$$"
+    create_test_symlink "$BACKUP_OUTSIDE/ignore" .ai/backups/.gitignore
+    create_test_symlink "$BACKUP_OUTSIDE/latest" ".ai/backups/.latest.tmp.$$"
 
     backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md" >/dev/null
 
@@ -162,7 +162,7 @@ teardown() {
     printf 'present\tAGENTS.md\n' > "$BACKUP_OUTSIDE/targets.tsv"
     printf 'outside\n' > "$BACKUP_OUTSIDE/files/AGENTS.md"
     : > "$BACKUP_OUTSIDE/.complete"
-    ln -s "$BACKUP_OUTSIDE" .ai/backups/forged
+    create_test_symlink "$BACKUP_OUTSIDE" .ai/backups/forged
 
     run backup_restore "$TEST_PROJECT" "forged"
     [ "$status" -ne 0 ]

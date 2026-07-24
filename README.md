@@ -766,6 +766,10 @@ bats tests/sync.bats
 CI runs `--jobs 4` on Linux and macOS; Windows falls back to serial because
 GNU parallel isn't available under git-bash.
 
+Git Bash copies `ln -s` targets by default. The symlink-safety tests request
+native links with `MSYS=winsymlinks:nativestrict`; enable Windows Developer Mode
+or grant the `Create symbolic links` privilege before running them locally.
+
 ## Uninstall
 
 ```bash

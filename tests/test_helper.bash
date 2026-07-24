@@ -5,10 +5,9 @@
 AGENTSYNC_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/agentsync.sh"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Create a temporary project directory for testing
 setup_test_project() {
     TEST_PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_test.XXXXXX")"
-    cd "$TEST_PROJECT"
+    cd "$TEST_PROJECT" || return 1
     git init --quiet
     git config user.email "test@test.com"
     git config user.name "Test"
@@ -39,6 +38,20 @@ run_agentsync() {
     AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" "$@"
 }
 
+# Git for Windows deep-copies `ln -s` unless native links are requested explicitly.
+create_test_symlink() {
+    local target="$1"
+    local link="$2"
+    local msys_options="${MSYS:-}"
+
+    MSYS="${msys_options:+$msys_options }winsymlinks:nativestrict" \
+        ln -s "$target" "$link" || return 1
+    if [[ ! -L "$link" ]]; then
+        echo "Failed to create test symlink: $link" >&2
+        return 1
+    fi
+}
+
 # Enable tools via agentsync CLI (writes to tools.enabled in agent_sync.yaml).
 # Call after `init`. Passes --no-scaffold so existing tests stay deterministic —
 # resolver-level tests can still write overrides at whichever layout they test.
@@ -58,7 +71,7 @@ seed_project() {
     TEST_SEED="$(mktemp -d "${TMPDIR:-/tmp}/agentsync_seed.XXXXXX")"
     export TEST_SEED
     (
-        cd "$TEST_SEED"
+        cd "$TEST_SEED" || exit 1
         git init --quiet
         git config user.email "test@test.com"
         git config user.name "Test"
@@ -81,6 +94,6 @@ clone_seed() {
     if ! cp -c -R "$TEST_SEED" "$TEST_PROJECT" 2>/dev/null; then
         cp -R "$TEST_SEED" "$TEST_PROJECT"
     fi
-    cd "$TEST_PROJECT"
+    cd "$TEST_PROJECT" || return 1
     export AGENTSYNC_HOME="$REPO_ROOT"
 }
