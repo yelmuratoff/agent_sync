@@ -7,12 +7,28 @@ name: "Tool Name"
 # Enable or disable synchronization for this tool
 enabled: false
 
-# Define where files should be copied
+# Optional: profile variant. A thin variant tool (e.g. claude-hub.yaml) declares
+# `base:` to inherit every field it does not set from the base tool, so it only
+# needs to override the config-home dests below. `profile_home` records the
+# config-home directory the variant writes into. Both are managed by
+# `agentsync profile add` — you rarely write them by hand.
+# base: claude
+# profile_home: ".claude-hub"
+
+# Define where files should be copied. Every target below also accepts
+# `enabled: false` to opt this tool out of that whole category — even when a
+# dest would still resolve (e.g. inherited from the base tool via `base:`).
+# Omit it, or use any other value, to keep the default (enabled).
 targets:
   # The "Identity" file (AGENTS.md)
   agents:
     # Destination path relative to repo root
     dest: ".tool/AGENTS.md"
+
+    # Optional: opt this tool out of this category entirely (works on any target).
+    # Handy for `base:` variants that inherit a category they should not emit —
+    # e.g. a profile that lets the base config own the rules.
+    # enabled: false
 
     # Optional: Override source file (default is .ai/src/AGENTS.md)
     # source: ".ai/src/AGENTS.tiny.md"
@@ -34,7 +50,8 @@ targets:
     # every task. Rules without `paths:` fall back to the always-on `header` above.
     # scoped_header: "---\nglobs: '{globs}'\nalwaysApply: false\n---"
 
-    # Optional: Filter rules (bash globs)
+    # Optional: Filter rules (bash globs). Each accepts a scalar ("a b c"),
+    # an inline list ([a, b]), or a block list (one `- glob` per line).
     # include: "flutter-*.md"
     # exclude: "secret-*.md"
 
@@ -74,11 +91,27 @@ targets:
   # commands:
   #   dest: ".tool/commands"
   #   # extension: ".cmd.md"      # Optional: change file extension
+  #   # include: "*.md"           # Optional: filter (space-separated globs)
+  #   # exclude: "draft-*.md"     # Optional: filter (space-separated globs)
+  #
+  #   # For tools without a native commands surface (e.g. Codex):
+  #   # emit each .ai/src/commands/<name>.md as a generated skill at
+  #   # <targets.skills.dest>/command-<name>/SKILL.md. Requires targets.skills.dest.
+  #   # Mutually exclusive with `dest` and `inline_into_agents`.
+  #   # as_skills: true
+  #
+  #   # For tools that also lack a skills dir (e.g. Amazon Q, Zed):
+  #   # append a "## Commands" index to the AGENTS-like file with
+  #   # one "- `/<name>` — <description>" line per command.
+  #   # Requires targets.agents.dest (or rules.merge_to_file fallback).
+  #   # Mutually exclusive with `dest` and `as_skills`.
+  #   # inline_into_agents: true
 
   # Subagent personas (optional)
   # subagents:
   #   dest: ".tool/agents"
   #   # extension: ".agent.md"    # Optional: change file extension
+  #   # format: opencode_md        # Optional: convert portable frontmatter
 
   # Settings/permissions (optional, file copy)
   # settings:
@@ -89,6 +122,7 @@ targets:
   # mcp:
   #   source: ".ai/src/mcp/tool.json"
   #   dest: ".tool/.mcp.json"
+  #   # format: opencode_json     # Optional: compose into OpenCode settings
 
   # Hooks (optional, file copy)
   # hooks:

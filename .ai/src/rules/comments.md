@@ -17,38 +17,34 @@ Read the line without the comment. If a competent reader still understands the c
 
 - Describe *why*, not *what*. The code shows the mechanism; the comment supplies the reason.
 - One line where possible. A paragraph usually signals the surrounding code wants splitting or renaming.
-- Single space after the marker: `// like this`.
+- Single space after the marker: `# like this`.
 - Match the file's existing density and tone — scan 5–10 nearby files before changing the style.
 - Pair every `TODO` / `FIXME` with an owner or a tracked issue, or resolve it now.
-- Match section banners (`// ===== HELPERS =====`) to what the file already uses.
+- Delete unused and commented-out code; git keeps the history.
 
 ## Examples
 
+```bash
+# Sharper name beats a narrating comment:
+- # check if a path is safe
+- if [[ "$path" == "$root/"* ]]; then ...
++ local is_safe_path=false
++ [[ "$path" == "$root/"* ]] && is_safe_path=true
++ if [[ "$is_safe_path" == "true" ]]; then ...
+
+# Step markers and narration belong in the diff, not the file:
+- # Step 1: collect tools
+- tools=$(list_tools)
+- # loop through tools
+- for tool in $tools; do ...
++ tools=$(list_tools)
++ for tool in $tools; do ...
+
+# A real "why" comment earns its keep:
++ # Bash 3.2 has no mapfile; preserve empty lines with a read loop.
++ while IFS= read -r line || [[ -n "$line" ]]; do ...
+
+# Public helper comments capture non-obvious inputs, outputs, and side effects:
++ # Prints one canonical path per safe target; returns 1 for any path escape.
++ resolve_safe_targets() { ... }
 ```
-// Sharper name beats a narrating comment:
-- // check if user is an adult
-- if (user.age >= 18) { ... }
-+ const isAdult = user.age >= 18;
-+ if (isAdult) { ... }
-
-// Step markers and narration belong in the diff, not the file:
-- // Step 1: fetch users
-- const users = await fetchUsers();
-- // loop through users
-- for (const u of users) { ... }
-+ const users = await fetchUsers();
-+ for (const u of users) { ... }
-
-// A real "why" comment earns its keep:
-+ // Backend returns 404 for "no data yet" on new accounts — treat as empty.
-+ if (isNotFound(e)) return;
-
-// Doc comments capture the contract on a public API:
-+ /**
-+  * Synchronizes user records with the remote backend.
-+  * Throws SyncError on network failure or malformed payload.
-+  */
-+ async function syncUsers() { ... }
-```
-
-Unused code belongs in git history rather than in commented-out blocks. Task numbers, PR references, and caller lists belong in the commit message rather than in the source.

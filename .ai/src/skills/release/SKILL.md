@@ -13,7 +13,7 @@ Run these **before** touching VERSION or CHANGELOG. If any check surfaces a prob
 
 1. **Working tree clean** — `git status --porcelain` returns empty. Uncommitted work first, then release.
 2. **Tests pass** — `bats tests/` succeeds. Stop on failure; failing tests are never a "release later" problem.
-3. **ShellCheck clean** — `shellcheck -x -S warning -e SC1091 bin/agentsync.sh lib/**/*.sh` returns 0.
+3. **ShellCheck clean** — `shellcheck -x -S warning -e SC1091 bin/agentsync.sh lib/sync.sh lib/check.sh lib/setup_hooks.sh lib/helpers/*.sh` returns 0.
 4. **CHANGELOG covers all user-facing commits since the last tag**:
    - `git log --oneline $(git describe --tags --abbrev=0)..HEAD` lists the candidates.
    - For each commit, decide: user-visible (CLI flag, output format, new tool, bug a user could hit) → must appear in the new CHANGELOG section. Internal refactor / test-only / CI / dev tooling → stays out.

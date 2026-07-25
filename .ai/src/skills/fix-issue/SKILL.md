@@ -24,7 +24,7 @@ Resolve a reported GitHub issue: understand it, trace to the root cause, fix por
 6. **Lint** — `shellcheck -x -S warning -e SC1091 <changed-scripts>`. Resolve warnings; don't paper over with `# shellcheck disable=`.
 7. **Add a bats regression test** — fails on `main`, passes on the fix. Name by behaviour: `@test "sync: <what the bug broke> stays correct"`. Hermetic temp dirs via `setup_test_project` / `teardown_test_project`.
 8. **Run the full suite** — `bats tests/`. Every test green, not just the new one.
-9. **Commit referencing the issue** — `fix: <subject> (#<issue-number>)` so GitHub auto-closes on merge.
+9. **Report the result** — summarize the root cause, changed files, regression test, and verification. Commit only when the user asks; use `Fixes #<issue-number>` in the commit or PR body when automatic closure is intended.
 
 ## Gotchas
 
