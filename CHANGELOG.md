@@ -2,6 +2,10 @@
 
 ## 0.33.1
 
+### Added
+
+- **AI-assisted project migration prompt.** `agentsync migrate` now prints a self-contained prompt and automatically copies it with the available macOS, Linux, Wayland, X11, or Git Bash clipboard tool. The prompt grounds an AI migration in the project's pinned version, every relevant official changelog entry, and the latest matching documentation and templates; it requires a recoverable checkpoint, minimal source-of-truth edits, supported AgentSync migration commands, and `doctor` / `sync` / `check` verification. The historical layout migration remains available as `migrate --legacy` for dry-run and through the backwards-compatible `migrate --apply [--yes]` route.
+
 ### CI
 
 - **Windows backup safety tests now exercise real symlinks.** Git Bash normally turns `ln -s` targets into copies, so the backup containment tests were checking ordinary in-project directories and incorrectly reporting three security guards as failures. The shared fixture now requests native symlinks with `MSYS=winsymlinks:nativestrict` and verifies each link before the test continues.

@@ -34,7 +34,7 @@ Create and maintain AI agent instructions in the AgentSync format.
 
 After editing, run `agentsync sync` to distribute to all tools.
 
-Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in (`agentsync enable`, `agentsync customize`, `agentsync add mcp`). When absent, AgentSync falls back to its shipped base templates. The flat `settings/`, `mcp/`, and `hooks/` directories from older layouts still work but are deprecated — `agentsync migrate` moves them into the per-tool form above.
+Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in (`agentsync enable`, `agentsync customize`, `agentsync add mcp`). When absent, AgentSync falls back to its shipped base templates. The flat `settings/`, `mcp/`, and `hooks/` directories from older layouts still work but are deprecated — preview their move with `agentsync migrate --legacy` and apply it with `agentsync migrate --apply`.
 
 ## Scaffolding new content
 
@@ -277,7 +277,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 - `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
 - `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
 - `agentsync export` bundles `.ai/src/` into an archive; `agentsync import <src>` pulls a config from a repo, archive, or directory.
-- `agentsync migrate` moves legacy flat-layout overrides into the per-tool form.
+- `agentsync migrate` prints and copies a grounded prompt for safely upgrading an existing project to the latest documented AgentSync format. Use `agentsync migrate --legacy` to preview legacy flat-layout moves and `agentsync migrate --apply` to perform them.
 - `agentsync upgrade-config` re-pins the engine version in `agent_sync.yaml`.
 
 ## Gotchas

@@ -412,7 +412,7 @@ _doctor_check_orphan_outputs() {
     local found=0
 
     if [[ -d "$REPO_ROOT/.agent" ]]; then
-        _doctor_advise ".agent/ — legacy pre-v0.6 layout (run $(_cyan "agentsync migrate") to clean up)"
+        _doctor_advise ".agent/ — legacy pre-v0.6 layout (run $(_cyan "agentsync migrate --legacy") to preview cleanup)"
         found=$((found + 1))
     fi
 

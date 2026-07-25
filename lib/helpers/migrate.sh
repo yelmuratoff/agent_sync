@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# agentsync migrate — move legacy flat-layout payload overrides
+# agentsync migrate — print and copy an AI-assisted upgrade prompt.
+#
+# The historical flat-layout migration remains available through
+# `migrate --legacy` (dry-run) and the backwards-compatible `migrate --apply`
+# route.
+#
+# Legacy migration moves flat-layout payload overrides
 # (.ai/src/{hooks,mcp,settings}/<tool>.<ext>) into the per-tool canonical
 # layout (.ai/src/tools/<tool>/<resource>.<ext>).
 #
@@ -155,7 +161,7 @@ _migrate_cleanup_empty_dirs() {
     done
 }
 
-cmd_migrate() {
+_cmd_migrate_legacy() {
     local apply=false
     local yes=false
 
@@ -165,7 +171,7 @@ cmd_migrate() {
             --yes|-y)   yes=true;   shift ;;
             --help|-h)
                 cat <<'USAGE'
-Usage: agentsync migrate [--apply] [--yes]
+Usage: agentsync migrate --legacy [--apply] [--yes]
 
   Moves legacy flat-layout overrides to the canonical per-tool layout:
     .ai/src/hooks/<tool>.<ext>    → .ai/src/tools/<tool>/hooks.<ext>
@@ -181,7 +187,7 @@ USAGE
                 ;;
             *)
                 echo "$(_red "Error"): Unknown flag: $1" >&2
-                echo "Usage: agentsync migrate [--apply] [--yes]" >&2
+                echo "Usage: agentsync migrate --legacy [--apply] [--yes]" >&2
                 exit 1
                 ;;
         esac
@@ -208,7 +214,6 @@ USAGE
         return 0
     fi
 
-    # Handle pre-v0.6 `.agent/` removal first (independent of flat-override moves).
     if [[ "$has_legacy_agent_dir" == "true" ]]; then
         echo "  $(_bold "Legacy pre-v0.6 layout"):"
         echo "    $(_yellow ".agent/") — orphan directory from before tool-specific outputs."
@@ -348,4 +353,159 @@ USAGE
     echo ""
     _dim "  Run"; printf ' %s' "$(_cyan "agentsync sync")"; _dim " to confirm outputs are unchanged."; echo ""
     echo ""
+}
+
+_migrate_prompt_file() {
+    local system_dir=""
+    system_dir=$(resolve_system_dir 2>/dev/null) || true
+
+    if [[ -n "$system_dir" ]] && [[ -f "$system_dir/prompts/migrate.md" ]]; then
+        echo "$system_dir/prompts/migrate.md"
+        return 0
+    fi
+
+    local engine_prompt="${_AGENTSYNC_ENGINE_ROOT:-}/lib/prompts/migrate.md"
+    if [[ -n "${_AGENTSYNC_ENGINE_ROOT:-}" ]] && [[ -f "$engine_prompt" ]]; then
+        echo "$engine_prompt"
+        return 0
+    fi
+
+    echo "Error: Prompt file not found." >&2
+    echo "Expected at: <engine>/lib/prompts/migrate.md" >&2
+    return 1
+}
+
+_migrate_project_version() {
+    local project_dir="${AGENTSYNC_REPO_ROOT:-$(pwd)}"
+    local config=""
+
+    if [[ -f "$project_dir/.ai/agent_sync.yaml" ]]; then
+        config="$project_dir/.ai/agent_sync.yaml"
+    elif [[ -f "$project_dir/agent_sync.yaml" ]]; then
+        config="$project_dir/agent_sync.yaml"
+    fi
+
+    if [[ -n "$config" ]]; then
+        local pinned=""
+        pinned=$(parse_yaml_value "$config" "agentsync_version" 2>/dev/null || true)
+        if [[ -n "$pinned" ]]; then
+            echo "$pinned"
+            return 0
+        fi
+    fi
+
+    echo "not detected"
+}
+
+_migrate_copy_prompt() {
+    local output="$1"
+    local -a clipboard_command=()
+
+    if [[ "${AGENTSYNC_NO_CLIPBOARD:-}" == "1" ]]; then
+        return 3
+    fi
+
+    if command -v pbcopy >/dev/null 2>&1; then
+        clipboard_command=(pbcopy)
+    elif command -v wl-copy >/dev/null 2>&1; then
+        clipboard_command=(wl-copy)
+    elif command -v xclip >/dev/null 2>&1; then
+        clipboard_command=(xclip -selection clipboard)
+    elif command -v xsel >/dev/null 2>&1; then
+        clipboard_command=(xsel --clipboard --input)
+    elif command -v clip.exe >/dev/null 2>&1; then
+        clipboard_command=(clip.exe)
+    else
+        return 2
+    fi
+
+    printf '%s' "$output" | "${clipboard_command[@]}"
+}
+
+_cmd_migrate_prompt() {
+    if [[ $# -gt 0 ]]; then
+        case "$1" in
+            --help|-h)
+                cat <<'USAGE'
+Usage: agentsync migrate
+       agentsync migrate --legacy [--apply] [--yes]
+
+  Prints an AI prompt for safely upgrading an existing AgentSync project to
+  the latest documented format and copies it to the system clipboard.
+
+  Legacy layout maintenance:
+    --legacy   Preview old flat-layout file moves without changing files
+    --apply    Apply those moves (backwards-compatible historical behavior)
+    --yes, -y  Accept safe legacy consolidation without prompting
+USAGE
+                return 0
+                ;;
+            *)
+                echo "$(_red "Error"): Unknown flag: $1" >&2
+                echo "Usage: agentsync migrate [--legacy [--apply] [--yes]]" >&2
+                return 1
+                ;;
+        esac
+    fi
+
+    local prompt_file=""
+    prompt_file=$(_migrate_prompt_file) || return 1
+
+    local project_version=""
+    project_version=$(_migrate_project_version)
+
+    local output=""
+    output+="## AgentSync migration context"
+    output+=$'\n\n'
+    output+="- AgentSync CLI that generated this prompt: ${VERSION:-unknown}"
+    output+=$'\n'
+    output+="- Project-pinned AgentSync version: $project_version"
+    output+=$'\n\n---\n\n'
+    output+="$(cat "$prompt_file")"
+
+    local clipboard_status=0
+    _migrate_copy_prompt "$output" || clipboard_status=$?
+
+    if [[ -t 1 ]]; then
+        echo "" >&2
+        echo "  $(_dim "─── migration prompt below ────────────────────────────────")" >&2
+        echo "" >&2
+    fi
+
+    echo "$output"
+
+    if [[ -t 1 ]]; then
+        echo "" >&2
+        echo "  $(_dim "─── end of migration prompt ──────────────────────────────")" >&2
+        echo "" >&2
+    fi
+
+    case "$clipboard_status" in
+        0)
+            echo "  $(_green "Copied migration prompt to clipboard.")" >&2
+            ;;
+        2)
+            echo "  $(_yellow "Clipboard tool not found.") Prompt was printed to stdout." >&2
+            ;;
+        3)
+            ;;
+        *)
+            echo "  $(_yellow "Could not copy to clipboard.") Prompt was printed to stdout." >&2
+            ;;
+    esac
+}
+
+cmd_migrate() {
+    case "${1:-}" in
+        --legacy)
+            shift
+            _cmd_migrate_legacy "$@"
+            ;;
+        --apply|--yes|-y)
+            _cmd_migrate_legacy "$@"
+            ;;
+        *)
+            _cmd_migrate_prompt "$@"
+            ;;
+    esac
 }

@@ -258,8 +258,8 @@ _simplify_payload_overrides() {
             printf "    %s %s\n" "$(_dim "·")" "$rel"
         done
         echo ""
-        _dim "  Re-run $(_cyan "agentsync customize <tool> <resource>") to migrate inline,"; echo ""
-        _dim "  or wait for $(_cyan "agentsync migrate") (shipping in 0.12)."; echo ""
+        _dim "  Run $(_cyan "agentsync migrate --legacy") to preview the migration,"; echo ""
+        _dim "  then $(_cyan "agentsync migrate --apply") to move these files."; echo ""
         echo ""
     fi
 

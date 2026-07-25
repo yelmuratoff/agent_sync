@@ -1,26 +1,72 @@
 #!/usr/bin/env bats
-# Tests for agentsync migrate — legacy flat-layout → per-tool dir moves +
-# optional MCP consolidation into shared .ai/src/mcp.json.
-
 load test_helper
 
 setup_file() { seed_project --yes --no-detect --content agents,rules; }
 teardown_file() { teardown_seed_project; }
-setup() { clone_seed; }
+setup() {
+    clone_seed
+    export AGENTSYNC_NO_CLIPBOARD=1
+}
 teardown() { teardown_test_project; }
 
-@test "migrate reports nothing when layout is already clean" {
+@test "migrate outputs a grounded upgrade prompt" {
+    sed -i.bak -E 's|^agentsync_version:.*|agentsync_version: "0.7.0"|' .ai/agent_sync.yaml
+
     run run_agentsync migrate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AgentSync migration context"* ]]
+    [[ "$output" == *"Project-pinned AgentSync version: 0.7.0"* ]]
+    [[ "$output" == *"CHANGELOG.md"* ]]
+    [[ "$output" == *"latest stable AgentSync release"* ]]
+    [[ "$output" == *"agentsync doctor"* ]]
+    [[ "$output" == *"agentsync check"* ]]
+}
+
+@test "migrate copies the full prompt with an available clipboard tool" {
+    local mock_bin="$TEST_PROJECT/mock-bin"
+    local clipboard_capture="$TEST_PROJECT/clipboard.txt"
+    mkdir -p "$mock_bin"
+    printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'cat > "$MIGRATE_CLIPBOARD_CAPTURE"' \
+        > "$mock_bin/pbcopy"
+    chmod +x "$mock_bin/pbcopy"
+
+    run env \
+        PATH="$mock_bin:$PATH" \
+        AGENTSYNC_NO_CLIPBOARD=0 \
+        MIGRATE_CLIPBOARD_CAPTURE="$clipboard_capture" \
+        AGENTSYNC_HOME="$REPO_ROOT" \
+        bash "$AGENTSYNC_BIN" migrate
+
+    [ "$status" -eq 0 ]
+    [ -s "$clipboard_capture" ]
+    grep -q "AgentSync migration context" "$clipboard_capture"
+    grep -q "latest stable AgentSync release" "$clipboard_capture"
+    [[ "$output" == *"Copied migration prompt to clipboard"* ]]
+}
+
+@test "migrate uses an explicit fallback when the project version is absent" {
+    rm -f .ai/agent_sync.yaml
+
+    run run_agentsync migrate
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Project-pinned AgentSync version: not detected"* ]]
+}
+
+@test "migrate --legacy reports nothing when layout is already clean" {
+    run run_agentsync migrate --legacy
     [ "$status" -eq 0 ]
     [[ "$output" == *"Nothing to migrate"* ]]
 }
 
-@test "migrate dry-run shows planned moves but does not touch files" {
+@test "migrate --legacy dry-run shows planned moves but does not touch files" {
     mkdir -p .ai/src/hooks .ai/src/settings
     echo '{"m":"H"}' > .ai/src/hooks/cursor.json
     echo '{"m":"S"}' > .ai/src/settings/claude.json
 
-    run run_agentsync migrate
+    run run_agentsync migrate --legacy
     [ "$status" -eq 0 ]
     [[ "$output" == *"Planned moves"* ]]
     [[ "$output" == *".ai/src/hooks/cursor.json"* ]]
@@ -114,15 +160,24 @@ teardown() { teardown_test_project; }
 @test "migrate --help prints usage" {
     run run_agentsync migrate --help
     [ "$status" -eq 0 ]
+    [[ "$output" == *"latest documented format"* ]]
+    [[ "$output" == *"--legacy"* ]]
+    [[ "$output" == *"--apply"* ]]
+}
+
+@test "migrate --legacy --help documents the legacy route" {
+    run run_agentsync migrate --legacy --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"agentsync migrate --legacy"* ]]
     [[ "$output" == *"Moves legacy flat-layout"* ]]
 }
 
 # ── Legacy pre-v0.6 .agent/ (singular) directory removal ──────────────────────
 
-@test "migrate dry-run lists legacy .agent/ contents" {
+@test "migrate --legacy dry-run lists legacy .agent/ contents" {
     mkdir -p .agent/rules .agent/skills
     echo "legacy AGENTS" > .agent/AGENTS.md
-    run run_agentsync migrate
+    run run_agentsync migrate --legacy
     [ "$status" -eq 0 ]
     [[ "$output" == *"Legacy pre-v0.6"* ]]
     [[ "$output" == *".agent/"* ]]
@@ -157,7 +212,7 @@ teardown() { teardown_test_project; }
     mkdir -p .agent/rules
     echo "stale" > .agent/AGENTS.md
 
-    run run_agentsync migrate
+    run run_agentsync migrate --legacy
     [ "$status" -eq 0 ]
     [[ "$output" == *"Legacy pre-v0.6"* ]]
 
@@ -171,7 +226,7 @@ teardown() { teardown_test_project; }
     mkdir -p .agent .ai/src/hooks
     echo "legacy" > .agent/AGENTS.md
     echo '{}' > .ai/src/hooks/cursor.json
-    run run_agentsync migrate
+    run run_agentsync migrate --legacy
     [ "$status" -eq 0 ]
     [[ "$output" == *"Legacy pre-v0.6"* ]]
     [[ "$output" == *"Planned moves"* ]]

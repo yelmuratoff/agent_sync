@@ -199,7 +199,7 @@ agentsync <command> [options]
 | `resolve`                |       | Interactively reconcile overrides with base values                                              |
 | `refresh`                |       | Pull new template files into existing `.ai/src/` (three-way diff; `--status` to list declined) |
 | `dedupe`                 |       | Interactively remove source files duplicated against a parent `.ai/src/`                       |
-| `migrate`                |       | Move legacy flat-layout overrides into per-tool dirs; clean up pre-v0.6 `.agent/`              |
+| `migrate`                |       | Print and copy an AI prompt that safely upgrades an existing AgentSync configuration            |
 | `adopt <dest>`           |       | Promote a manual edit in a generated file back into `.ai/src/` (`--all` for every drifted file) |
 | `profile <cmd>`          |       | Manage config-home profiles: `add`, `list`, `remove` (work/personal tool variants)             |
 | `doctor`                 |       | Validate setup and surface drift / config warnings / cross-project advisories                  |
@@ -236,6 +236,7 @@ agentsync rollback <backup-id> --yes  # Restore one snapshot non-interactively
 agentsync generate                    # Generate bootstrap prompt
 agentsync generate | pbcopy           # Copy to clipboard (macOS)
 agentsync generate "React + Next.js"  # With project context
+agentsync migrate                     # Print and auto-copy a safe upgrade prompt
 ```
 
 Works like `claude /init` — generates a prompt that you paste into any AI (Claude, ChatGPT, Gemini). The AI analyzes your codebase description and creates a complete `.ai/src/` config: AGENTS.md, rules, skills, commands, and agents tailored to your project's stack and conventions.
@@ -515,7 +516,7 @@ Every payload resource — tool YAML, hooks, MCP config, settings — follows th
 | mcp       | `lib/templates/mcp/<tool>.json`       | `.ai/src/tools/<tool>/mcp.json`       | `.ai/src/mcp.json` |
 | settings  | `lib/templates/settings/<tool>.<ext>` | `.ai/src/tools/<tool>/settings.<ext>` | —                  |
 
-The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --apply` to move them into the canonical per-tool layout; the legacy paths may be dropped in a future release.
+The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<tool>.<ext>`, `.ai/src/settings/<tool>.<ext>`) from 0.10 and earlier are still read and still win over base, but print a one-shot deprecation warning. Run `agentsync migrate --legacy` to preview moving them into the canonical per-tool layout, then `agentsync migrate --apply` to apply it; the legacy paths may be dropped in a future release.
 
 **Why it matters:**
 
@@ -531,7 +532,7 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 Projects upgraded from 0.10 keep working without intervention — the resolver still reads `.ai/src/{hooks,mcp,settings}/<tool>.<ext>`. When you are ready to move them into the canonical per-tool layout:
 
 ```bash
-agentsync migrate             # dry-run; prints the planned moves
+agentsync migrate --legacy    # dry-run; prints the planned legacy-layout moves
 agentsync migrate --apply     # performs the moves; consolidates identical MCP files
 agentsync migrate --apply -y  # non-interactive — accepts MCP consolidation by default
 ```
@@ -539,6 +540,21 @@ agentsync migrate --apply -y  # non-interactive — accepts MCP consolidation by
 `migrate` moves each legacy file to `.ai/src/tools/<tool>/<resource>.<ext>`. When every `.ai/src/mcp/*.json` is byte-identical, it offers to collapse them into the shared `.ai/src/mcp.json`; if they differ, they migrate per-tool. Existing files at the target are never overwritten — such collisions are skipped with a warning so you resolve them by hand. Empty source directories are cleaned up on success.
 
 `migrate` also detects the pre-v0.6 monolithic `.agent/` (singular, no `s`) layout — a single directory holding `AGENTS.md`, `workflows/`, `rules/`, `skills/` without per-tool separation. The current engine doesn't recognise it, so a normal `sync` never cleans it up. Dry-run lists the contents; `--apply --yes` removes the directory. Detection runs alongside the flat-layout move logic, so a single `migrate --apply --yes` cleans up both in one pass.
+
+## Migrating an outdated AgentSync project
+
+Run `agentsync migrate` from the project root. It prints a self-contained prompt
+and automatically copies it with `pbcopy`, `wl-copy`, `xclip`, `xsel`, or
+`clip.exe`, whichever is available. Paste the prompt into a coding AI that can
+inspect the repository.
+
+The prompt includes the installed CLI version and the project's
+`agentsync_version` pin. It directs the AI to verify the actual starting version,
+read every relevant official changelog section, consult the latest README,
+bundled skill, and templates from the same stable release, create a recoverable
+checkpoint, preserve custom configuration, use supported migration commands,
+and finish with `doctor`, `sync`, and `check`. If no clipboard integration is
+available, the prompt is still printed to stdout.
 
 ## Path Overrides
 
