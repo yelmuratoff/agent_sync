@@ -11,7 +11,8 @@
 #     from filesystem markers, passed via --tools, or explicitly enabled later).
 #     Missing overrides fall back to base templates at sync time.
 #   - Source content (AGENTS.md, rules, skills, commands, agents) is selectable
-#     via --content; default is "agents,rules".
+#     via --content (default: all sections). Pass --no-templates to create paths
+#     without copying shipped starter files.
 
 # Default set of starter content sections created by init. Users can narrow
 # this with --content.
@@ -132,6 +133,14 @@ _init_copy_source_templates() {
     local ai_dir="$1"
     local templates_dir="$2"
     local content_list="$3"
+    local no_templates="${4:-false}"
+
+    if [[ "$no_templates" == "true" ]]; then
+        if _init_list_contains "agents" "$content_list"; then
+            : > "$ai_dir/src/AGENTS.md"
+        fi
+        return 0
+    fi
 
     if [[ -n "$templates_dir" ]]; then
         if _init_list_contains "agents" "$content_list"; then
@@ -347,39 +356,57 @@ _init_print_summary() {
     local enabled_list="$2"       # space-separated (or empty)
     local payload_lines="$3"      # newline-separated "resource/file.ext" (or empty)
     local detect_source="$4"      # "detect" | "flag" | "mixed" | "none"
+    local no_templates="${5:-false}"
 
     echo ""
     echo "   Created $(_cyan ".ai/agent_sync.yaml")     — project config"
 
-    [[ -f "$ai_dir/src/AGENTS.md" ]] && \
-        echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
+    if [[ -f "$ai_dir/src/AGENTS.md" ]]; then
+        if [[ "$no_templates" == "true" ]] && [[ ! -s "$ai_dir/src/AGENTS.md" ]]; then
+            echo "   Created $(_cyan ".ai/src/AGENTS.md")      — $(_dim "(empty)")"
+        else
+            echo "   Created $(_cyan ".ai/src/AGENTS.md")      — agent identity"
+        fi
+    fi
 
     local rule_count=0
     if [[ -d "$ai_dir/src/rules" ]]; then
         for f in "$ai_dir/src/rules/"*.md; do [[ -f "$f" ]] && rule_count=$((rule_count + 1)); done
-        [[ $rule_count -gt 0 ]] && \
+        if [[ $rule_count -gt 0 ]]; then
             echo "   Created $(_cyan ".ai/src/rules/")          — $rule_count rule(s)"
+        elif [[ "$no_templates" == "true" ]]; then
+            echo "   Created $(_cyan ".ai/src/rules/")          — $(_dim "(empty)")"
+        fi
     fi
 
     local skill_count=0
     if [[ -d "$ai_dir/src/skills" ]]; then
         for d in "$ai_dir/src/skills/"*/; do [[ -d "$d" ]] && skill_count=$((skill_count + 1)); done
-        [[ $skill_count -gt 0 ]] && \
+        if [[ $skill_count -gt 0 ]]; then
             echo "   Created $(_cyan ".ai/src/skills/")         — $skill_count skill(s)"
+        elif [[ "$no_templates" == "true" ]]; then
+            echo "   Created $(_cyan ".ai/src/skills/")         — $(_dim "(empty)")"
+        fi
     fi
 
     local cmd_count=0
     if [[ -d "$ai_dir/src/commands" ]]; then
         for f in "$ai_dir/src/commands/"*.md; do [[ -f "$f" ]] && cmd_count=$((cmd_count + 1)); done
-        [[ $cmd_count -gt 0 ]] && \
+        if [[ $cmd_count -gt 0 ]]; then
             echo "   Created $(_cyan ".ai/src/commands/")       — $cmd_count command(s)"
+        elif [[ "$no_templates" == "true" ]]; then
+            echo "   Created $(_cyan ".ai/src/commands/")       — $(_dim "(empty)")"
+        fi
     fi
 
     local agent_count=0
     if [[ -d "$ai_dir/src/agents" ]]; then
         for f in "$ai_dir/src/agents/"*.md; do [[ -f "$f" ]] && agent_count=$((agent_count + 1)); done
-        [[ $agent_count -gt 0 ]] && \
+        if [[ $agent_count -gt 0 ]]; then
             echo "   Created $(_cyan ".ai/src/agents/")         — $agent_count subagent(s)"
+        elif [[ "$no_templates" == "true" ]]; then
+            echo "   Created $(_cyan ".ai/src/agents/")         — $(_dim "(empty)")"
+        fi
     fi
 
     if [[ -n "$payload_lines" ]]; then
@@ -486,13 +513,18 @@ _init_print_plan() {
     local content_list="$3"
     local templates_dir="$4"
     local detect_source="$5"
+    local no_templates="${6:-false}"
 
     echo "$(_bold "Plan:")"
     echo "  Target:   $(_cyan "$target_dir/.ai/")"
     if [[ -n "$content_list" ]]; then
         local content_joined="" tok
         for tok in $content_list; do content_joined="${content_joined:+$content_joined, }$tok"; done
-        echo "  Content:  $content_joined"
+        if [[ "$no_templates" == "true" ]]; then
+            echo "  Content:  $content_joined $(_dim "(no starter templates)")"
+        else
+            echo "  Content:  $content_joined"
+        fi
     else
         echo "  Content:  $(_dim "(none)")"
     fi
@@ -586,6 +618,8 @@ cmd_init() {
     local dry_run=false
     local tools_flag_set=false
     local content_flag_set=false
+    local no_templates=false
+    local no_templates_flag_set=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -615,6 +649,11 @@ cmd_init() {
                 no_detect=true
                 shift
                 ;;
+            --no-templates)
+                no_templates=true
+                no_templates_flag_set=true
+                shift
+                ;;
             --yes|-y)
                 assume_yes=true
                 shift
@@ -636,7 +675,7 @@ destinations under .ai/backups/ so a partial setup can be restored safely.
 In a terminal, `init` opens an interactive wizard that lets you pick tools
 and content sections. In non-TTY environments (CI, scripts), it runs silently
 with auto-detected defaults. Pass --yes or any of --tools/--content/--no-detect
-to skip the wizard.
+/--no-templates to skip the wizard.
 
 Options:
   --tools <csv>        Enable these tools (e.g. claude,cursor). Unions with
@@ -644,7 +683,9 @@ Options:
   --content <csv>      Which source sections to scaffold. Valid tokens:
                        agents, rules, skills, commands, subagents.
                        Default: all of them.
-  --no-detect          Skip filesystem marker auto-detection.
+  --no-detect          Skip filesystem marker auto-detection (tools only).
+  --no-templates       Create selected content paths without copying shipped
+                       starter files. AGENTS.md is empty when agents is selected.
   -y, --yes            Skip all prompts, accept defaults.
   --dry-run            Show what would be created; don't write anything.
   -h, --help           Show this help.
@@ -654,7 +695,8 @@ Examples:
   agentsync init --yes                     # auto-detect + defaults, no prompt
   agentsync init --tools claude            # Claude only, no detection union
   agentsync init --tools claude,cursor --content agents,rules
-  agentsync init --no-detect               # blank slate, pick tools later
+  agentsync init --no-detect               # no tool auto-detection; pick tools later
+  agentsync init --no-templates --no-detect  # empty .ai/src/ layout, no starters
   agentsync init --dry-run                 # preview without writing
 HELP
                 return 0
@@ -737,13 +779,14 @@ HELP
 
     # Interactive wizard triggers when:
     #   - stdin+stdout are a TTY
-    #   - no --yes, no --tools, no --content (those are explicit automation)
+    #   - no --yes, no --tools, no --content, no --no-templates (explicit automation)
     #   - --dry-run still opens the wizard; we just don't write at the end.
     local interactive=false
     if is_tty \
         && [[ "$assume_yes" != "true" ]] \
         && [[ "$tools_flag_set" != "true" ]] \
-        && [[ "$content_flag_set" != "true" ]]; then
+        && [[ "$content_flag_set" != "true" ]] \
+        && [[ "$no_templates_flag_set" != "true" ]]; then
         interactive=true
     fi
 
@@ -785,7 +828,7 @@ HELP
 
     # Render plan. For dry-run this is the only output; interactive asks to
     # confirm; explicit-flag non-interactive just proceeds.
-    _init_print_plan "$target_dir" "$tool_list" "$content_list" "$templates_dir" "$detect_source"
+    _init_print_plan "$target_dir" "$tool_list" "$content_list" "$templates_dir" "$detect_source" "$no_templates"
 
     if [[ "$dry_run" == "true" ]]; then
         echo "$(_dim "Dry run — nothing was written.")"
@@ -815,7 +858,7 @@ HELP
     trap _init_on_exit EXIT
 
     _init_create_directories "$ai_dir" "$content_list"
-    _init_copy_source_templates "$ai_dir" "$templates_dir" "$content_list"
+    _init_copy_source_templates "$ai_dir" "$templates_dir" "$content_list" "$no_templates"
 
     local payload_lines
     payload_lines=$(_init_copy_tool_payloads "$ai_dir" "$templates_dir" "$tool_list")
@@ -834,7 +877,7 @@ HELP
         AGENTSYNC_REPO_ROOT="$target_dir" template_manifest_write
     fi
 
-    _init_print_summary "$ai_dir" "$tool_list" "$payload_lines" "$detect_source"
+    _init_print_summary "$ai_dir" "$tool_list" "$payload_lines" "$detect_source" "$no_templates"
     echo "Backup: ${INIT_BACKUP_PATH#"$target_dir"/}"
     echo ""
 

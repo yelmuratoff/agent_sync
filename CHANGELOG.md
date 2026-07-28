@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.2
+
+### Added
+
+- **`agentsync init --no-templates`.** Scaffold the usual `.ai/src/` section directories (and an empty `AGENTS.md` when the agents section is selected) without copying shipped starter rules, skills, commands, or subagents. Pairs with `--no-detect` for nested `.ai/` trees or migrations where you bring your own content; use `agentsync refresh` later to adopt shipped templates selectively.
+
 ## 0.33.1
 
 ### Added
