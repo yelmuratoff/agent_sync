@@ -1,6 +1,6 @@
 ---
 name: refactor
-description: Restructure existing code without changing its behavior — reduce duplication, improve naming, simplify complex logic, extract helpers, split overgrown functions, untangle dependencies. Use this skill when the user asks to refactor, clean up, simplify, DRY out, rename, extract a helper, split a file, or make code "nicer" — including when they describe code-quality concerns without using the word "refactor" (e.g. "this is messy", "приведи в порядок", "это можно сделать чище").
+description: Restructure existing code without changing its behavior — reduce duplication, improve naming, simplify complex logic, extract helpers, split overgrown functions, untangle dependencies. Use this skill when the user asks to refactor, clean up, simplify, DRY out, rename, extract a helper, split a file, or make code "nicer" — including when they describe code-quality concerns without using the word "refactor" (e.g. "this is messy", "clean it up", "this could be done cleaner").
 ---
 
 # Refactor

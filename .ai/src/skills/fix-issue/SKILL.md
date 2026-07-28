@@ -7,7 +7,7 @@ description: >-
   resolve, or tackle a GitHub issue (by number or URL), debug a reported bug
   from the tracker, or work through an issue end-to-end — including phrasings
   like "fix #42", "tackle issue 17", "resolve this GH issue",
-  "почини issue #N", or "разберись с багом из тикета".
+  "figure out the bug from the ticket".
 ---
 
 # Fix Issue

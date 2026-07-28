@@ -119,7 +119,7 @@ description: >-
 
 **Critical for skills:**
 
-- The `description` is a TRIGGER. Discovery is the only thing the agent sees at startup, so vague = invisible. Make it imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain — "even when phrased as 'this is broken' or 'почему падает'"), and keyword-rich. Stay under 1024 chars.
+- The `description` is a TRIGGER. Discovery is the only thing the agent sees at startup, so vague = invisible. Make it imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain — "even when phrased as 'this is broken' or 'why is it failing'"), and keyword-rich. Stay under 1024 chars.
 - `Gotchas` is the single highest-leverage section — concrete corrections to wrong assumptions ("the `users` table uses soft deletes; queries must include `WHERE deleted_at IS NULL`"), not generic advice. Include 2-3 based on what could actually go wrong in this project; update it every time the agent makes a mistake using the skill.
 - **Aim for 50–150 lines** when the workflow is simple. Cap at 500 lines / 5000 tokens hard. Beyond that, move detail to `references/<topic>.md` and load it with an explicit trigger ("read `references/X.md` when Y") — not a vague "see references/".
 - Apply the Universal principles above (add-what-agent-lacks, procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility) — they matter most for skills.

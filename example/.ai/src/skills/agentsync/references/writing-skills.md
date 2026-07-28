@@ -61,7 +61,7 @@ The description is the only thing the agent sees during discovery. Vague = invis
 
 - **Imperative phrasing.** "Use this skill when…" beats "This skill does…". The agent is deciding whether to act.
 - **Focus on user intent, not internal mechanics.** Describe what the user is trying to achieve, not the steps the skill takes.
-- **Be pushy.** Explicitly list contexts where the skill applies, *including ones where the user doesn't name the domain* ("even when phrased as 'this is broken' or 'почему падает'").
+- **Be pushy.** Explicitly list contexts where the skill applies, *including ones where the user doesn't name the domain* ("even when phrased as 'this is broken' or 'why is it failing'").
 - **Pack relevant keywords** the user might say or type, including alternate phrasings.
 - **Concise but full.** A few sentences usually beats one. Stay under 1024 chars.
 
