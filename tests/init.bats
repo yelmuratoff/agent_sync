@@ -295,4 +295,42 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"--yes"* ]]
     [[ "$output" == *"--dry-run"* ]]
+    [[ "$output" == *"--no-templates"* ]]
+}
+
+@test "init --no-templates creates empty layout without starter files" {
+    run run_agentsync init --no-templates --no-detect
+    [ "$status" -eq 0 ]
+
+    [ -f ".ai/src/AGENTS.md" ]
+    [ ! -s ".ai/src/AGENTS.md" ]
+    [ -d ".ai/src/rules" ]
+    [ -d ".ai/src/skills" ]
+    [ -d ".ai/src/commands" ]
+    [ -d ".ai/src/agents" ]
+
+    [ -z "$(find .ai/src/rules -name '*.md' 2>/dev/null | head -1)" ]
+    [ -z "$(find .ai/src/commands -name '*.md' 2>/dev/null | head -1)" ]
+    [ -z "$(find .ai/src/agents -name '*.md' 2>/dev/null | head -1)" ]
+    [ -z "$(find .ai/src/skills -name 'SKILL.md' 2>/dev/null | head -1)" ]
+}
+
+@test "init --no-templates --content agents,rules narrows empty dirs" {
+    run run_agentsync init --no-templates --no-detect --content agents,rules
+    [ "$status" -eq 0 ]
+
+    [ -f ".ai/src/AGENTS.md" ]
+    [ ! -s ".ai/src/AGENTS.md" ]
+    [ -d ".ai/src/rules" ]
+    [ ! -d ".ai/src/skills" ]
+    [ ! -d ".ai/src/commands" ]
+    [ ! -d ".ai/src/agents" ]
+    [ -z "$(find .ai/src/rules -name '*.md' 2>/dev/null | head -1)" ]
+}
+
+@test "init --dry-run --no-templates notes no starter templates in plan" {
+    run run_agentsync init --dry-run --no-templates --no-detect
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"no starter templates"* ]]
+    [ ! -d ".ai" ]
 }
