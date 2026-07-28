@@ -7,8 +7,8 @@
     <a href="https://github.com/yelmuratoff/agent">
       <img src="https://img.shields.io/badge/shell-bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white" alt="Built with Bash">
     </a>
-    <a href="https://opensource.org/licenses/MIT">
-      <img src="https://img.shields.io/badge/license-mit-4EAA25?style=for-the-badge" alt="License">
+    <a href="https://www.gnu.org/licenses/gpl-3.0.html">
+      <img src="https://img.shields.io/badge/license-GPL--3.0--only-4EAA25?style=for-the-badge" alt="GPL-3.0-only License">
     </a>
     <a href="https://github.com/yelmuratoff/agent">
       <img src="https://img.shields.io/github/stars/yelmuratoff/agent?style=for-the-badge&logo=github&color=4EAA25" alt="GitHub stars">
@@ -785,6 +785,17 @@ GNU parallel isn't available under git-bash.
 Git Bash copies `ln -s` targets by default. The symlink-safety tests request
 native links with `MSYS=winsymlinks:nativestrict`; enable Windows Developer Mode
 or grant the `Create symbolic links` privilege before running them locally.
+
+## License
+
+Copyright (C) 2026 Yelaman Yelmurat.
+
+AgentSync is free software licensed under the
+[GNU General Public License version 3 only](LICENSE) (`GPL-3.0-only`).
+You may use, modify, and redistribute it under that license's terms. Distributed
+modified versions must remain under the same license and provide corresponding
+source code. Third-party components retain their original licenses; see
+[Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 ## Uninstall
 

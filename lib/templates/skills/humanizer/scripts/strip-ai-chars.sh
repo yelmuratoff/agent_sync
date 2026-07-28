@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # strip-ai-chars.sh: deterministic typographic cleanup. stdin -> stdout.
-# Ported from https://github.com/Nordth/humanize-ai-lib (MIT).
+# Derived from humanize-ai-lib, Copyright (c) 2025 Nordth.
+# Licensed under MIT; see THIRD_PARTY_NOTICES.md in the AgentSync repository.
 
 set -euo pipefail
 
