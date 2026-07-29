@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.4
+
+### Fixed
+
+- **Shared overlay sync no longer aborts when commands or agents dirs are absent.** `_overlay_rewrite_sources` tested optional overlay paths with `[[ ]] && assign`, which returns 1 when a directory is missing and aborted nested workspace sync under `set -e` when `shared.inherit` omitted empty categories. Paths are now guarded with `if/fi` so sync continues.
+
 ## 0.33.3
 
 ### Changed

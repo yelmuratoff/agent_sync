@@ -90,16 +90,28 @@ build_overlay_tree() {
 # Usage: _overlay_rewrite_sources <tmpdir>
 _overlay_rewrite_sources() {
     local tmpdir="$1"
-    # shellcheck disable=SC2034
-    [[ -f "$tmpdir/src/AGENTS.md" ]] && SOURCE_AGENTS="$tmpdir/src/AGENTS.md"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/rules" ]]    && SOURCE_RULES="$tmpdir/src/rules"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/skills" ]]   && SOURCE_SKILLS="$tmpdir/src/skills"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/commands" ]] && SOURCE_COMMANDS="$tmpdir/src/commands"
-    # shellcheck disable=SC2034
-    [[ -d "$tmpdir/src/agents" ]]   && SOURCE_SUBAGENTS="$tmpdir/src/agents"
+    # Use if/fi — plain `[[ ]] && assign` returns 1 when the path is missing, which
+    # aborts sync under set -e (common when shared inherit omits empty categories).
+    if [[ -f "$tmpdir/src/AGENTS.md" ]]; then
+        # shellcheck disable=SC2034
+        SOURCE_AGENTS="$tmpdir/src/AGENTS.md"
+    fi
+    if [[ -d "$tmpdir/src/rules" ]]; then
+        # shellcheck disable=SC2034
+        SOURCE_RULES="$tmpdir/src/rules"
+    fi
+    if [[ -d "$tmpdir/src/skills" ]]; then
+        # shellcheck disable=SC2034
+        SOURCE_SKILLS="$tmpdir/src/skills"
+    fi
+    if [[ -d "$tmpdir/src/commands" ]]; then
+        # shellcheck disable=SC2034
+        SOURCE_COMMANDS="$tmpdir/src/commands"
+    fi
+    if [[ -d "$tmpdir/src/agents" ]]; then
+        # shellcheck disable=SC2034
+        SOURCE_SUBAGENTS="$tmpdir/src/agents"
+    fi
 }
 
 # Read `shared.path` and `shared.inherit` from the project config and

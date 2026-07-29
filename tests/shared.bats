@@ -37,6 +37,51 @@ EOF
     echo "$parent_dir $child_dir"
 }
 
+# Helper: rules-only `--no-templates` scaffold — no commands/, agents/, or AGENTS.md.
+# The shared overlay tmpdir then lacks those paths; _overlay_rewrite_sources must
+# not abort sync under set -e when they are missing.
+_shared_make_sparse_pair() {
+    local parent_dir="$TEST_PROJECT/parent_sparse"
+    local child_dir="$parent_dir/child"
+    local init_flags=(--no-templates --no-detect --content rules --yes)
+
+    mkdir -p "$parent_dir"
+    ( cd "$parent_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init "${init_flags[@]}" >/dev/null )
+    echo "parent-rule" > "$parent_dir/.ai/src/rules/parent-only.md"
+
+    mkdir -p "$child_dir"
+    ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init "${init_flags[@]}" >/dev/null )
+    ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude --no-scaffold >/dev/null )
+    echo "child-rule" > "$child_dir/.ai/src/rules/child-only.md"
+
+    for dir in "$parent_dir" "$child_dir"; do
+        [ -d "$dir/.ai/src/rules" ]
+        [ ! -d "$dir/.ai/src/commands" ]
+        [ ! -d "$dir/.ai/src/agents" ]
+        [ ! -f "$dir/.ai/src/AGENTS.md" ]
+    done
+
+    cat >> "$child_dir/.ai/agent_sync.yaml" <<'EOF'
+
+shared:
+  path: "../"
+  inherit: rules
+EOF
+    echo "$parent_dir $child_dir"
+}
+
+@test "shared: sync succeeds when overlay omits commands, agents, and AGENTS.md" {
+    local pair child
+    pair=$(_shared_make_sparse_pair)
+    child="${pair##* }"
+
+    run bash -c "cd '$child' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' sync"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Shared overlay active"* ]]
+    [ -f "$child/.claude/rules/parent-only.md" ]
+    [ -f "$child/.claude/rules/child-only.md" ]
+}
+
 @test "shared: parent rules materialise into child output dirs" {
     local pair child
     pair=$(_shared_make_pair)
