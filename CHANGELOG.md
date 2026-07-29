@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **Shipped skill templates use English-only discovery examples.** Russian trigger phrases in bundled skill descriptions and writing guidance are replaced with English equivalents or removed when redundant; Existing projects pick up these changes via `agentsync refresh` or `init`.
+- **English-only skill discovery examples:** replaced Russian trigger phrases in bundled skill descriptions and writing guidance with English equivalents, removing redundant examples. Existing projects receive the updated templates through `agentsync refresh`; new projects receive them through `agentsync init`.
 
 ## 0.33.2
 
