@@ -1,6 +1,6 @@
 ---
 name: release
-description: Bump the AgentSync version, write a CHANGELOG entry summarising changes since the last tag, and prepare a clean release commit. Use this skill when the user asks to release, ship, cut a version, bump major/minor/patch, tag, or prepare a new version — including phrasings like "let's ship 0.12", "поднять версию", "сделай релиз", or when asked to update CHANGELOG.md after a stretch of work.
+description: Bump the AgentSync version, write a CHANGELOG entry summarising changes since the last tag, and prepare a clean release commit. Use this skill when the user asks to release, ship, cut a version, bump major/minor/patch, tag, or prepare a new version — including phrasings like "let's ship 0.12", "bump the version", "make a release", or when asked to update CHANGELOG.md after a stretch of work.
 ---
 
 # Release

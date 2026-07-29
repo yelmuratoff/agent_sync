@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Create a well-structured git commit for staged or unstaged changes — analyze the diff, match the project's existing commit style, write a clear message, and create the commit. Use this skill when the user asks to commit, save changes, check in code, write a commit message, prepare changes for push, or wrap up a piece of work — even when they don't say "commit" explicitly (e.g. "let's save this", "ship it", "сохрани изменения").
+description: Create a well-structured git commit for staged or unstaged changes — analyze the diff, match the project's existing commit style, write a clear message, and create the commit. Use this skill when the user asks to commit, save changes, check in code, write a commit message, prepare changes for push, or wrap up a piece of work — even when they don't say "commit" explicitly (e.g. "let's save this", "ship it", "save the changes").
 ---
 
 # Commit

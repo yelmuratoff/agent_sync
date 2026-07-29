@@ -118,7 +118,7 @@ Before returning the result, read what you wrote with fresh eyes and check four 
 
 First, scan for forbidden marks. Any em dashes, en dashes, hyphens used as pauses, semicolons, framing colons that slipped through, fix them now. Any bold mid-paragraph, kill it.
 
-Second, scan for the banned vocabulary list. The longer the piece, the more likely a "delve" or "utilize" or "данный" snuck back in. Replace it.
+Second, scan for the banned vocabulary list. The longer the piece, the more likely a "delve" or "utilize" or "aforementioned" snuck back in. Replace it.
 
 Third, find any sentence that still sounds templated, promotional, or structurally identical to a nearby sentence. Rewrite those.
 

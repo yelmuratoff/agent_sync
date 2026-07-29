@@ -1,6 +1,6 @@
 ---
 name: review
-description: Perform a structured code review on a diff, PR, or staged changes — surface correctness, security, error-handling, architecture, testing, and clarity issues with file/line references and severity. Use this skill when the user asks to review code, audit a diff or PR, find bugs in changes before merging, sanity-check work before pushing, or look over an implementation — including when phrased softly ("look over this", "check if this is OK", "глянь, всё ли нормально", "посмотри на это").
+description: Perform a structured code review on a diff, PR, or staged changes — surface correctness, security, error-handling, architecture, testing, and clarity issues with file/line references and severity. Use this skill when the user asks to review code, audit a diff or PR, find bugs in changes before merging, sanity-check work before pushing, or look over an implementation — including when phrased softly ("look over this", "check if this is OK").
 ---
 
 # Code Review
