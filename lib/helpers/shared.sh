@@ -90,8 +90,8 @@ build_overlay_tree() {
 # Usage: _overlay_rewrite_sources <tmpdir>
 _overlay_rewrite_sources() {
     local tmpdir="$1"
-    # Use if/fi — plain `[[ ]] && assign` returns 1 when the path is missing, which
-    # aborts sync under set -e (common when shared inherit omits empty categories).
+    # A missing final agents/ path previously became the function's status and
+    # triggered set -e in the unguarded caller.
     if [[ -f "$tmpdir/src/AGENTS.md" ]]; then
         # shellcheck disable=SC2034
         SOURCE_AGENTS="$tmpdir/src/AGENTS.md"

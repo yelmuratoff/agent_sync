@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- **Shared overlay sync no longer aborts when commands or agents dirs are absent.** `_overlay_rewrite_sources` tested optional overlay paths with `[[ ]] && assign`, which returns 1 when a directory is missing and aborted nested workspace sync under `set -e` when `shared.inherit` omitted empty categories. Paths are now guarded with `if/fi` so sync continues.
+- **Sparse shared overlays no longer abort sync.** Nested workspace sync now skips optional shared categories that have no files instead of exiting under `set -e`; rules, skills, commands, and agents can be listed in `shared.inherit` before their source directories exist.
 
 ## 0.33.3
 
