@@ -379,13 +379,17 @@ _doctor_check_always_on_rules() {
 # survive indefinitely. Doctor surfaces them so the user can decide whether
 # to keep, remove, or re-enable the tool.
 #
+# Canonical owner of `.opencode/` is `opencode` (the runtime is OpenCode).
+# `minimax` shares the same directory because MiniMax Code is built on the
+# OpenCode runtime; the orphan check below has a special-case guard that
+# accepts either `opencode` or `minimax` as a valid owner. Listing both
+# here would double-report when neither is enabled.
 _DOCTOR_OUTPUT_DIR_MAP=(
     ".claude|claude"
     ".cursor|cursor"
     ".codex|codex"
     ".kimi-code|kimi"
     ".opencode|opencode"
-    ".opencode|minimax"
     ".windsurf|windsurf"
     ".gemini|gemini"
     ".junie|junie"
