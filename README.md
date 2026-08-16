@@ -354,6 +354,7 @@ targets:
 | **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), subagents (MD→TOML), hooks.json, config.toml |
 | **Kimi Code**          | `kimi.yaml`        | .kimi-code/AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), mcp.json                         |
 | **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
+| **MiniMax Code**       | `minimax.yaml`     | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin — same files as `opencode` because MiniMax Code is built on the OpenCode runtime |
 | **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
 | **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
@@ -394,9 +395,11 @@ AgentSync targets coding tools and their filesystem formats, not model vendors. 
 - **OpenCode MCP:** shared `.ai/src/mcp.json` is converted into OpenCode's top-level `mcp` map. Use `.ai/src/tools/opencode/mcp.json` for a divergent canonical server map. Move any existing `mcp` field out of `.ai/src/tools/opencode/settings.json` before enabling canonical MCP; `sync` and `doctor` name both files when ownership is ambiguous.
 - **OpenCode hooks:** customize `.ai/src/tools/opencode/hooks.ts`; AgentSync owns only `.opencode/plugins/agentsync.ts` and preserves sibling plugins. Custom tools under `.opencode/tools/`, other plugins, themes, TUI preferences, and credentials remain tool-owned.
 - **Kimi hooks and agents:** Kimi Code exposes built-in agents but no project custom-agent surface. Its hooks live globally in `$KIMI_CODE_HOME/config.toml`, so AgentSync intentionally leaves that file untouched.
+- **MiniMax Code and OpenCode:** MiniMax Code is the desktop AI agent app from MiniMax, built on the OpenCode runtime. The project-level files it reads (`.opencode/*`, `opencode.json`, `.opencode/plugins/`) are exactly OpenCode's, so the `minimax` and `opencode` targets write to the same paths. Enable `minimax` alone if you only use MiniMax Code; enable both if you want the catalog to show both names. `sync` is idempotent — running it with both enabled is harmless. `adopt` writes a manual edit back to the source of the tool you actually enabled (not whichever sibling the catalog lists first), so promoting an edit in `.opencode/plugins/agentsync.ts` lands at `.ai/src/tools/<enabled-tool>/hooks.ts`.
 
 ```bash
 agentsync enable kimi opencode     # enable the standalone coding tools
+agentsync enable minimax          # MiniMax Code (built on the OpenCode runtime)
 agentsync sync
 
 npx @z_ai/coding-helper           # configure GLM in an existing supported tool

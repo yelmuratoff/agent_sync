@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.33.5
+
+### Added
+
+- **`minimax` target (MiniMax Code).** AgentSync now has first-class support for [MiniMax Code](https://agent.minimax.io/docs/code/welcome), the desktop AI agent app from MiniMax. MiniMax Code is built on the OpenCode runtime (bundled `@opencode-ai/sdk` 1.18.18), so the project-level files it reads — `AGENTS.md`, `.opencode/{skills,commands,agents}/`, `opencode.json`, `.opencode/plugins/agentsync.ts` — are exactly OpenCode's. The new `minimax` target mirrors `opencode.yaml` on purpose. Enable `minimax` alone if you only use MiniMax Code; enable both `minimax` and `opencode` if you want the catalog to show both names (idempotent — `sync` with both enabled is harmless; the manifest tracks files per-dest, not per-tool).
+  - `init` auto-detects `.opencode/`, `opencode.json`, and `opencode.jsonc` as `minimax` markers (same as `opencode`).
+  - `enable minimax`, `disable minimax`, `--only minimax`, `--skip minimax`, `--dry-run` are wired through the existing tool architecture — no special cases.
+  - `sync` produces the full set: `AGENTS.md`, `.opencode/skills/`, `.opencode/commands/`, `.opencode/agents/` (OpenCode-safe MD), `opencode.json` (with composed shared `.ai/src/mcp.json`), and `.opencode/plugins/agentsync.ts` (the only plugin AgentSync owns — sibling plugins are preserved).
+  - `check`, `--force`, `rollback --yes`, `adopt`, `customize`, `simplify`, `--workspace`, `doctor`, and drift detection all work for `minimax` out of the box.
+- **`adopt` now prefers enabled tools when multiple tools share a dest.** Adding `minimax` introduced a second tool that writes the same files as `opencode` (same runtime). Without the fix, `adopt .opencode/plugins/agentsync.ts` could route the manual edit to `.ai/src/tools/minimax/hooks.ts` even when the user had only `opencode` enabled. The dest resolver now matches enabled tools first and only falls back to non-enabled siblings if no enabled tool produces the target.
+- **Doctor recognises MiniMax Code as an owner of `.opencode/`.** The orphan-output check no longer flags `.opencode/` when either `opencode` or `minimax` (or both) is enabled.
+
 ## 0.33.4
 
 ### Fixed

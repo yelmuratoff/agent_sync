@@ -20,7 +20,7 @@ setup_file() {
 
     # Tests assert sync output for these tools — enable explicitly.
     # init defaults all tools to disabled; users opt in per project.
-    enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity kimi opencode
+    enable_tools claude cursor copilot windsurf gemini codex amazonq zed junie antigravity kimi opencode minimax
 
     # Path-scoped rule (leads with YAML frontmatter) — regression fixture for the
     # inline-into-agents rule inventory title extraction.
@@ -201,6 +201,24 @@ setup() {
 @test "sync: OpenCode emits the managed native plugin" {
     [ -f ".opencode/plugins/agentsync.ts" ]
     grep -q 'AgentSyncHooks' ".opencode/plugins/agentsync.ts"
+}
+
+# ── MiniMax Code ────────────────────────────────────────────────────────────
+# MiniMax Code shares the OpenCode runtime, so it writes the same files as
+# `opencode`. The `enable_tools` line above enables both, so these assertions
+# confirm the MiniMax source files are reachable through the catalog (the
+# detailed per-category coverage is in tests/minimax.bats).
+
+@test "sync: MiniMax Code emits AGENTS.md at project root" {
+    [ -f "AGENTS.md" ]
+}
+
+@test "sync: MiniMax Code emits opencode.json (shared with OpenCode runtime)" {
+    [ -f "opencode.json" ]
+}
+
+@test "sync: MiniMax Code emits the managed native plugin" {
+    [ -f ".opencode/plugins/agentsync.ts" ]
 }
 
 # ── Hooks (per-tool) ─────────────────────────────────────────────────────────

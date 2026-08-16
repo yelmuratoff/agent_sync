@@ -385,6 +385,7 @@ _DOCTOR_OUTPUT_DIR_MAP=(
     ".codex|codex"
     ".kimi-code|kimi"
     ".opencode|opencode"
+    ".opencode|minimax"
     ".windsurf|windsurf"
     ".gemini|gemini"
     ".junie|junie"
@@ -426,6 +427,13 @@ _doctor_check_orphan_outputs() {
         if [[ "$dir" == ".agents" ]]; then
             [[ "$_enabled_set" == *"|codex|"* ]] && continue
             [[ "$_enabled_set" == *"|antigravity|"* ]] && continue
+        fi
+        # `.opencode/` is shared by `opencode` and `minimax` (the latter is the
+        # MiniMax Code desktop app, which is built on the OpenCode runtime).
+        # Only flag it if NEITHER owning tool is enabled.
+        if [[ "$dir" == ".opencode" ]]; then
+            [[ "$_enabled_set" == *"|opencode|"* ]] && continue
+            [[ "$_enabled_set" == *"|minimax|"* ]] && continue
         fi
         if [[ "$_enabled_set" != *"|${tool}|"* ]]; then
             _doctor_advise "$dir/ — orphan (tool '$tool' not enabled; output left from prior run)"

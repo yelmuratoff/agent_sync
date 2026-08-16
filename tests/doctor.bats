@@ -263,13 +263,22 @@ JSON
     [[ "$output" != *".cursor/ — orphan"* ]]
 }
 
-@test "doctor recognizes Kimi Code and OpenCode output ownership" {
+@test "doctor recognizes Kimi Code, OpenCode, and MiniMax Code output ownership" {
     run_agentsync init --no-detect >/dev/null
-    enable_tools kimi opencode
+    enable_tools kimi opencode minimax
     mkdir -p .kimi-code/skills .opencode/skills
     run run_agentsync doctor
     [ "$status" -eq 0 ]
     [[ "$output" != *".kimi-code/ — orphan"* ]]
+    [[ "$output" != *".opencode/ — orphan"* ]]
+}
+
+@test "doctor recognizes .opencode/ ownership when only minimax is enabled" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools minimax
+    mkdir -p .opencode/skills
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
     [[ "$output" != *".opencode/ — orphan"* ]]
 }
 
