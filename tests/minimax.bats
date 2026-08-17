@@ -373,6 +373,7 @@ init_and_enable() {
     init_and_enable minimax
     run_agentsync sync >/dev/null
     run run_agentsync doctor
+    [ "$status" -eq 0 ]
     [[ ! "$output" == *".opencode/ — orphan"* ]]
 }
 
@@ -380,6 +381,7 @@ init_and_enable() {
     init_and_enable opencode
     run_agentsync sync >/dev/null
     run run_agentsync doctor
+    [ "$status" -eq 0 ]
     [[ ! "$output" == *".opencode/ — orphan"* ]]
 }
 
