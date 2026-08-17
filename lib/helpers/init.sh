@@ -263,6 +263,7 @@ _init_detect_enabled_tools() {
         "codex|$root/.codex"
         "kimi|$root/.kimi-code"
         "opencode|$root/.opencode|$root/opencode.json|$root/opencode.jsonc"
+        "minimax|$root/.opencode|$root/opencode.json|$root/opencode.jsonc"
         "windsurf|$root/.windsurf|$root/.windsurfrules"
         "junie|$root/.junie"
         "cline|$root/.clinerules"

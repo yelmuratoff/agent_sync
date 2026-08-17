@@ -263,14 +263,38 @@ JSON
     [[ "$output" != *".cursor/ — orphan"* ]]
 }
 
-@test "doctor recognizes Kimi Code and OpenCode output ownership" {
+@test "doctor recognizes Kimi Code, OpenCode, and MiniMax Code output ownership" {
     run_agentsync init --no-detect >/dev/null
-    enable_tools kimi opencode
+    enable_tools kimi opencode minimax
     mkdir -p .kimi-code/skills .opencode/skills
     run run_agentsync doctor
     [ "$status" -eq 0 ]
     [[ "$output" != *".kimi-code/ — orphan"* ]]
     [[ "$output" != *".opencode/ — orphan"* ]]
+}
+
+@test "doctor recognizes .opencode/ ownership when only minimax is enabled" {
+    run_agentsync init --no-detect >/dev/null
+    enable_tools minimax
+    mkdir -p .opencode/skills
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".opencode/ — orphan"* ]]
+}
+
+@test "doctor does not double-report .opencode/ when neither opencode nor minimax is enabled" {
+    # Regression: with the prior map listing both `.opencode|opencode` and
+    # `.opencode|minimax`, neither being enabled caused the dir to be flagged
+    # as orphan twice. Canonical owner is `opencode`; the special-case guard
+    # already accepts either tool as a valid owner, so the map only needs
+    # the one entry.
+    run_agentsync init --no-detect >/dev/null
+    enable_tools kimi
+    mkdir -p .opencode/skills
+    run run_agentsync doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".opencode/ — orphan (tool 'opencode' not enabled"* ]]
+    [[ "$output" != *"tool 'minimax' not enabled"* ]]
 }
 
 @test "doctor fails when OpenCode settings and canonical MCP both own mcp" {

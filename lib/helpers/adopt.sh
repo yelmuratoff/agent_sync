@@ -363,10 +363,25 @@ _adopt_resolve_dest() {
     _ADOPT_DEST_ABS="$abs"
     _ADOPT_DEST_REL="${abs#"$REPO_ROOT/"}"
 
-    # Walk every tool that has a base or override (matches sync.sh's catalog).
+    # Prefer tools the user actually enabled — multiple tools may produce the
+    # same dest path (e.g. `opencode` and `minimax` both write `opencode.json`
+    # because MiniMax Code is built on the OpenCode runtime). Adopt should
+    # write the manual edit back into the source the user opted in to, not
+    # whichever sibling the catalog happens to list first.
     local t
     while IFS= read -r t; do
         [[ -z "$t" ]] && continue
+        is_tool_enabled "$t" || continue
+        if _adopt_try_tool "$t" "$_ADOPT_DEST_ABS"; then
+            return 0
+        fi
+    done < <(list_all_tools)
+
+    # Fall back to non-enabled tools — the file is still a recognized output,
+    # just not one the user is currently using. Same _adopt_try_tool pass.
+    while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        is_tool_enabled "$t" && continue
         if _adopt_try_tool "$t" "$_ADOPT_DEST_ABS"; then
             return 0
         fi

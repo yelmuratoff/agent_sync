@@ -1,0 +1,43 @@
+name: "MiniMax Code"
+enabled: false
+
+# MiniMax Code is the desktop AI agent app built on the OpenCode runtime
+# (bundled @opencode-ai/sdk 1.18.18 — verified from the installed app's
+# ai-runtime/config-home/opencode/node_modules). The project-level files it
+# reads are exactly OpenCode's, so we mirror opencode.yaml's destinations
+# on purpose: these are the same files, not duplicates.
+#
+# Enabling both `minimax` and `opencode` is redundant but harmless: identical
+# content is written to identical paths. Disable one if you only need the
+# other (see README "Models and Providers Are Not Tools" for the analogous
+# Kimi + OpenCode coexistence note).
+
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  rules:
+    inline_into_agents: true
+
+  skills:
+    dest: ".opencode/skills"
+
+  commands:
+    dest: ".opencode/commands"
+
+  subagents:
+    dest: ".opencode/agents"
+    format: opencode_md
+
+  settings:
+    source: ".ai/src/settings/minimax.json"
+    dest: "opencode.json"
+
+  mcp:
+    dest: "opencode.json"
+    extension: json
+    format: opencode_json
+
+  hooks:
+    source: ".ai/src/hooks/minimax.ts"
+    dest: ".opencode/plugins/agentsync.ts"

@@ -237,13 +237,14 @@ teardown() {
     [ ! -e ".ai/.template-manifest" ]
 }
 
-@test "init auto-detects Kimi Code and OpenCode markers" {
+@test "init auto-detects Kimi Code, OpenCode, and MiniMax Code markers" {
     mkdir -p .kimi-code .opencode
     run run_agentsync init
     [ "$status" -eq 0 ]
 
     grep -q "^    - kimi$" ".ai/agent_sync.yaml"
     grep -q "^    - opencode$" ".ai/agent_sync.yaml"
+    grep -q "^    - minimax$" ".ai/agent_sync.yaml"
 }
 
 @test "init does not treat generic AGENTS.md as a Codex marker" {
