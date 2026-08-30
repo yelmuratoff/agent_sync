@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.34.0
 
 ### Fixed
 
+- **Rewriting a managed file no longer tightens its permissions.** Files written through a temporary sibling and renamed into place — `.gitignore`, `.ai/agent_sync.yaml`, `.mcp.json`, and the manifests — inherited the temporary file's `0600` instead of keeping their own mode, because a rename replaces the inode along with its permissions. A project's `.gitignore` silently dropped from `0644` to `0600` on the first sync that rewrote the generated block. The original mode is now carried across, and a destination its owner cannot write is left to the temporary file's mode rather than producing staging nothing can write.
 - **Interrupting a command no longer leaves garbage behind — or a half-written project.** Every handler was armed on `EXIT` only, and a Bash script killed by a signal never runs its `EXIT` trap. Ctrl-C during `sync` therefore leaked the shared-overlay tree (a full copy of `.ai/src`), leaked the backup staging directory (a full copy of the managed write set, inside the repository), *and* skipped the transactional restore, leaving destinations half-written. Handlers now cover `INT`, `TERM`, and `HUP`, pass the signal's status explicitly instead of reading `$?` — which inside a signal handler holds the last completed command's status and is frequently `0` — and re-raise so the caller still sees a real interrupt.
 - **Orphaned backup staging is reclaimed.** A run killed mid-snapshot left `.ai/backups/.tmp.<op>.*` in the project permanently: the names are dot-prefixed, so `backup_prune`'s glob never saw them, and it also required a `.complete` marker they never get. `backup_create` now sweeps staging and metadata temporaries older than 24 hours, a threshold that leaves a concurrently running sync's staging untouched.
 - **Temp files no longer accumulate in `$TMPDIR`.** `agentsync_legacy_warn_<pid>` was written on every invocation that saw a legacy payload override and removed by nothing; a dozen other `mktemp` sites had no cleanup on their error paths. All scratch now lives in one per-run directory reclaimed on every exit path, and atomic-write staging files are registered for cleanup where they must stay beside their destination.
@@ -13,7 +14,8 @@
 
 ### Changed
 
-- **Backups are bounded by age as well as count.** A snapshot is retained only if it is among the newest `AGENTSYNC_BACKUP_LIMIT` (default 10) *and* younger than `AGENTSYNC_BACKUP_MAX_AGE_DAYS` (default 30); either set to `0` disables that bound alone. The newest snapshot is always retained, so rollback stays available however long a project sits idle, and a snapshot whose name carries no parseable timestamp is never aged out. Age is computed with integer civil-date arithmetic — `date -u -v-30d` is BSD-only and `date -u -d` is GNU-only, and a failed substitution would have yielded an empty cutoff that compares equal to everything.
+- **Backups are bounded by age as well as count.** A snapshot is retained only if it is among the newest `AGENTSYNC_BACKUP_LIMIT` (default 10) *and* younger than the new `AGENTSYNC_BACKUP_MAX_AGE_DAYS` (default 30). Setting either to `0` disables that bound alone. The newest snapshot is always retained, so rollback stays available however long a project sits idle, and a snapshot whose name carries no parseable timestamp is never aged out.
+- **`AGENTSYNC_BACKUP_LIMIT=0` no longer means "keep everything".** It now disables only the count bound; snapshots older than 30 days are still removed. To keep the full history as before, set `AGENTSYNC_BACKUP_MAX_AGE_DAYS=0` as well.
 
 ## 0.33.5
 
