@@ -16,25 +16,66 @@ if [[ ! -d "$REPO_ROOT" ]]; then
 fi
 
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
+MANIFEST_REL=".ai/.sync-manifest"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/agent_sync_check.XXXXXX")"
 SYNC_LOG="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_sync.XXXXXX")"
 TAR_ERR="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_tar.XXXXXX")"
-trap 'rm -rf "$TEMP_ROOT"; rm -f "$SYNC_LOG" "$TAR_ERR"' EXIT
+COPY_LIST="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_copy.XXXXXX")"
+COMPARE_LIST="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_cmp.XXXXXX")"
+trap 'rm -rf "$TEMP_ROOT"; rm -f "$SYNC_LOG" "$TAR_ERR" "$COPY_LIST" "$COMPARE_LIST"' EXIT
 
 echo "Checking AgentSync configuration synchronization..."
 
-# Copy project to a temporary workspace without .git metadata.
+# Echo the manifest's relative paths, one per line.
+manifest_paths() {
+    local manifest="$1"
+    [[ -f "$manifest" ]] || return 0
+    local rel
+    while IFS=$'\t' read -r rel _; do
+        [[ -n "$rel" ]] && printf '%s\n' "$rel"
+    done < "$manifest"
+}
+
+# A global install makes the project root $HOME, whose siblings are none of
+# AgentSync's business: OS-protected directories (~/Library, ~/Pictures) that
+# deny traversal outright, and multi-GB tool caches. Copy only what sync reads
+# and writes — the .ai/ source tree plus the outputs the manifest records.
+{
+    printf '%s\n' ".ai"
+    manifest_paths "$REPO_ROOT/$MANIFEST_REL" | while IFS= read -r rel; do
+        case "$rel" in
+            .ai/*) continue ;;                      # already covered by .ai
+        esac
+        [[ -e "$REPO_ROOT/$rel" ]] && printf '%s\n' "$rel"
+    done
+} | LC_ALL=C sort -u > "$COPY_LIST"
+
+# Backups hold previous snapshots of these same outputs — large, and irrelevant
+# to whether the current tree matches its source.
 # stderr is captured so benign xattr warnings (BSD tar on macOS) stay quiet on success.
-if ! (cd "$REPO_ROOT" && tar --exclude='.git' -cf - . 2>"$TAR_ERR") | (cd "$TEMP_ROOT" && tar -xf -); then
+if ! tar -C "$REPO_ROOT" --exclude='.git' --exclude='.ai/backups' \
+        -cf - -T "$COPY_LIST" 2>"$TAR_ERR" | (cd "$TEMP_ROOT" && tar -xf -); then
     echo "❌ Failed to prepare temporary workspace for check"
     [[ -s "$TAR_ERR" ]] && cat "$TAR_ERR" >&2
     exit 1
 fi
 
+# tar can report success after a partial read, which would turn a truncated
+# workspace into a false "in sync" verdict. Confirm every requested path landed.
+while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    if [[ ! -e "$TEMP_ROOT/$rel" ]]; then
+        echo "❌ Failed to prepare temporary workspace for check"
+        echo "Incomplete copy — missing: $rel" >&2
+        [[ -s "$TAR_ERR" ]] && cat "$TAR_ERR" >&2
+        exit 1
+    fi
+done < "$COPY_LIST"
+
 # Run sync in temporary workspace. This keeps the caller repository read-only.
 # --force bypasses the manifest drift check inside the temp copy: any divergence
-# between source and dest is caught by the post-sync `diff -qr` below, which
-# gives the user a richer "out of sync" report than the abort message would.
+# between source and dest is caught by the comparison below, which gives the
+# user a richer "out of sync" report than the abort message would.
 if ! AGENTSYNC_REPO_ROOT="$TEMP_ROOT" \
      AGENTSYNC_SKIP_POST_SYNC=true \
      AGENTSYNC_INTERNAL_SKIP_BACKUP=true \
@@ -45,12 +86,29 @@ if ! AGENTSYNC_REPO_ROOT="$TEMP_ROOT" \
     exit 1
 fi
 
-set +e
-DIFF_OUTPUT=$(diff -qr -x '.git' "$REPO_ROOT" "$TEMP_ROOT")
-DIFF_EXIT=$?
-set -e
+# Compare only managed outputs. Taking both manifests catches a file the current
+# sync would stop writing as well as one it would start writing.
+{
+    manifest_paths "$REPO_ROOT/$MANIFEST_REL"
+    manifest_paths "$TEMP_ROOT/$MANIFEST_REL"
+} | LC_ALL=C sort -u > "$COMPARE_LIST"
 
-if [[ $DIFF_EXIT -eq 0 ]]; then
+DIFF_OUTPUT=""
+while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    expected="$TEMP_ROOT/$rel"
+    actual="$REPO_ROOT/$rel"
+
+    if [[ -f "$expected" && -f "$actual" ]]; then
+        cmp -s "$expected" "$actual" || DIFF_OUTPUT+="Files $rel differ"$'\n'
+    elif [[ -f "$expected" ]]; then
+        DIFF_OUTPUT+="Missing: $rel"$'\n'
+    elif [[ -f "$actual" ]]; then
+        DIFF_OUTPUT+="No longer generated: $rel"$'\n'
+    fi
+done < "$COMPARE_LIST"
+
+if [[ -z "$DIFF_OUTPUT" ]]; then
     echo "✅ AgentSync configurations are safe and synced."
     exit 0
 fi
@@ -58,7 +116,7 @@ fi
 echo ""
 echo "⚠️  AgentSync configurations are out of sync with source."
 echo "Differences detected (showing up to 20):"
-echo "$DIFF_OUTPUT" | head -n 20
+printf '%s' "$DIFF_OUTPUT" | head -n 20
 echo ""
 echo "Please run: lib/sync.sh"
 exit 1
