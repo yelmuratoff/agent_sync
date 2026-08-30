@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.5
+
+### Fixed
+
+- **`agentsync check` now works in a global install.** Check copied the whole project root into its temporary workspace. For a global install that root is `$HOME`, so it tried to read OS-protected directories (`~/Library`, `~/Pictures`) and multi-GB tool caches — aborting with `Failed to prepare temporary workspace` on macOS, and filling the disk on the way there. It now copies only the `.ai/` source tree plus the outputs recorded in `.sync-manifest`, excludes `.ai/backups/`, and compares just those managed paths instead of diffing the entire root. Files beside the project no longer count as drift, and a partial copy is reported as a failure instead of passing as "in sync".
+
 ## 0.33.4
 
 ### Fixed
