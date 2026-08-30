@@ -128,6 +128,13 @@ tmp_cleanup() {
     local run_dir="${AGENTSYNC_RUN_TMPDIR:-}"
     [[ -n "$run_dir" ]] || return 0
     [[ "${AGENTSYNC_RUN_TMPDIR_OWNER:-}" == "$$" ]] || return 0
+    # Provenance, as in shared.sh: refuse a name this helper did not create, so
+    # an inherited or hand-set value cannot turn cleanup into rm -rf on a real
+    # directory.
+    case "${run_dir##*/}" in
+        agentsync.*) ;;
+        *) return 0 ;;
+    esac
 
     local stray
     if [[ -f "$run_dir/strays" ]]; then

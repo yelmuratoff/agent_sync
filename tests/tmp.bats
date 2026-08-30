@@ -209,3 +209,17 @@ teardown() {
     printf 'rewritten\n' > "$staged"
     [ "$(cat "$staged")" = "rewritten" ]
 }
+
+@test "tmp: cleanup refuses a run dir this helper did not create" {
+    tmp_prime_run_dir
+    local real="$TEST_PROJECT/precious"
+    mkdir -p "$real"
+    printf 'keep me\n' > "$real/data.txt"
+
+    # Only the owner check stood between a hand-set value and rm -rf on it.
+    AGENTSYNC_RUN_TMPDIR="$real"
+    tmp_cleanup
+
+    [ -d "$real" ]
+    [ -f "$real/data.txt" ]
+}
