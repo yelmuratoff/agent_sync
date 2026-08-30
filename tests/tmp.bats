@@ -194,3 +194,18 @@ teardown() {
     [ -f "$staged" ]
     [ ! -e "$TEST_PROJECT/brand-new.yaml" ]
 }
+
+@test "tmp: tmp_sibling stays writable when the destination is read-only" {
+    [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]] || skip "Windows ignores chmod bits"
+    tmp_prime_run_dir
+    printf 'original\n' > "$TEST_PROJECT/locked.yaml"
+    chmod 444 "$TEST_PROJECT/locked.yaml"
+
+    local staged
+    staged=$(tmp_sibling "$TEST_PROJECT/locked.yaml" 2>/dev/null)
+    [ -f "$staged" ]
+
+    # Carrying a 0444 mode across would hand back staging nobody can write.
+    printf 'rewritten\n' > "$staged"
+    [ "$(cat "$staged")" = "rewritten" ]
+}

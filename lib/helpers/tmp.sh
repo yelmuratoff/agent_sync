@@ -109,9 +109,14 @@ tmp_sibling() {
     # Renaming over a file replaces its inode, and with it its mode, so an
     # existing destination would drop from 0644 to mktemp's 0600 on every
     # rewrite. `cp -p` then truncate carries the mode across without `stat`,
-    # whose flags differ between GNU and BSD.
+    # whose flags differ between GNU and BSD. A destination its owner cannot
+    # write (0444) would yield staging nobody can write either, so fall back to
+    # mktemp's mode there rather than handing back an unusable file.
     if [[ -f "$dest" ]] && cp -p "$dest" "$tmp" 2>/dev/null; then
-        : > "$tmp"
+        if ! { : > "$tmp"; } 2>/dev/null; then
+            rm -f "$tmp"
+            tmp="$(mktemp "${dest}.XXXXXX")" || return 1
+        fi
     fi
     _tmp_record_stray "$tmp"
     printf '%s\n' "$tmp"

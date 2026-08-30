@@ -656,10 +656,14 @@ backup_prune() {
     local latest=""
     latest=$(backup_latest "$canonical_root") || true
 
+    # A process substitution's exit status is not observable, so a failed
+    # removal here shows up as a shorter survivor list, which only makes the
+    # count phase prune less. Under-pruning is the safe direction; the call
+    # sites already treat prune as advisory.
     local -a survivors=()
     while IFS= read -r candidate; do
         [[ -n "$candidate" ]] && survivors+=("$candidate")
-    done < <(_backup_prune_by_age "$max_age" "$latest" "${snapshots[@]}") || return 1
+    done < <(_backup_prune_by_age "$max_age" "$latest" "${snapshots[@]}")
 
     [[ ${#survivors[@]} -gt 0 ]] || return 0
     _backup_prune_by_count "$limit" "$latest" "${survivors[@]}"
