@@ -270,6 +270,11 @@ ai_dir_enclosing_root() {
 # A `.ai/` directory is included only when it contains either `src/` or
 # `agent_sync.yaml` — bare `.ai/` directories from other tooling are skipped.
 #
+# Vendored trees carry their own `.ai/`, and syncing into `node_modules` writes
+# config a package manager will discard. `.ai/` is pruned once matched, so a
+# backup snapshot mirroring a project's `.ai/src` cannot be reported as a
+# second project either.
+#
 # Echoes one absolute path per line. Returns 0 even when nothing is found.
 #
 # Usage: find_workspace_ai_dirs <root>
@@ -280,7 +285,9 @@ find_workspace_ai_dirs() {
 
     # Two-key sort: depth descending (deeper first), then alphabetical within
     # each depth. Path-component count via awk -F/ keeps it pure coreutils.
-    find "$root" -type d -name ".ai" 2>/dev/null \
+    find "$root" \
+            \( -name .git -o -name node_modules \) -prune -o \
+            -type d -name ".ai" -prune -print 2>/dev/null \
         | while IFS= read -r d; do
             [[ -d "$d/src" || -f "$d/agent_sync.yaml" ]] || continue
             echo "$d"

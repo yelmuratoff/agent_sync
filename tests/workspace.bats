@@ -91,3 +91,35 @@ _workspace_init_pair() {
     # Root must still produce CLAUDE.md; leaf's failure must not abort the loop.
     [ -f "$root/CLAUDE.md" ]
 }
+
+@test "sync --workspace skips .ai/ inside vendored and VCS directories" {
+    local pair root
+    pair=$(_workspace_init_pair)
+    root="${pair%% *}"
+
+    # A dependency shipping its own .ai/: syncing here writes config a package
+    # manager will discard, and it is not the user's project.
+    mkdir -p "$root/node_modules/some-pkg/.ai/src"
+    mkdir -p "$root/.git/odd/.ai/src"
+
+    run bash -c "cd '$root' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' sync --workspace --dry-run"
+    [ "$status" -eq 0 ]
+    # bats takes the last command's status, so the discriminating assertions go
+    # last — a vacuous check after them would mask a real failure.
+    [[ "$output" != *".git/odd"* ]]
+    [[ "$output" != *"node_modules"* ]]
+}
+
+@test "sync --workspace does not descend into a project's own .ai/" {
+    local pair root
+    pair=$(_workspace_init_pair)
+    root="${pair%% *}"
+
+    # A backup snapshot mirrors .ai/src, which would otherwise look like a
+    # second project nested inside the first.
+    mkdir -p "$root/.ai/backups/20200101T000000Z-init-1/files/.ai/src"
+
+    run bash -c "cd '$root' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' sync --workspace --dry-run"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"backups"* ]]
+}
