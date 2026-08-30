@@ -8,7 +8,7 @@ _opencode_compose_json() {
     local output="$3"
     local mode="${4:-compose}"
     local diagnostic_file
-    diagnostic_file=$(mktemp "${TMPDIR:-/tmp}/agentsync_opencode_diag.XXXXXX") || return 1
+    diagnostic_file=$(tmp_file agentsync_opencode_diag) || return 1
 
     local rc=0
     awk -v settings_path="$settings_src" -v mcp_path="$mcp_src" -v diagnostic_path="$diagnostic_file" -v mode="$mode" '
@@ -465,7 +465,7 @@ BEGIN {
 opencode_settings_has_mcp() {
     local settings_src="$1"
     local output
-    output=$(mktemp "${TMPDIR:-/tmp}/agentsync_opencode_inspect.XXXXXX") || return 2
+    output=$(tmp_file agentsync_opencode_inspect) || return 2
     local rc=0
     _opencode_compose_json "$settings_src" "" "$output" "inspect-settings" || rc=$?
     rm -f "$output"
@@ -478,7 +478,7 @@ sync_opencode_config() {
     local dest="$3"
     local dry_run="${4:-false}"
     local rendered
-    rendered=$(mktemp "${TMPDIR:-/tmp}/agentsync_opencode.XXXXXX") || return 1
+    rendered=$(tmp_file agentsync_opencode) || return 1
 
     local rc=0
     _opencode_compose_json "$settings_src" "$mcp_src" "$rendered" || rc=$?
@@ -495,7 +495,7 @@ sync_opencode_config() {
 
     ensure_dir "${dest%/*}"
     local destination_tmp
-    destination_tmp=$(mktemp "${dest%/*}/.agentsync_opencode.XXXXXX") || {
+    destination_tmp=$(tmp_sibling "${dest%/*}/.agentsync_opencode") || {
         rm -f "$rendered"
         return 1
     }

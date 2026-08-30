@@ -103,7 +103,8 @@ template_manifest_write() {
         return 0
     fi
 
-    local tmp="${mfile}.tmp.$$"
+    local tmp
+    tmp=$(tmp_sibling "$mfile") || return 1
     : > "$tmp"
     local i
     for ((i = 0; i < ${#TEMPLATE_MANIFEST_KEYS[@]}; i++)); do

@@ -199,7 +199,8 @@ manifest_update_entry() {
     mfile=$(manifest_path)
     ensure_dir "$(dirname "$mfile")"
 
-    local tmp="${mfile}.tmp.$$"
+    local tmp
+    tmp=$(tmp_sibling "$mfile") || return 1
     : > "$tmp"
 
     if [[ -f "$mfile" ]]; then
@@ -229,7 +230,8 @@ manifest_write() {
     mfile=$(manifest_path)
     ensure_dir "$(dirname "$mfile")"
 
-    local tmp="${mfile}.tmp.$$"
+    local tmp
+    tmp=$(tmp_sibling "$mfile") || return 1
     : > "$tmp"
 
     local i rel old_hash abs hash

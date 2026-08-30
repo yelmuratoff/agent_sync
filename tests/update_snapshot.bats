@@ -19,6 +19,8 @@ setup() {
     # shellcheck disable=SC1090,SC1091
     source "$REPO_ROOT/lib/helpers/yaml.sh"
     # shellcheck disable=SC1090,SC1091
+    # shellcheck disable=SC1090,SC1091
+    source "$REPO_ROOT/lib/helpers/tmp.sh"
     source "$REPO_ROOT/lib/helpers/snapshot.sh"
 }
 

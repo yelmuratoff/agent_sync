@@ -48,8 +48,10 @@ update_gitignore() {
         # 4. Skip lines until end marker
         # 5. Print remaining lines
 
+        # Staged beside the destination: the mv below has to stay on one
+        # filesystem to be atomic.
         local temp_file
-        temp_file="$(mktemp "${TMPDIR:-/tmp}/agent_sync_gitignore.XXXXXX")"
+        temp_file="$(tmp_sibling "$gitignore_file")"
         local skip=0
 
         while IFS= read -r line || [[ -n "$line" ]]; do

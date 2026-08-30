@@ -87,3 +87,12 @@ require_unreadable_dirs() {
     [[ "$output" != *"stray.txt"* ]]
     [[ "$output" != *"unrelated"* ]]
 }
+
+@test "check leaves no temp artifacts behind" {
+    local sandbox="$TEST_PROJECT/tmpdir_sandbox"
+    mkdir -p "$sandbox"
+
+    TMPDIR="$sandbox" run run_agentsync check
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+}

@@ -16,7 +16,7 @@ _drop_manifest() {
     local rel="$1"
     [[ -f .ai/.template-manifest ]] || return 0
     local tmp
-    tmp="$(mktemp)"
+    tmp="$(mktemp "$TEST_PROJECT/.template-manifest.XXXXXX")"
     grep -v $'^'"$rel"$'\t' .ai/.template-manifest > "$tmp" || true
     mv "$tmp" .ai/.template-manifest
 }
@@ -28,7 +28,7 @@ _drop_manifest_prefix() {
     local prefix="$1"
     [[ -f .ai/.template-manifest ]] || return 0
     local tmp
-    tmp="$(mktemp)"
+    tmp="$(mktemp "$TEST_PROJECT/.template-manifest.XXXXXX")"
     grep -v $'^'"$prefix" .ai/.template-manifest > "$tmp" || true
     mv "$tmp" .ai/.template-manifest
 }

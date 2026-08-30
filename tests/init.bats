@@ -334,3 +334,14 @@ teardown() {
     [[ "$output" == *"no starter templates"* ]]
     [ ! -d ".ai" ]
 }
+
+@test "init leaves no temp artifacts behind" {
+    # cmd_init replaces the router's exit handler with its own; a disarm on the
+    # success path used to leave the run directory with no owner.
+    local sandbox="$TEST_PROJECT/tmpdir_sandbox"
+    mkdir -p "$sandbox"
+
+    TMPDIR="$sandbox" run run_agentsync init --no-detect
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+}

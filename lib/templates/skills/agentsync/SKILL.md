@@ -283,7 +283,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 ## Gotchas
 
 - Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it. If you edited a generated file while iterating, `agentsync adopt <path>` promotes that edit back into the matching source file — or `agentsync adopt --all` to promote every drifted file at once (refused targets and same-source conflicts are skipped and listed).
-- Backups cover declared tool destinations and AgentSync's manifest/.gitignore state. A trusted `post_sync` hook can mutate arbitrary paths; side effects outside declared destinations are not automatically reversible. After a successful operation, history is pruned to the latest 10 snapshots by default; `AGENTSYNC_BACKUP_LIMIT=0` keeps all.
+- Backups cover declared tool destinations and AgentSync's manifest/.gitignore state. A trusted `post_sync` hook can mutate arbitrary paths; side effects outside declared destinations are not automatically reversible. After an operation, history is pruned to snapshots that are both among the latest 10 (`AGENTSYNC_BACKUP_LIMIT`) and younger than 30 days (`AGENTSYNC_BACKUP_MAX_AGE_DAYS`); either set to `0` disables that bound, and the newest snapshot is always retained.
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.

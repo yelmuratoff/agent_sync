@@ -31,6 +31,23 @@ SHARED_OVERLAY_INHERIT=""    # CSV of categories that were inherited
 PROFILE_OVERLAY_DIR=""
 PROFILE_OVERLAY_DIR_CANONICAL=""
 
+# Remove an overlay tree only when this run created it. Provenance, not path
+# shape: an allowlist of /tmp-like prefixes refuses to clean up under any custom
+# TMPDIR (TMPDIR=$RUNNER_TEMP on CI), leaking a full .ai/src copy per sync.
+# Compares raw against raw — SHARED_OVERLAY_DIR is deliberately left
+# un-canonicalised (macOS /tmp is a symlink to /private/tmp), so mixing the
+# canonical form in here would make every prefix test fail.
+#
+# Usage: _overlay_remove_if_ours <label> <dir>
+_overlay_remove_if_ours() {
+    local label="$1"
+    local dir="$2"
+    case "$dir" in
+        "${AGENTSYNC_RUN_TMPDIR:-/nonexistent}"/*) rm -rf "$dir" ;;
+        *) log_warning "$label overlay was not created by this run, NOT removing: $dir" ;;
+    esac
+}
+
 # Build a shadow `src/` tree under a fresh tmpdir: mirror child_src (which wins
 # on conflict), then fill in parent_src files for the given categories where the
 # child has no same-path file. Pure aside from creating the tmpdir — echoes its
@@ -53,7 +70,7 @@ build_overlay_tree() {
     done
 
     local tmpdir
-    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/agentsync_shared.XXXXXX")
+    tmpdir=$(tmp_dir agentsync_shared) || return 1
     mkdir -p "$tmpdir/src"
 
     # Mirror child source. Only copy dirs that exist; `cp -R` preserves deep
@@ -211,11 +228,7 @@ shared_setup_overlay() {
 shared_cleanup_overlay() {
     [[ -n "$SHARED_OVERLAY_DIR" ]] || return 0
     [[ -d "$SHARED_OVERLAY_DIR" ]] || return 0
-    # Cheap sanity guard: never rm -rf a path outside the OS temp area.
-    case "$SHARED_OVERLAY_DIR" in
-        /tmp/*|/private/tmp/*|/var/folders/*) rm -rf "$SHARED_OVERLAY_DIR" ;;
-        *) log_warning "shared overlay path looks suspicious, NOT removing: $SHARED_OVERLAY_DIR" ;;
-    esac
+    _overlay_remove_if_ours "shared" "$SHARED_OVERLAY_DIR"
     SHARED_OVERLAY_DIR=""
     SHARED_OVERLAY_DIR_CANONICAL=""
     unset SHARED_OVERLAY_DIR_CANONICAL
@@ -258,10 +271,7 @@ profile_setup_overlay() {
 profile_cleanup_overlay() {
     [[ -n "$PROFILE_OVERLAY_DIR" ]] || return 0
     [[ -d "$PROFILE_OVERLAY_DIR" ]] || { PROFILE_OVERLAY_DIR=""; return 0; }
-    case "$PROFILE_OVERLAY_DIR" in
-        /tmp/*|/private/tmp/*|/var/folders/*) rm -rf "$PROFILE_OVERLAY_DIR" ;;
-        *) log_warning "profile overlay path looks suspicious, NOT removing: $PROFILE_OVERLAY_DIR" ;;
-    esac
+    _overlay_remove_if_ours "profile" "$PROFILE_OVERLAY_DIR"
     PROFILE_OVERLAY_DIR=""
     PROFILE_OVERLAY_DIR_CANONICAL=""
     unset PROFILE_OVERLAY_DIR_CANONICAL

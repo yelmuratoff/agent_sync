@@ -7,6 +7,7 @@ setup() {
     setup_test_project
     source "$REPO_ROOT/lib/helpers/cli_colors.sh"
     source "$REPO_ROOT/lib/helpers/logging.sh"
+    source "$REPO_ROOT/lib/helpers/tmp.sh"
     source "$REPO_ROOT/lib/helpers/gitignore.sh"
 }
 

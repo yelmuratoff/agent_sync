@@ -196,7 +196,7 @@ snapshot_write_pending_resolutions() {
     local dest="$ai_dir/.pending-resolutions.yaml"
 
     local tmp
-    tmp=$(mktemp "${dest}.XXXXXX") || return 1
+    tmp=$(tmp_sibling "$dest") || return 1
 
     local today
     today=$(date -u +%Y-%m-%d)

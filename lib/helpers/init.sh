@@ -25,6 +25,7 @@ _INIT_CONTENT_VALID="agents rules skills commands subagents"
 # interactive confirmation have completed.
 INIT_BACKUP_PATH=""
 INIT_TRANSACTION_ACTIVE="false"
+INIT_CLEANUP_DONE="false"
 INIT_BACKUP_TARGETS=()
 
 # ── Private helpers ───────────────────────────────────────────────────────────
@@ -99,20 +100,40 @@ _init_collect_backup_targets() {
     done
 }
 
-_init_on_exit() {
-    local status=$?
-    trap - EXIT
+_init_cleanup() {
+    local status="$1"
+    [[ "$INIT_CLEANUP_DONE" != "true" ]] || return 0
+    INIT_CLEANUP_DONE="true"
 
     if [[ "$INIT_TRANSACTION_ACTIVE" == "true" ]] && [[ $status -ne 0 ]]; then
         echo "$(_yellow "Warning"): Init failed; restoring pre-init state..." >&2
         if backup_restore "$REPO_ROOT" "$INIT_BACKUP_PATH"; then
             echo "Restored pre-init state from ${INIT_BACKUP_PATH#"$REPO_ROOT"/}" >&2
+            if ! backup_prune "$REPO_ROOT"; then
+                echo "$(_yellow "Warning"): Could not prune old AgentSync backups." >&2
+            fi
         else
             echo "$(_red "Error"): Automatic restore failed. Backup retained at ${INIT_BACKUP_PATH#"$REPO_ROOT"/}" >&2
         fi
     fi
 
+    tmp_cleanup || true
+}
+
+_init_on_exit() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    _init_cleanup "$status"
     exit "$status"
+}
+
+# $? inside a signal handler is the last completed command's status, not the
+# signal, so an interrupted init would skip the restore above. Pass 128+N.
+_init_on_signal() {
+    trap - EXIT INT TERM HUP
+    _init_cleanup "$((128 + $2))"
+    kill -"$1" "$$"
+    exit "$((128 + $2))"
 }
 
 _init_create_directories() {
@@ -584,7 +605,7 @@ cmd_upgrade_config() {
     if [[ -z "$existing" ]]; then
         # Insert at the top of file (after leading comments if any).
         local tmp
-        tmp=$(mktemp)
+        tmp=$(tmp_sibling "$config")
         {
             # Emit leading comment block as-is, then the version line, then rest.
             awk -v ver="$current" '
@@ -856,6 +877,9 @@ HELP
     }
     INIT_TRANSACTION_ACTIVE="true"
     trap _init_on_exit EXIT
+    trap '_init_on_signal INT 2' INT
+    trap '_init_on_signal TERM 15' TERM
+    trap '_init_on_signal HUP 1' HUP
 
     _init_create_directories "$ai_dir" "$content_list"
     _init_copy_source_templates "$ai_dir" "$templates_dir" "$content_list" "$no_templates"
@@ -884,6 +908,7 @@ HELP
     if ! backup_prune "$target_dir"; then
         echo "$(_yellow "Warning"): Could not prune old AgentSync backups." >&2
     fi
+    # The handler stays armed: INIT_TRANSACTION_ACTIVE gates the restore, and
+    # leaving it in place keeps the run directory's cleanup owner defined.
     INIT_TRANSACTION_ACTIVE="false"
-    trap - EXIT
 }

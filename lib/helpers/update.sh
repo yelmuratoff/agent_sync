@@ -109,8 +109,7 @@ cmd_update() {
     local snapshot_dir="$install_dir/.snapshot"
     rm -rf "$snapshot_dir"
     snapshot_save "$install_dir" "$snapshot_dir" || true
-    # shellcheck disable=SC2064
-    trap "rm -rf '$snapshot_dir'" EXIT
+    _tmp_record_stray "$snapshot_dir"
 
     echo "  Updating..."
     local reconcile_out
