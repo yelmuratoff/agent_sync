@@ -14,6 +14,16 @@ teardown() {
     teardown_test_project
 }
 
+# A complete snapshot with an arbitrary id. Age pruning reads the id's timestamp
+# prefix, so an id from 2020 stays old no matter when the suite runs.
+_fake_snapshot() {
+    local id="$1"
+    mkdir -p ".ai/backups/$id/files"
+    printf 'schema=1\noperation=sync\ncreated_at=%s\n' "${id%%-*}" > ".ai/backups/$id/metadata"
+    printf 'missing\tAGENTS.md\n' > ".ai/backups/$id/targets.tsv"
+    : > ".ai/backups/$id/.complete"
+}
+
 @test "backup restores existing targets and removes targets created later" {
     mkdir -p ".claude"
     printf 'before\n' > "AGENTS.md"
@@ -133,6 +143,100 @@ teardown() {
     [ -d "$latest" ]
     [ "$(backup_latest "$TEST_PROJECT")" = "$latest" ]
     [ "$(find .ai/backups -type f -name .complete | wc -l | tr -d ' ')" -eq 2 ]
+}
+
+@test "backup pruning removes snapshots older than the age limit" {
+    printf 'source\n' > AGENTS.md
+    _fake_snapshot "20200101T000000Z-sync-1"
+    local latest
+    latest=$(backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md")
+
+    backup_prune "$TEST_PROJECT" 10 30
+
+    [ ! -e ".ai/backups/20200101T000000Z-sync-1" ]
+    [ -d "$latest" ]
+    [ "$(backup_latest "$TEST_PROJECT")" = "$latest" ]
+}
+
+@test "backup age pruning never empties the store" {
+    _fake_snapshot "20200101T000000Z-sync-1"
+    printf '%s\n' "20200101T000000Z-sync-1" > .ai/backups/.latest
+
+    backup_prune "$TEST_PROJECT" 10 1
+
+    [ -d ".ai/backups/20200101T000000Z-sync-1" ]
+    [ "$(backup_latest "$TEST_PROJECT")" = "$TEST_PROJECT/.ai/backups/20200101T000000Z-sync-1" ]
+}
+
+@test "backup a zero age limit disables age pruning" {
+    printf 'source\n' > AGENTS.md
+    _fake_snapshot "20200101T000000Z-sync-1"
+    backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    backup_prune "$TEST_PROJECT" 10 0
+
+    [ -d ".ai/backups/20200101T000000Z-sync-1" ]
+}
+
+@test "backup a zero count limit still applies the age limit" {
+    printf 'source\n' > AGENTS.md
+    _fake_snapshot "20200101T000000Z-sync-1"
+    local latest
+    latest=$(backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md")
+
+    backup_prune "$TEST_PROJECT" 0 30
+
+    [ ! -e ".ai/backups/20200101T000000Z-sync-1" ]
+    [ -d "$latest" ]
+}
+
+@test "backup a snapshot with an unparseable name is never age-pruned" {
+    printf 'source\n' > AGENTS.md
+    _fake_snapshot "not-a-timestamp"
+    backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    backup_prune "$TEST_PROJECT" 10 1
+
+    [ -d ".ai/backups/not-a-timestamp" ]
+}
+
+@test "backup_create reclaims an abandoned staging directory" {
+    printf 'source\n' > AGENTS.md
+    backup_create "$TEST_PROJECT" "init" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    mkdir -p ".ai/backups/.tmp.sync.abandoned/files"
+    touch -t 202001010000 ".ai/backups/.tmp.sync.abandoned"
+
+    local latest
+    latest=$(backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md")
+
+    [ ! -e ".ai/backups/.tmp.sync.abandoned" ]
+    [ -d "$latest" ]
+}
+
+@test "backup_create leaves a staging directory from a live run alone" {
+    printf 'source\n' > AGENTS.md
+    mkdir -p ".ai/backups/.tmp.sync.inflight/files"
+
+    backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    [ -d ".ai/backups/.tmp.sync.inflight" ]
+}
+
+@test "backup_create reclaims abandoned metadata temp files" {
+    printf 'source\n' > AGENTS.md
+    backup_create "$TEST_PROJECT" "init" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    : > ".ai/backups/.latest.tmp.stale"
+    : > ".ai/backups/.gitignore.tmp.stale"
+    touch -t 202001010000 ".ai/backups/.latest.tmp.stale" ".ai/backups/.gitignore.tmp.stale"
+
+    backup_create "$TEST_PROJECT" "sync" "$TEST_PROJECT/AGENTS.md" >/dev/null
+
+    [ ! -e ".ai/backups/.latest.tmp.stale" ]
+    [ ! -e ".ai/backups/.gitignore.tmp.stale" ]
+    [ -f ".ai/backups/.latest" ] && [ ! -L ".ai/backups/.latest" ]
+    [ "$(cat .ai/backups/.gitignore)" = "*" ]
 }
 
 @test "backup metadata updates do not follow symlinks out of the store" {

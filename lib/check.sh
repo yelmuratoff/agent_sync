@@ -17,12 +17,39 @@ fi
 
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 MANIFEST_REL=".ai/.sync-manifest"
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/agent_sync_check.XXXXXX")"
-SYNC_LOG="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_sync.XXXXXX")"
-TAR_ERR="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_tar.XXXXXX")"
-COPY_LIST="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_copy.XXXXXX")"
-COMPARE_LIST="$(mktemp "${TMPDIR:-/tmp}/agent_sync_check_cmp.XXXXXX")"
-trap 'rm -rf "$TEMP_ROOT"; rm -f "$SYNC_LOG" "$TAR_ERR" "$COPY_LIST" "$COMPARE_LIST"' EXIT
+
+# shellcheck source=helpers/tmp.sh
+source "$SCRIPT_DIR/helpers/tmp.sh"
+
+# shellcheck disable=SC2329  # invoked through the EXIT trap below
+_check_on_exit() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    tmp_cleanup || true
+    exit "$status"
+}
+
+# $? carries the last completed command's status, not the signal, so the status
+# is passed in explicitly here.
+# shellcheck disable=SC2329  # invoked through the signal traps below
+_check_on_signal() {
+    trap - EXIT INT TERM HUP
+    tmp_cleanup || true
+    kill -"$1" "$$"
+    exit "$((128 + $2))"
+}
+
+tmp_prime_run_dir
+trap _check_on_exit EXIT
+trap '_check_on_signal INT 2' INT
+trap '_check_on_signal TERM 15' TERM
+trap '_check_on_signal HUP 1' HUP
+
+TEMP_ROOT="$(tmp_dir workspace)"
+SYNC_LOG="$(tmp_file synclog)"
+TAR_ERR="$(tmp_file tarerr)"
+COPY_LIST="$(tmp_file copylist)"
+COMPARE_LIST="$(tmp_file comparelist)"
 
 echo "Checking AgentSync configuration synchronization..."
 

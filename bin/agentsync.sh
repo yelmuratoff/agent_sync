@@ -67,10 +67,31 @@ _load_lib_core() {
     fi
 
     # Always-loaded core: colour helpers for all output, resolve_system_dir for
-    # cmd_engine, update.sh for AGENTSYNC_REPO + check_for_updates used in main.
-    _need cli_colors resolve update
+    # cmd_engine, update.sh for AGENTSYNC_REPO + check_for_updates used in main,
+    # tmp.sh for the per-run scratch directory every command may write into.
+    _need cli_colors resolve update tmp
 }
 _load_lib_core
+
+_router_on_exit() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    tmp_cleanup || true
+    exit "$status"
+}
+
+_router_on_signal() {
+    trap - EXIT INT TERM HUP
+    tmp_cleanup || true
+    kill -"$1" "$$"
+    exit "$((128 + $2))"
+}
+
+tmp_prime_run_dir
+trap _router_on_exit EXIT
+trap '_router_on_signal INT 2' INT
+trap '_router_on_signal TERM 15' TERM
+trap '_router_on_signal HUP 1' HUP
 
 # ─── Help ────────────────────────────────────────────────────────────────────
 print_usage() {

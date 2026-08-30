@@ -298,17 +298,20 @@ _find_any_payload_override() {
 }
 
 # Warn (once per CLI invocation) about legacy flat-layout overrides.
-# Uses a PID-scoped marker because resolve_payload_source is called from
-# command substitution subshells, so global variables won't persist.
+# Uses a marker file because resolve_payload_source is called from command
+# substitution subshells, so global variables won't persist. It lives in the run
+# directory, which scopes it to this invocation and reclaims it on exit.
 _warn_legacy_payload_path() {
     local rel="${1#"$REPO_ROOT/"}"
-    local marker="${TMPDIR:-/tmp}/agentsync_legacy_warn_$$"
+    local run_dir
+    run_dir="$(tmp_run_dir)" || return 0
+    local marker="$run_dir/legacy-warn"
     [[ -f "$marker" ]] && return 0
     : > "$marker" 2>/dev/null || true
     {
         echo "⚠  Legacy payload override layout detected: $rel"
         echo "   Move to .ai/src/tools/<tool>/<resource>.<ext> (canonical since 0.11)."
-        echo "   Legacy paths will be dropped in 0.12."
+        echo "   Migrate with: agentsync migrate --legacy"
     } >&2
 }
 

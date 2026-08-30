@@ -296,7 +296,7 @@ _add_mcp_build_entry() {
 _add_mcp_merge() {
     local mcp_file="$1" server="$2" entry="$3" force_flag="$4"
     local tmp rc=0
-    tmp=$(mktemp "${mcp_file}.XXXXXX") || return 1
+    tmp=$(tmp_sibling "$mcp_file") || return 1
 
     AS_SERVER="$server" AS_ENTRY="$entry" AS_FORCE="$force_flag" \
         awk '

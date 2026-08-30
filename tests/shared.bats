@@ -155,8 +155,45 @@ EOF
 
     TMPDIR="$sandbox" run bash -c "cd '$child' && AGENTSYNC_HOME='$REPO_ROOT' bash '$AGENTSYNC_BIN' sync"
     [ "$status" -eq 0 ]
-    # No leftover agentsync_shared.* directory.
-    ! ls "$sandbox" 2>/dev/null | grep -q "agentsync_shared\." || false
+    # Nothing at all: the run directory, the overlay inside it, and every other
+    # scratch file the run created.
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+}
+
+@test "shared: cleanup refuses an overlay directory this run did not create" {
+    source "$REPO_ROOT/lib/helpers/logging.sh"
+    source "$REPO_ROOT/lib/helpers/tmp.sh"
+    source "$REPO_ROOT/lib/helpers/shared.sh"
+
+    # $TEST_PROJECT lives under /tmp or /var/folders, so the old path-shape
+    # allowlist would have matched this and removed it.
+    local outsider="$TEST_PROJECT/not_ours"
+    mkdir -p "$outsider"
+
+    tmp_prime_run_dir
+    SHARED_OVERLAY_DIR="$outsider"
+    run shared_cleanup_overlay
+
+    [ "$status" -eq 0 ]
+    [ -d "$outsider" ]
+    [[ "$output" == *"not created by this run"* ]]
+
+    tmp_cleanup
+}
+
+@test "shared: cleanup removes an overlay this run did create" {
+    source "$REPO_ROOT/lib/helpers/logging.sh"
+    source "$REPO_ROOT/lib/helpers/tmp.sh"
+    source "$REPO_ROOT/lib/helpers/shared.sh"
+
+    tmp_prime_run_dir
+    SHARED_OVERLAY_DIR="$(tmp_dir agentsync_shared)"
+    local overlay="$SHARED_OVERLAY_DIR"
+
+    shared_cleanup_overlay
+    [ ! -e "$overlay" ]
+
+    tmp_cleanup
 }
 
 @test "shared: dry-run does not produce output but still tears down tmpdir" {
@@ -170,7 +207,7 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Shared overlay active"* ]]
     [ ! -f "$child/.claude/rules/parent-only.md" ]
-    ! ls "$sandbox" 2>/dev/null | grep -q "agentsync_shared\." || false
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
 }
 
 @test "doctor adds 'inherited via shared:' hint on duplicates in inherited categories" {

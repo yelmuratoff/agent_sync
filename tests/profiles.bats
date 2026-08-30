@@ -177,7 +177,7 @@ EOF
     echo "x" > .ai/profiles/hub/src/rules/x.md
     TMPDIR="$sandbox" run run_agentsync sync
     [ "$status" -eq 0 ]
-    ! ls "$sandbox" 2>/dev/null | grep -q "agentsync_shared\." || false
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
 }
 
 @test "profile remove: deletes config-home output, variant file, and config entry" {

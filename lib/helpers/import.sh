@@ -48,11 +48,9 @@ cmd_import() {
     _bold "  AgentSync Import"; echo ""
     echo ""
 
-    # Create temp dir with guaranteed cleanup
+    # Staging for the downloaded bundle; reclaimed with the run directory.
     local tmp_dir
-    tmp_dir=$(mktemp -d)
-    # shellcheck disable=SC2064
-    trap "rm -rf '${tmp_dir}'" EXIT
+    tmp_dir=$(tmp_dir import) || return 1
 
     # Determine source type and extract
     local source_label=""

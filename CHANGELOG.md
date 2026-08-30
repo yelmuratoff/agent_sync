@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Interrupting a command no longer leaves garbage behind — or a half-written project.** Every handler was armed on `EXIT` only, and a Bash script killed by a signal never runs its `EXIT` trap. Ctrl-C during `sync` therefore leaked the shared-overlay tree (a full copy of `.ai/src`), leaked the backup staging directory (a full copy of the managed write set, inside the repository), *and* skipped the transactional restore, leaving destinations half-written. Handlers now cover `INT`, `TERM`, and `HUP`, pass the signal's status explicitly instead of reading `$?` — which inside a signal handler holds the last completed command's status and is frequently `0` — and re-raise so the caller still sees a real interrupt.
+- **Orphaned backup staging is reclaimed.** A run killed mid-snapshot left `.ai/backups/.tmp.<op>.*` in the project permanently: the names are dot-prefixed, so `backup_prune`'s glob never saw them, and it also required a `.complete` marker they never get. `backup_create` now sweeps staging and metadata temporaries older than 24 hours, a threshold that leaves a concurrently running sync's staging untouched.
+- **Temp files no longer accumulate in `$TMPDIR`.** `agentsync_legacy_warn_<pid>` was written on every invocation that saw a legacy payload override and removed by nothing; a dozen other `mktemp` sites had no cleanup on their error paths. All scratch now lives in one per-run directory reclaimed on every exit path, and atomic-write staging files are registered for cleanup where they must stay beside their destination.
+- **Shared and profile overlays are cleaned up under any `TMPDIR`.** Teardown only removed paths matching `/tmp`, `/private/tmp`, or `/var/folders`, so a custom `TMPDIR` (`TMPDIR=$RUNNER_TEMP` on CI) leaked a full `.ai/src` copy per sync and printed a "looks suspicious" warning. The guard now checks provenance — the overlay must live in the directory this run created — which is both correct under any `TMPDIR` and narrower: the old check would have removed any unrelated directory that happened to sit under `/tmp`.
+- **A run of failing syncs no longer accumulates snapshots.** Pruning ran only on the success path. It now also runs after a failed `sync` or `init` whose restore completed — but never when the restore failed, since the store then holds the only copy of the pre-operation state.
+
+### Changed
+
+- **Backups are bounded by age as well as count.** A snapshot is retained only if it is among the newest `AGENTSYNC_BACKUP_LIMIT` (default 10) *and* younger than `AGENTSYNC_BACKUP_MAX_AGE_DAYS` (default 30); either set to `0` disables that bound alone. The newest snapshot is always retained, so rollback stays available however long a project sits idle, and a snapshot whose name carries no parseable timestamp is never aged out. Age is computed with integer civil-date arithmetic — `date -u -v-30d` is BSD-only and `date -u -d` is GNU-only, and a failed substitution would have yielded an empty cutoff that compares equal to everything.
+
 ## 0.33.5
 
 ### Fixed

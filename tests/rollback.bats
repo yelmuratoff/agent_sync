@@ -85,3 +85,15 @@ complete_backup_count() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"Invalid backup ID"* ]]
 }
+
+@test "rollback leaves no temp artifacts behind" {
+    printf 'before-sync\n' > CLAUDE.md
+    run_agentsync sync >/dev/null
+
+    local sandbox="$TEST_PROJECT/tmpdir_sandbox"
+    mkdir -p "$sandbox"
+
+    TMPDIR="$sandbox" run run_agentsync rollback --yes
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+}

@@ -643,7 +643,7 @@ agentsync rollback                        # restore latest (interactive)
 agentsync rollback <backup-id> --yes       # restore a selected snapshot
 ```
 
-Rollback creates its own safety snapshot first, so its output prints an ID that can undo the rollback. After each successful operation, AgentSync prunes the history to the latest 10 snapshots by default; set `AGENTSYNC_BACKUP_LIMIT=0` to keep the full history or another non-negative integer to change the limit.
+Rollback creates its own safety snapshot first, so its output prints an ID that can undo the rollback. After each operation — successful, or failed once its restore completes — AgentSync prunes the history: a snapshot is kept only if it is among the latest 10 **and** younger than 30 days. Set `AGENTSYNC_BACKUP_LIMIT` or `AGENTSYNC_BACKUP_MAX_AGE_DAYS` to another non-negative integer to change either bound, or to `0` to disable that bound alone. The newest snapshot is always retained, so rollback stays available however long a project sits idle. Staging directories left behind by an interrupted or killed run are reclaimed on the next backup, once they are over 24 hours old.
 
 The transaction covers declared tool destinations plus `.ai/.sync-manifest` and the managed `.gitignore` state. A trusted `post_sync` hook can execute arbitrary commands; side effects it makes outside those paths are outside AgentSync's rollback boundary.
 

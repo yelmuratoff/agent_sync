@@ -22,6 +22,8 @@ export REPO_ROOT_CANONICAL DEFAULT_REPO_ROOT
 # Source helper libraries
 # shellcheck source=helpers/logging.sh
 source "$SCRIPT_DIR/helpers/logging.sh"
+# shellcheck source=helpers/tmp.sh
+source "$SCRIPT_DIR/helpers/tmp.sh"
 # shellcheck source=helpers/yaml.sh
 source "$SCRIPT_DIR/helpers/yaml.sh"
 # shellcheck source=helpers/paths.sh
@@ -108,6 +110,7 @@ declare -a GENERATED_GITIGNORE_PATHS=()
 declare -a SYNC_BACKUP_TARGETS=()
 SYNC_BACKUP_PATH=""
 SYNC_TRANSACTION_ACTIVE="false"
+SYNC_CLEANUP_DONE="false"
 
 # Personal/base SOURCE_* snapshot + base src dir for the profile passes (set by
 # _snapshot_base_sources, read by _run_profile_passes).
@@ -1042,9 +1045,10 @@ _start_sync_transaction() {
     SYNC_TRANSACTION_ACTIVE="true"
 }
 
-_sync_on_exit() {
-    local status=$?
-    trap - EXIT
+_sync_cleanup() {
+    local status="$1"
+    [[ "$SYNC_CLEANUP_DONE" != "true" ]] || return 0
+    SYNC_CLEANUP_DONE="true"
 
     shared_cleanup_overlay || true
     profile_cleanup_overlay || true
@@ -1053,12 +1057,36 @@ _sync_on_exit() {
         log_warning "Sync failed; restoring pre-sync state..."
         if backup_restore "$REPO_ROOT" "$SYNC_BACKUP_PATH"; then
             log_info "Restored pre-sync state from $(display_path "$SYNC_BACKUP_PATH")"
+            # A run of failing syncs would otherwise accumulate snapshots
+            # forever, because prune only runs on the success path. Skipped when
+            # the restore failed — the store then holds the only copy of the
+            # pre-sync state.
+            if ! backup_prune "$REPO_ROOT"; then
+                log_warning "Could not prune old AgentSync backups."
+            fi
         else
             log_error "Automatic restore failed. Backup retained at $(display_path "$SYNC_BACKUP_PATH")"
         fi
     fi
 
+    tmp_cleanup || true
+}
+
+_sync_on_exit() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    _sync_cleanup "$status"
     exit "$status"
+}
+
+# $? holds the last completed command's status, not the signal — Ctrl-C during a
+# copy frequently leaves it at 0, which would skip the restore above. The signal
+# handler passes 128+N explicitly so an interrupted sync still rolls back.
+_sync_on_signal() {
+    trap - EXIT INT TERM HUP
+    _sync_cleanup "$((128 + $2))"
+    kill -"$1" "$$"
+    exit "$((128 + $2))"
 }
 
 # Sync enabled personal tools and clean up disabled ones. Profile variant tools
@@ -1155,6 +1183,12 @@ _finalize_run() {
 main() {
     parse_args "$@"
 
+    tmp_prime_run_dir
+    trap _sync_on_exit EXIT
+    trap '_sync_on_signal INT 2' INT
+    trap '_sync_on_signal TERM 15' TERM
+    trap '_sync_on_signal HUP 1' HUP
+
     _load_run_config
     _resolve_sources
 
@@ -1169,10 +1203,9 @@ main() {
     _print_banner
 
     # `shared:` overlay — must run AFTER child SOURCE_* resolution so child files
-    # take precedence, and BEFORE any tool sync reads them. Torn down by the EXIT
-    # trap below.
+    # take precedence, and BEFORE any tool sync reads them. Torn down by the
+    # handlers armed at the top of main().
     shared_setup_overlay
-    trap _sync_on_exit EXIT
 
     _snapshot_base_sources
     _build_tool_catalog

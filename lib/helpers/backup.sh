@@ -236,6 +236,63 @@ _backup_copy() {
     cp -pPR "$src" "$dest"
 }
 
+# Days since 1970-01-01 for a proleptic Gregorian date (days_from_civil).
+# Integer arithmetic only: `date -u -v-30d` is BSD-only and `date -u -d` is
+# GNU-only, and a failed date substitution yields an empty cutoff that would
+# compare equal against everything.
+#
+# Usage: _backup_days_from_civil <year> <month> <day>
+_backup_days_from_civil() {
+    local y="$1" m="$2" d="$3"
+    local era yoe doy doe
+    [[ "$m" -gt 2 ]] || y=$((y - 1))
+    era=$((y / 400))
+    yoe=$((y - era * 400))
+    if [[ "$m" -gt 2 ]]; then
+        doy=$(( (153 * (m - 3) + 2) / 5 + d - 1 ))
+    else
+        doy=$(( (153 * (m + 9) + 2) / 5 + d - 1 ))
+    fi
+    doe=$(( yoe * 365 + yoe / 4 - yoe / 100 + doy ))
+    echo $(( era * 146097 + doe - 719468 ))
+}
+
+# Whole UTC days between a snapshot id's timestamp prefix and <today-days>.
+# Returns 1 for a name that carries no parseable timestamp — an unknown age is
+# never a reason to delete.
+#
+# Usage: _backup_snapshot_age_days <snapshot-id> <today-days>
+_backup_snapshot_age_days() {
+    local id="$1"
+    case "$id" in
+        [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z-*) ;;
+        *) return 1 ;;
+    esac
+    local days
+    # 10# guards against 08/09 being read as invalid octal.
+    days=$(_backup_days_from_civil \
+        "$((10#${id:0:4}))" "$((10#${id:4:2}))" "$((10#${id:6:2}))") || return 1
+    echo $(( $2 - days ))
+}
+
+# Reclaim staging left by a run that died before its `mv` — a SIGKILL, a power
+# loss, or an interrupt. These names are dot-prefixed, so backup_prune's glob
+# never sees them and they would otherwise sit in the project forever.
+#
+# The 24-hour floor (`-mtime +0`) is what keeps a concurrently running sync's
+# staging directory safe: a backup takes seconds, and the shell-init hook can
+# run sync alongside a manual one in the same project.
+_backup_sweep_stale_staging() {
+    local store="$1"
+    local leftover
+    while IFS= read -r leftover; do
+        [[ -n "$leftover" ]] || continue
+        rm -rf "$leftover" 2>/dev/null || true
+    done < <(find "$store" -maxdepth 1 -mtime +0 \
+                 \( -name '.tmp.*' -o -name '.latest.tmp.*' -o -name '.gitignore.tmp.*' \) \
+                 2>/dev/null || true)
+}
+
 # Usage: backup_create <project-root> <operation> <absolute-or-relative-target>...
 backup_create() {
     local supplied_root="$1"
@@ -256,9 +313,10 @@ backup_create() {
     mkdir -p "$store" || return 1
     store=$(_backup_validate_store "$canonical_root") || return 1
     _backup_write_ignore "$store" || return 1
+    _backup_sweep_stale_staging "$store" || true
 
     local stage
-    stage=$(mktemp -d "$store/.tmp.${operation}.XXXXXX") || return 1
+    stage=$(mktemp -d "$store/.tmp.${operation}.$$.XXXXXX") || return 1
     mkdir -p "$stage/files" || {
         rm -rf "$stage"
         return 1
@@ -508,16 +566,77 @@ backup_list() {
     done
 }
 
-# Keep a bounded history after a successful operation. A limit of 0 disables
-# pruning. The latest snapshot is always retained.
+# Drop snapshots older than <max-age> whole UTC days. Echoes the surviving
+# paths so the count phase never tries to remove one age already took.
+#
+# Usage: _backup_prune_by_age <max-age-days> <latest-path> <snapshot-path>...
+_backup_prune_by_age() {
+    local max_age="$1" latest="$2"
+    shift 2
+
+    if [[ "$max_age" -le 0 ]]; then
+        printf '%s\n' "$@"
+        return 0
+    fi
+
+    local today today_days
+    today=$(date -u +%Y%m%d)
+    today_days=$(_backup_days_from_civil \
+        "$((10#${today:0:4}))" "$((10#${today:4:2}))" "$((10#${today:6:2}))")
+
+    local candidate age
+    for candidate in "$@"; do
+        # Never empty the store: rollback on a project untouched for months
+        # depends on the latest snapshot outliving any age limit.
+        if [[ "$candidate" == "$latest" ]]; then
+            printf '%s\n' "$candidate"
+            continue
+        fi
+        if ! age=$(_backup_snapshot_age_days "$(basename "$candidate")" "$today_days"); then
+            printf '%s\n' "$candidate"
+            continue
+        fi
+        if [[ "$age" -gt "$max_age" ]]; then
+            rm -rf "$candidate" || return 1
+        else
+            printf '%s\n' "$candidate"
+        fi
+    done
+}
+
+# Usage: _backup_prune_by_count <limit> <latest-path> <snapshot-path>...
+_backup_prune_by_count() {
+    local limit="$1" latest="$2"
+    shift 2
+
+    [[ "$limit" -gt 0 ]] || return 0
+    [[ $# -gt "$limit" ]] || return 0
+
+    local remove_count=$(( $# - limit ))
+    local candidate
+    while IFS= read -r candidate; do
+        [[ $remove_count -gt 0 ]] || break
+        [[ "$candidate" == "$latest" ]] && continue
+        rm -rf "$candidate" || return 1
+        remove_count=$((remove_count - 1))
+    done < <(printf '%s\n' "$@" | LC_ALL=C sort)
+}
+
+# Keep a bounded history after a successful operation: a snapshot survives only
+# if it is among the newest <limit> AND younger than <max-age> days. Either
+# limit set to 0 disables that half. The latest snapshot is always retained.
 backup_prune() {
     local supplied_root="$1"
     local limit="${2:-${AGENTSYNC_BACKUP_LIMIT:-10}}"
+    local max_age="${3:-${AGENTSYNC_BACKUP_MAX_AGE_DAYS:-30}}"
     if [[ ! "$limit" =~ ^[0-9]+$ ]]; then
         _backup_error "Backup limit must be a non-negative integer: $limit"
         return 1
     fi
-    [[ "$limit" -gt 0 ]] || return 0
+    if [[ ! "$max_age" =~ ^[0-9]+$ ]]; then
+        _backup_error "Backup max age must be a non-negative integer: $max_age"
+        return 1
+    fi
 
     local canonical_root store
     canonical_root=$(_backup_canonical_root "$supplied_root") || return 1
@@ -525,29 +644,29 @@ backup_prune() {
     [[ -d "$store" ]] || return 0
 
     local -a snapshots=()
-    local candidate latest=""
+    local candidate
     for candidate in "$store"/*; do
         [[ ! -L "$candidate" ]] || continue
         [[ -d "$candidate" ]] || continue
         [[ -f "$candidate/.complete" ]] || continue
         snapshots+=("$candidate")
     done
-    [[ ${#snapshots[@]} -gt "$limit" ]] || return 0
+    [[ ${#snapshots[@]} -gt 0 ]] || return 0
 
+    local latest=""
     latest=$(backup_latest "$canonical_root") || true
-    local remove_count
-    remove_count=$((${#snapshots[@]} - limit))
+
+    local -a survivors=()
     while IFS= read -r candidate; do
-        [[ $remove_count -gt 0 ]] || break
-        [[ "$candidate" == "$latest" ]] && continue
-        rm -rf "$candidate" || return 1
-        remove_count=$((remove_count - 1))
-    done < <(printf '%s\n' "${snapshots[@]}" | LC_ALL=C sort)
+        [[ -n "$candidate" ]] && survivors+=("$candidate")
+    done < <(_backup_prune_by_age "$max_age" "$latest" "${snapshots[@]}") || return 1
+
+    [[ ${#survivors[@]} -gt 0 ]] || return 0
+    _backup_prune_by_count "$limit" "$latest" "${survivors[@]}"
 }
 
-_rollback_on_exit() {
-    local status=$?
-    trap - EXIT
+_rollback_cleanup() {
+    local status="$1"
 
     if [[ "$ROLLBACK_TRANSACTION_ACTIVE" == "true" ]] && [[ $status -ne 0 ]]; then
         echo "Warning: Rollback failed; restoring the state from before rollback..." >&2
@@ -558,7 +677,25 @@ _rollback_on_exit() {
         fi
     fi
 
+    # Arming this trap replaced the router's, so the run directory is this
+    # handler's to reclaim. Sourced standalone in tests, tmp.sh may be absent.
+    if type tmp_cleanup >/dev/null 2>&1; then
+        tmp_cleanup || true
+    fi
+}
+
+_rollback_on_exit() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    _rollback_cleanup "$status"
     exit "$status"
+}
+
+_rollback_on_signal() {
+    trap - EXIT INT TERM HUP
+    _rollback_cleanup "$((128 + $2))"
+    kill -"$1" "$$"
+    exit "$((128 + $2))"
 }
 
 _rollback_usage() {
@@ -691,11 +828,14 @@ cmd_rollback() {
     ROLLBACK_SAFETY_PATH="$safety"
     ROLLBACK_TRANSACTION_ACTIVE="true"
     trap _rollback_on_exit EXIT
+    trap '_rollback_on_signal INT 2' INT
+    trap '_rollback_on_signal TERM 15' TERM
+    trap '_rollback_on_signal HUP 1' HUP
 
     backup_restore "$root" "$snapshot"
 
+    # Handler stays armed; the flag above is what gates the safety restore.
     ROLLBACK_TRANSACTION_ACTIVE="false"
-    trap - EXIT
     if ! backup_prune "$root"; then
         echo "Warning: Could not prune old AgentSync backups." >&2
     fi

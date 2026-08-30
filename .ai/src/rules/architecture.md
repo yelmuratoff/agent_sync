@@ -28,6 +28,7 @@ lib/helpers/rule_operations.sh → rule headers, merges, imports, and scoping.
 lib/helpers/format_conversion.sh / opencode.sh → target format conversion and composition.
 lib/helpers/paths.sh / filters.sh             → containment and include/exclude matching.
 lib/helpers/backup.sh / manifest.sh           → transactions, ownership, and drift.
+lib/helpers/tmp.sh                            → per-run temp directory and staging-file lifecycle.
 lib/helpers/shared.sh / profiles.sh           → source overlays and config-home variants.
 lib/templates/                 → shipped tool/payload bases and init/refresh content.
 ```
@@ -41,7 +42,8 @@ Business logic lives in `lib/helpers/`. `bin/agentsync.sh` stays a router. `sync
 - **YAML parser scope**: scalar keys, dot-notation nesting, and the explicitly supported list forms. New YAML shapes need a concrete engine requirement and parser tests.
 - **Idempotency**: `agentsync sync` produces identical output on repeated runs. No timestamps, no ordering changes, no platform-dependent sorting. `agentsync check` verifies this.
 - **Stateless runs**: read config fresh each invocation. Read version numbers from the `VERSION` file rather than embedding them in scripts.
-- **Transactional mutation**: `init`, `sync`, and `rollback` snapshot their complete managed write set. Failures restore the previous state; successful operations prune completed history through `backup_prune`.
+- **Transactional mutation**: `init`, `sync`, and `rollback` snapshot their complete managed write set. Failures restore the previous state; operations prune completed history through `backup_prune` once no restore is pending.
+- **Temp lifecycle**: entry points call `tmp_prime_run_dir` and arm handlers on `EXIT INT TERM HUP` before creating anything. Scratch goes in the run directory via `tmp_file`/`tmp_dir`; a staging file finished with `mv` onto a destination uses `tmp_sibling`, because that rename must stay on one filesystem. Any handler that disarms the EXIT trap owns the run directory and must call `tmp_cleanup`. `$?` is meaningless inside a signal handler, so pass the status explicitly rather than reading it there.
 - **Document new inline options** (`inline_into_agents`, `prepend_agents`, etc.) in the `agentsync` skill and `_TEMPLATE.yaml` as part of the change that introduces them.
 
 ## Data Flow

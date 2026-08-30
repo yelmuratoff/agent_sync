@@ -25,7 +25,7 @@ _yaml_rtrim() {
 _yaml_atomic_write() {
     local dest="$1"
     local tmp
-    tmp=$(mktemp "${dest}.XXXXXX") || return 1
+    tmp=$(tmp_sibling "$dest") || return 1
     cat > "$tmp" || { rm -f "$tmp"; return 1; }
     mv "$tmp" "$dest"
 }
