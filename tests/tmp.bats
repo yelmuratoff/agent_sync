@@ -132,8 +132,12 @@ teardown() {
         kill -TERM \$\$
     "
 
-    [ "$status" -eq 143 ]
+    # Cleanup is the contract; the exact 128+N status needs a real WIFSIGNALED,
+    # which the MSYS emulation layer does not provide.
     [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+    [ "$status" -ne 0 ]
+    [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]] || skip "Windows has no WIFSIGNALED"
+    [ "$status" -eq 143 ]
 }
 
 @test "tmp: SIGINT runs cleanup and re-raises as 130" {
@@ -158,11 +162,14 @@ teardown() {
         kill -INT \$\$
     "
 
-    [ "$status" -eq 130 ]
     [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+    [ "$status" -ne 0 ]
+    [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]] || skip "Windows has no WIFSIGNALED"
+    [ "$status" -eq 130 ]
 }
 
 @test "tmp: tmp_sibling carries the destination's mode across the rename" {
+    [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]] || skip "Windows ignores chmod bits"
     tmp_prime_run_dir
     printf 'original\n' > "$TEST_PROJECT/config.yaml"
     chmod 644 "$TEST_PROJECT/config.yaml"
