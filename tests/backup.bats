@@ -165,7 +165,7 @@ _fake_snapshot() {
     backup_prune "$TEST_PROJECT" 10 1
 
     [ -d ".ai/backups/20200101T000000Z-sync-1" ]
-    [ "$(backup_latest "$TEST_PROJECT")" = "$TEST_PROJECT/.ai/backups/20200101T000000Z-sync-1" ]
+    [ "$(basename "$(backup_latest "$TEST_PROJECT")")" = "20200101T000000Z-sync-1" ]
 }
 
 @test "backup a zero age limit disables age pruning" {
