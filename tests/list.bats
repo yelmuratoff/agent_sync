@@ -54,3 +54,12 @@ teardown() { teardown_test_project; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"enabled"* ]]
 }
+
+@test "list survives a tool override that does not set enabled" {
+    mkdir -p .ai/src/tools
+    printf 'name: "My Cursor"\n' > .ai/src/tools/cursor.yaml
+    run run_agentsync list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"My Cursor"* ]]
+    [[ "$output" == *"1 tool override(s)"* ]]
+}

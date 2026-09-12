@@ -539,6 +539,7 @@ list_legacy_enabled_tools() {
         flag=$(parse_yaml_value "$f" "enabled")
         [[ "$flag" == "true" ]] && echo "$base"
     done
+    return 0
 }
 
 # Union of modern (agent_sync.yaml) + legacy (per-file) enabled tools.
