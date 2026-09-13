@@ -436,7 +436,6 @@ resolve_source_path_r() {
         return 1
     fi
 
-    # First try resolving relative to the project root
     source_abs_path_r "$raw_path"
     local abs_path_target="$REPLY"
     local canonical_path_target=""
@@ -444,39 +443,9 @@ resolve_source_path_r() {
         canonical_path_target="$REPLY"
     fi
 
-    if [[ -n "$canonical_path_target" ]] && [[ -e "$canonical_path_target" ]]; then
-        if ! is_path_safe_source "$canonical_path_target"; then
-            log_error "$label resolves outside safe source roots: $raw_path -> $canonical_path_target"
-            return 1
-        fi
-        REPLY="$abs_path_target"
-        return 0
-    fi
-
-    # Fallback to DEFAULT_REPO_ROOT (the shipped package templates)
-    local abs_path_fallback
-    if [[ "$raw_path" == /* ]]; then
-        abs_path_fallback="$raw_path"
-    else
-        abs_path_fallback="$DEFAULT_REPO_ROOT/$raw_path"
-    fi
-
-    local canonical_path_fallback=""
-    if canonicalize_with_existing_ancestor_r "$abs_path_fallback" 2>/dev/null; then
-        canonical_path_fallback="$REPLY"
-    fi
-
-    if [[ -n "$canonical_path_fallback" ]] && is_path_safe_source "$canonical_path_fallback"; then
-        REPLY="$abs_path_fallback"
-        return 0
-    fi
-
-    # If neither exists/valid, log error based on the primary target
-    if [[ -n "$canonical_path_target" ]]; then
-        if ! is_path_safe_source "$canonical_path_target"; then
-            log_error "$label resolves outside safe source roots: $raw_path -> $canonical_path_target"
-            return 1
-        fi
+    if [[ -n "$canonical_path_target" ]] && ! is_path_safe_source "$canonical_path_target"; then
+        log_error "$label resolves outside safe source roots: $raw_path -> $canonical_path_target"
+        return 1
     fi
 
     REPLY="$abs_path_target"

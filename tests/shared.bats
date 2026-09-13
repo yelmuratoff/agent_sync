@@ -53,6 +53,9 @@ _shared_make_sparse_pair() {
     ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" init "${init_flags[@]}" >/dev/null )
     ( cd "$child_dir" && AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude --no-scaffold >/dev/null )
     echo "child-rule" > "$child_dir/.ai/src/rules/child-only.md"
+    echo "# Child" > "$child_dir/.ai/AGENTS.md"
+    sed 's|agents: ".ai/src/AGENTS.md"|agents: ".ai/AGENTS.md"|' "$child_dir/.ai/agent_sync.yaml" > "$child_dir/.ai/agent_sync.yaml.tmp"
+    mv "$child_dir/.ai/agent_sync.yaml.tmp" "$child_dir/.ai/agent_sync.yaml"
 
     for dir in "$parent_dir" "$child_dir"; do
         [ -d "$dir/.ai/src/rules" ]

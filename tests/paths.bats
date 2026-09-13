@@ -229,3 +229,9 @@ teardown() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"outside repository root"* ]]
 }
+
+@test "paths: resolve_source_path keeps a missing project source in the project" {
+    mkdir -p "$DEFAULT_REPO_ROOT/.ai/src/rules"
+    resolve_source_path_r ".ai/src/rules" "source.rules"
+    [ "$REPLY" = "$REPO_ROOT/.ai/src/rules" ]
+}
