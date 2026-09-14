@@ -60,6 +60,15 @@ teardown() {
     [ "$cursor_count" -eq 1 ]
 }
 
+@test "update_gitignore orders paths by bytes whatever the locale" {
+    locale -a 2>/dev/null | grep -qix 'en_US.utf-\{0,1\}8' || skip "en_US.UTF-8 locale not installed"
+    LC_ALL=en_US.UTF-8 update_gitignore "$TEST_PROJECT/.gitignore" "$(printf '%s\n' b/ _x/ B/)"
+    run grep -A3 "Do not edit this block manually" "$TEST_PROJECT/.gitignore"
+    [ "${lines[1]}" = "B/" ]
+    [ "${lines[2]}" = "_x/" ]
+    [ "${lines[3]}" = "b/" ]
+}
+
 @test "update_gitignore handles empty paths" {
     update_gitignore "$TEST_PROJECT/.gitignore" ""
     grep -q "AI SYNC GENERATED START" "$TEST_PROJECT/.gitignore"

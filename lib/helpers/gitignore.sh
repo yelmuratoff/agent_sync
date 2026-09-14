@@ -35,7 +35,7 @@ update_gitignore() {
     # Append paths (sorted/deduplicated). Input paths are newline-delimited.
     if [[ -n "$paths_string" ]]; then
         local sorted_paths
-        sorted_paths=$(printf '%s\n' "$paths_string" | sed '/^$/d' | sort | uniq)
+        sorted_paths=$(printf '%s\n' "$paths_string" | sed '/^$/d' | LC_ALL=C sort -u)
         new_block="${new_block}${sorted_paths}
 "
     fi
