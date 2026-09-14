@@ -47,6 +47,14 @@ teardown() {
     [[ "$output" == *".claude/rules/"* ]]
 }
 
+@test "baseline: a path several tools write is counted once" {
+    enable_tools cursor codex
+    printf '# Hand-written agents\n' > AGENTS.md
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"regenerating 1 path(s) that already exist"* ]]
+}
+
 @test "baseline: an empty generated directory is not reported" {
     mkdir -p .claude/rules
     run run_agentsync sync

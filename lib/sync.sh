@@ -982,10 +982,15 @@ _warn_baseline_replacements() {
     done
     [[ ${#existing[@]} -gt 0 ]] || return 0
 
-    log_warning "First sync in this project — regenerating ${#existing[@]} path(s) that already exist:"
+    local -a unique=()
     while IFS= read -r rel; do
-        echo "      $rel" >&2
+        unique+=("$rel")
     done < <(printf '%s\n' "${existing[@]}" | LC_ALL=C sort -u)
+
+    log_warning "First sync in this project — regenerating ${#unique[@]} path(s) that already exist:"
+    for rel in "${unique[@]}"; do
+        echo "      $rel" >&2
+    done
     echo "      Content AgentSync did not generate is replaced from .ai/src/." >&2
     echo "      To keep a file instead, restore it with 'agentsync rollback' and run 'agentsync adopt <file>' first." >&2
 }
