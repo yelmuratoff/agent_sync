@@ -71,6 +71,17 @@ manifest_lookup() {
     return 1
 }
 
+# True (0) when the loaded manifest records a file below directory <rel>.
+# Usage: manifest_has_entry_below "rel/dir"
+manifest_has_entry_below() {
+    local prefix="$1/"
+    local key
+    for key in "${MANIFEST_KEYS[@]+"${MANIFEST_KEYS[@]}"}"; do
+        [[ "$key" == "$prefix"* ]] && return 0
+    done
+    return 1
+}
+
 # Load existing manifest from disk into MANIFEST_KEYS/VALUES.
 # If no manifest exists, marks the run as a baseline initialization.
 manifest_load() {

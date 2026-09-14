@@ -87,6 +87,11 @@ sync_may_prune() {
     to_repo_relative_path_r "$dest_path" 2>/dev/null || return 0
     rel="$REPLY"
     manifest_lookup "$rel" >/dev/null 2>&1 && return 0
+    # The manifest records files, so a directory sync generated shows up only
+    # through the entries below it.
+    if [[ -d "$dest_path" ]] && declare -f manifest_has_entry_below >/dev/null 2>&1; then
+        manifest_has_entry_below "$rel" && return 0
+    fi
     return 1
 }
 

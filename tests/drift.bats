@@ -192,6 +192,27 @@ teardown() { teardown_test_project; }
     [ ! -f ".claude/rules/temp-rule.md" ]
 }
 
+@test "drift: obsolete sync-generated skill directory is pruned when removed from source" {
+    mkdir -p .ai/src/skills/temp-skill
+    printf -- '---\nname: temp-skill\n---\n' > .ai/src/skills/temp-skill/SKILL.md
+    AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
+    [ -f ".claude/skills/temp-skill/SKILL.md" ]
+    rm -rf .ai/src/skills/temp-skill
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Kept .claude/skills/temp-skill"* ]]
+    [ ! -e ".claude/skills/temp-skill" ]
+}
+
+@test "drift: sync preserves a user-added skill directory in a generated dir" {
+    mkdir -p .claude/skills/my-own
+    echo "mine" > .claude/skills/my-own/SKILL.md
+    run env AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Kept .claude/skills/my-own"* ]]
+    [ -f ".claude/skills/my-own/SKILL.md" ]
+}
+
 # ── --if-stale probe ────────────────────────────────────────────────────────
 # The manifest mtime is pinned with `touch -t` (POSIX) so these stay
 # deterministic regardless of how the clone preserved sub-second mtimes.
