@@ -322,7 +322,26 @@ yaml_list_append() {
     } | _yaml_atomic_write "$file"
 }
 
-# Remove an item from a block-style list under <path>.
+# Print the items of an inline list body except <value>, joined by ", ".
+_yaml_inline_list_without() {
+    local items="$1" value="$2" item kept=""
+    local reglob=1
+    case $- in *f*) reglob=0 ;; esac
+    set -f
+    local IFS=','
+    for item in $items; do
+        _yaml_normalize_scalar_reply "$item"
+        [[ -n "$REPLY" && "$REPLY" != "$value" ]] || continue
+        item="${item#"${item%%[![:space:]]*}"}"
+        item="${item%"${item##*[![:space:]]}"}"
+        kept+="${kept:+, }$item"
+    done
+    (( reglob )) && set +f
+    printf '%s' "$kept"
+}
+
+# Remove an item from the list under <path>, block style or single-line `[a, b]`.
+# The block ends at the first non-comment line indented less than its items.
 # Usage: yaml_list_remove <file> <dot.path> <value>
 yaml_list_remove() {
     local file="$1"
@@ -337,28 +356,36 @@ yaml_list_remove() {
     key_lineno=$(echo "$key_line_info" | awk '{print $1}')
     key_indent=$(echo "$key_line_info" | awk '{print $2}')
     local item_indent=$(( key_indent + 2 ))
+    local inline_re="^([[:space:]]*${path##*.}:[[:space:]]*)\\[(.*)\\][[:space:]]*$"
 
-    local lineno=0
+    local lineno=0 in_list=true
     {
         while IFS= read -r line || [[ -n "$line" ]]; do
             ((lineno++)) || true
-            if [[ $lineno -le $key_lineno ]]; then
+            if [[ $lineno -lt $key_lineno ]] || [[ "$in_list" != "true" ]]; then
                 printf '%s\n' "$line"
+                continue
+            fi
+            if [[ $lineno -eq $key_lineno ]]; then
+                if [[ "$line" =~ $inline_re ]]; then
+                    printf '%s[%s]\n' "${BASH_REMATCH[1]}" "$(_yaml_inline_list_without "${BASH_REMATCH[2]}" "$value")"
+                    in_list=false
+                else
+                    printf '%s\n' "$line"
+                fi
                 continue
             fi
             local stripped="${line#"${line%%[![:space:]]*}"}"
             local indent=$(( ${#line} - ${#stripped} ))
-            if [[ -n "$stripped" ]] && [[ $indent -lt $item_indent ]]; then
+            if [[ -n "$stripped" && "$stripped" != \#* && $indent -lt $item_indent ]]; then
+                in_list=false
                 printf '%s\n' "$line"
                 continue
             fi
             if [[ "$stripped" =~ ^-[[:space:]]*(.*)$ ]]; then
-                local item="${BASH_REMATCH[1]}"
                 local normalized
-                normalized=$(_yaml_normalize_scalar "$item")
-                if [[ "$normalized" == "$value" ]]; then
-                    continue
-                fi
+                normalized=$(_yaml_normalize_scalar "${BASH_REMATCH[1]}")
+                [[ "$normalized" == "$value" ]] && continue
             fi
             printf '%s\n' "$line"
         done < "$file"

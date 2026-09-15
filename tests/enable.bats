@@ -106,3 +106,20 @@ teardown() { teardown_test_project; }
     [ ! -f .ai/src/tools/claude/settings.json ]
     grep -q '"legacy": true' .ai/src/settings/claude.json
 }
+
+@test "disable leaves other lists that name the tool alone" {
+    run_agentsync enable claude cursor >/dev/null
+    printf 'profiles:\n  hub:\n    tools:\n      - claude\n' >> .ai/agent_sync.yaml
+    run run_agentsync disable claude
+    [ "$status" -eq 0 ]
+    ! grep -q "^    - claude$" .ai/agent_sync.yaml
+    grep -q "^      - claude$" .ai/agent_sync.yaml
+}
+
+@test "disable removes a tool from an inline tools.enabled list" {
+    printf 'tools:\n  enabled: [claude, cursor]\n' > .ai/agent_sync.yaml
+    run run_agentsync disable claude
+    [ "$status" -eq 0 ]
+    grep -qx '  enabled: \[cursor\]' .ai/agent_sync.yaml
+    [[ "$output" == *"Claude Code (claude)"* ]]
+}
