@@ -119,7 +119,9 @@ manifest_paths() {
         case "$rel" in
             .ai/*) continue ;;                      # already covered by .ai
         esac
-        [[ -e "$REPO_ROOT/$rel" ]] && printf '%s\n' "$rel"
+        if [[ -e "$REPO_ROOT/$rel" ]]; then
+            printf '%s\n' "$rel"
+        fi
     done
 } | LC_ALL=C sort -u > "$COPY_LIST"
 

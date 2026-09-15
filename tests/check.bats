@@ -34,6 +34,7 @@ teardown() { teardown_test_project; }
     rm -f CLAUDE.md
     run run_agentsync check
     [ "$status" -eq 1 ]
+    [[ "$output" == *"Missing: CLAUDE.md"* ]]
 }
 
 @test "check detects source rule changes" {
