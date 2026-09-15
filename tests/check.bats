@@ -8,7 +8,7 @@ setup_file() {
     # post-sync project tree. APFS clonefile per test.
     seed_project
     (
-        cd "$TEST_SEED"
+        cd "$TEST_SEED" || exit
         AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" enable claude >/dev/null
         AGENTSYNC_HOME="$REPO_ROOT" bash "$AGENTSYNC_BIN" sync >/dev/null
     )
@@ -40,6 +40,32 @@ teardown() { teardown_test_project; }
     echo "# New rule" >> .ai/src/rules/core.md
     run run_agentsync check
     [ "$status" -eq 1 ]
+}
+
+@test "check follows relative shared sources and detects parent changes without writing outputs" {
+    mkdir -p 'shared parent/.ai/src/rules'
+    printf 'parent rule\n' > 'shared parent/.ai/src/rules/parent-only.md'
+    printf '\nshared:\n  path: "shared parent"\n  inherit: rules\n' >> .ai/agent_sync.yaml
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    local config_before manifest_before generated generated_before
+    config_before=$(file_sha256 .ai/agent_sync.yaml)
+    manifest_before=$(file_sha256 .ai/.sync-manifest)
+    generated=$(awk -F '\t' '$1 ~ /parent-only\.md$/ { print $1; exit }' .ai/.sync-manifest)
+    [ -n "$generated" ]
+    generated_before=$(file_sha256 "$generated")
+
+    run run_agentsync check
+    [ "$status" -eq 0 ]
+    [ "$(file_sha256 .ai/agent_sync.yaml)" = "$config_before" ]
+
+    printf 'changed parent rule\n' > 'shared parent/.ai/src/rules/parent-only.md'
+    run run_agentsync check
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"out of sync"* ]]
+    [ "$(file_sha256 "$generated")" = "$generated_before" ]
+    [ "$(file_sha256 .ai/.sync-manifest)" = "$manifest_before" ]
+    [ "$(cat 'shared parent/.ai/src/rules/parent-only.md')" = "changed parent rule" ]
 }
 
 # ── Project root is not AgentSync's to read ──────────────────────────────────
@@ -95,4 +121,16 @@ require_unreadable_dirs() {
     TMPDIR="$sandbox" run run_agentsync check
     [ "$status" -eq 0 ]
     [ -z "$(ls -A "$sandbox" 2>/dev/null)" ]
+}
+
+@test "check agrees with sync when shared.inherit names a category sync skips" {
+    mkdir -p parent/.ai/src/rules parent/.ai/src/tools
+    printf 'parent rule\n' > parent/.ai/src/rules/parent-only.md
+    printf 'targets:\n  agents:\n    dest: "OTHER.md"\n' > parent/.ai/src/tools/claude.yaml
+    printf '\nshared:\n  path: "parent"\n  inherit: rules, tools\n' >> .ai/agent_sync.yaml
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    run run_agentsync check
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"synced"* ]]
 }

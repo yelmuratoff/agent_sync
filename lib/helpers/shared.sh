@@ -216,12 +216,15 @@ shared_setup_overlay() {
     [[ -z "$raw_path" ]] && return 0
     [[ -z "$raw_inherit" ]] && return 0
 
-    # Resolve parent root (absolute), then locate its .ai/src/.
+    # Resolve parent root (absolute), then locate its .ai/src/. A relative path
+    # is relative to the project, which check's isolated sync receives as
+    # AGENTSYNC_INTERNAL_SOURCE_BASE_ROOT.
+    local project_root="${AGENTSYNC_INTERNAL_SOURCE_BASE_ROOT:-$REPO_ROOT}"
     local parent_root
     if [[ "$raw_path" == /* ]]; then
         parent_root="$raw_path"
     else
-        parent_root="$REPO_ROOT/$raw_path"
+        parent_root="$project_root/$raw_path"
     fi
     if [[ ! -d "$parent_root" ]]; then
         log_warning "shared.path does not exist: $raw_path — overlay skipped"
@@ -241,7 +244,7 @@ shared_setup_overlay() {
     fi
     # Guard against the parent being us (same path) — would shadow the child
     # over itself and loop conceptually. Cheap check.
-    if [[ "$parent_src" == "$REPO_ROOT/.ai/src" ]]; then
+    if [[ "$parent_src" == "$REPO_ROOT/.ai/src" || "$parent_src" == "$project_root/.ai/src" ]]; then
         log_warning "shared.path resolves to this project — overlay skipped"
         return 0
     fi

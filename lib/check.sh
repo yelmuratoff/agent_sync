@@ -114,6 +114,7 @@ manifest_paths() {
 # and writes — the .ai/ source tree plus the outputs the manifest records.
 {
     printf '%s\n' ".ai"
+    [[ -f "$REPO_ROOT/agent_sync.yaml" ]] && printf '%s\n' "agent_sync.yaml"
     manifest_paths "$REPO_ROOT/$MANIFEST_REL" | while IFS= read -r rel; do
         case "$rel" in
             .ai/*) continue ;;                      # already covered by .ai

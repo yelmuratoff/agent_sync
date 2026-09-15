@@ -57,6 +57,19 @@ set_config() {
     [ -f .claude/skills/commit/SKILL.md ]
 }
 
+@test "base skills: shared inheritance preserves child and parent skills together" {
+    mkdir -p .ai/src/skills/child-only shared/.ai/src/skills/parent-only
+    printf 'child skill\n' > .ai/src/skills/child-only/SKILL.md
+    printf 'parent skill\n' > shared/.ai/src/skills/parent-only/SKILL.md
+    set_config $'shared:\n  path: shared\n  inherit: skills'
+
+    run run_agentsync sync
+    [ "$status" -eq 0 ]
+    [ "$(cat .claude/skills/child-only/SKILL.md)" = "child skill" ]
+    [ "$(cat .claude/skills/parent-only/SKILL.md)" = "parent skill" ]
+    [ -f .claude/skills/agentsync/SKILL.md ]
+}
+
 @test "base skills: a second sync is byte-identical (no drift)" {
     local before
     before=$(file_sha256 .claude/skills/agentsync/SKILL.md)
