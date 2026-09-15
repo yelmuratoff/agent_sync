@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.36.1
+
+Bug fixes only. Each one was found while comparing the engine against a line-by-line reimplementation, and each ships with a test that fails on 0.36.0.
+
+### Fixed
+
+- **A missing project source no longer syncs AgentSync's own files.** When a source directory such as `.ai/src/rules` did not exist in the project, sync looked the same path up in the AgentSync installation and, finding it there, generated the installation's own rules into outputs such as `.claude/rules/`. Sync now warns `Rules source not found` and generates no rules.
+- **`agentsync disable` removes the tool from `tools.enabled` only.** It also deleted the same name from any later list in `agent_sync.yaml`, such as a profile's `tools:`, and it left a single-line `enabled: [claude, cursor]` untouched while exiting 0. The removal now stops at the end of `tools.enabled`, and single-line lists are rewritten in place.
+- **`check` follows a relative `shared.path`.** Its isolated sync looked the parent up inside a temporary copy, so after a clean `sync` a project inheriting through `shared:` was reported out of sync. A relative `shared.path` now resolves from the project root, and a root-level `agent_sync.yaml` is copied into the check workspace.
+- **`check` explains a missing output instead of exiting silently.** When the output recorded last in `.ai/.sync-manifest` was gone — deleting `CLAUDE.md` in a Claude project is enough — `check` exited 1 right after its first line. It now prints the out-of-sync report with `Missing: CLAUDE.md`.
+- **`sync` prunes a generated skill directory removed from `.ai/src/`.** The manifest records files, not directories, so the directory was taken for user content and kept with a `Kept .claude/skills/<name>` warning. A directory with recorded files below it is pruned; a directory you added yourself is still kept.
+- **`agentsync list` prints every tool when an override omits `enabled:`.** A `.ai/src/tools/<tool>.yaml` without that key stopped the listing part-way with exit status 1 and no message.
+- **The `.gitignore` block has the same order on every machine.** Paths were sorted in the current locale, so two developers could keep rewriting the block. They are now sorted by bytes.
+- **The first-sync warning counts a path several tools write once.** An existing `AGENTS.md` written by both Cursor and Codex was reported as two paths.
+
 ## 0.36.0
 
 Sources can live outside the project, rollback no longer discards what changed after the operation it undoes, and `agent_sync.yaml` gains a strict engine pin and a retention mode that never prunes recovery data. Every change in this release started as a pull request from [@lunetics](https://github.com/lunetics) (#9, #10, #11, #12, #13).
