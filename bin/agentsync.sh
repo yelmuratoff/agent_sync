@@ -87,7 +87,12 @@ _router_on_signal() {
     exit "$((128 + $2))"
 }
 
-tmp_prime_run_dir
+# MCP library reads do not allocate scratch files. Keep their help and
+# validation paths usable when TMPDIR is unavailable; every other command keeps
+# the existing eager priming contract for helpers that may need scratch state.
+if [[ "${1:-help}" != "mcp" ]]; then
+    tmp_prime_run_dir
+fi
 trap _router_on_exit EXIT
 trap '_router_on_signal INT 2' INT
 trap '_router_on_signal TERM 15' TERM
@@ -111,6 +116,7 @@ print_usage() {
     echo "    $(_cyan "enable")         Opt in to one or more tools"
     echo "    $(_cyan "disable")        Opt out of one or more tools"
     echo "    $(_cyan "add")            Scaffold a rule, skill, command, or subagent"
+    echo "    $(_cyan "mcp")            Validate a library and prepare per-tool MCP sources"
     echo "    $(_cyan "customize")      Create a per-field override for a tool"
     echo "    $(_cyan "simplify")       Remove override fields that match the base"
     echo "    $(_cyan "migrate")        Print and copy a prompt for upgrading an existing config"
@@ -148,6 +154,8 @@ print_usage() {
     echo "    agentsync enable claude cursor"
     echo "    agentsync add rule testing"
     echo "    agentsync add skill deploy"
+    echo "    agentsync mcp list --library catalog/mcp"
+    echo "    agentsync mcp validate --library catalog/mcp"
     echo "    agentsync customize cursor"
     echo "    agentsync simplify"
     echo "    agentsync simplify cursor --apply"
@@ -394,13 +402,14 @@ main() {
         enable)        _need prompts yaml yaml_edit tool_resolver project_config paths edit_paths enable; shift; cmd_enable "$@" ;;
         disable)       _need yaml yaml_edit tool_resolver project_config paths enable;      shift; cmd_disable "$@" ;;
         add)           _need add;                                      shift; cmd_add "$@" ;;
+        mcp)           _need yaml project_config mcp_library;          shift; cmd_mcp_library "$@" ;;
         customize)     _need yaml yaml_edit tool_resolver project_config paths customize;   shift; cmd_customize "$@" ;;
         simplify)      _need yaml yaml_edit tool_resolver project_config paths customize simplify;   shift; cmd_simplify "$@" ;;
         migrate)       _need prompts yaml yaml_edit logging paths tool_resolver project_config template_manifest format migrate; shift; cmd_migrate "$@" ;;
         show)          _need yaml yaml_edit tool_resolver project_config snapshot customize;   shift; cmd_show "$@" ;;
         diff)          _need yaml yaml_edit tool_resolver project_config snapshot customize;   shift; cmd_diff "$@" ;;
         resolve)       _need yaml yaml_edit tool_resolver project_config snapshot customize resolve_cmd; shift; cmd_resolve "$@" ;;
-        doctor)        _need yaml tool_resolver project_config edit_paths opencode format doctor; cmd_doctor ;;
+        doctor)        _need yaml tool_resolver project_config edit_paths opencode codex format doctor; cmd_doctor ;;
         dedupe)        _need yaml yaml_edit prompts paths template_manifest dedupe; shift; cmd_dedupe "$@" ;;
         adopt)         _need yaml tool_resolver project_config paths logging filters file_ops prompts manifest cli_colors adopt; shift; cmd_adopt "$@" ;;
         profile)       _need yaml yaml_edit tool_resolver project_config profiles paths logging prompts profile; shift; cmd_profile "$@" ;;

@@ -25,3 +25,8 @@ targets:
   settings:
     source: ".ai/src/settings/codex.toml"
     dest: ".codex/config.toml"
+
+  mcp:
+    dest: ".codex/config.toml"
+    extension: json
+    format: codex_toml

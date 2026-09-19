@@ -11,7 +11,7 @@ _opencode_compose_json() {
     diagnostic_file=$(tmp_file agentsync_opencode_diag) || return 1
 
     local rc=0
-    awk -v settings_path="$settings_src" -v mcp_path="$mcp_src" -v diagnostic_path="$diagnostic_file" -v mode="$mode" '
+    LC_ALL=C awk -v settings_path="$settings_src" -v mcp_path="$mcp_src" -v diagnostic_path="$diagnostic_file" -v mode="$mode" '
 function fail(code, message) {
     if (error_code == 0) {
         error_code = code

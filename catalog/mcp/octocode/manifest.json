@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "id": "octocode",
+  "title": "Octocode",
+  "description": "Local stdio code-research server; GitHub-backed operations need provider-managed credentials.",
+  "provenance": {"homepage": "https://octocode.ai", "repository": "https://github.com/bgauryy/octocode"},
+  "connection": {"type": "stdio", "command": "npx", "args": ["-y", "octocode-mcp@18.2.2"]},
+  "requirements": {"binaries": ["node", "npx"], "inputs": []},
+  "guidance": {
+    "recommended": "default",
+    "authority": "maintainer",
+    "source": "https://github.com/bgauryy/octocode/blob/main/packages/octocode-mcp/package.json",
+    "checked_at": "2026-09-16",
+    "reason": "Catalog pins the documented classic package version instead of silently following latest; this pin is not a provider best-practice claim."
+  },
+  "extensions": {
+    "agentsync.dev": {
+      "requirements_version": 1,
+      "checked_at": "2026-09-16",
+      "review_after_days": 14,
+      "sources": ["https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_MCP.md", "https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md", "https://github.com/bgauryy/octocode/blob/main/packages/octocode-mcp/package.json"],
+      "variants": {
+        "default": {
+          "auth": {
+            "kind": "provider-managed",
+            "owner": "server",
+            "required_for": ["github-operations"],
+            "environment_any_of": ["OCTOCODE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN"]
+          },
+          "runtime": {"node": ">=20.0.0"},
+          "network_hosts": ["registry.npmjs.org", "api.github.com"],
+          "capabilities": ["code-research", "github-search", "local-code-search"],
+          "notes": ["Not a public remote MCP endpoint.", "Octocode documents its own login and existing gh authentication as alternatives to environment tokens. AgentSync neither reads nor copies these credentials.", "Local file access and clone features depend on provider settings. Network hosts are descriptive, not an enforced allowlist."]
+        }
+      },
+      "optional_methods": [
+        {"id": "new-engine-package", "status": "documented-only", "source": "https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_MCP.md", "notes": "Provider also documents @octocodeai/mcp; package migration and runtime qualification have not been performed."}
+      ]
+    }
+  }
+}

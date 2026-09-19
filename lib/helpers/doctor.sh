@@ -342,6 +342,14 @@ _doctor_check_payload_ownership() {
                 _doctor_fail "OpenCode MCP ownership conflict: ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} both define mcp. Move the canonical server map into one source."
             fi
         fi
+    elif [[ "$tool" == "codex" ]]; then
+        [[ "$(get_tool_bool "$tool" targets.mcp.enabled)" != false ]] || return 0
+        local settings_source mcp_source
+        settings_source=$(resolve_payload_source "$tool" settings)
+        mcp_source=$(resolve_payload_source "$tool" mcp)
+        if [[ -f "$mcp_source" ]] && ! codex_settings_allow_mcp "$settings_source"; then
+            _doctor_fail "Codex MCP ownership conflict or ambiguous settings keys: keep MCP in one source."
+        fi
     elif [[ "$tool" == "kimi" ]]; then
         local hook_source=""
         hook_source=$(_find_new_payload_override "$tool" "hooks")

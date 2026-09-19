@@ -169,11 +169,16 @@ _adopt_try_tool() {
         _ADOPT_TOOL="$tool"; _ADOPT_RESOURCE="settings"
         local mcp_format mcp_source settings_source
         mcp_format=$(get_tool_value "$tool" "targets.mcp.format")
-        if [[ "$mcp_format" == "opencode_json" ]]; then
+        if [[ "$mcp_format" == "opencode_json" || "$mcp_format" == "codex_toml" ]] &&
+            [[ "$(get_tool_bool "$tool" targets.mcp.enabled)" != false ]]; then
             mcp_source=$(resolve_payload_source "$tool" "mcp")
             if [[ -n "$mcp_source" ]] && [[ -f "$mcp_source" ]]; then
                 settings_source=$(resolve_payload_source "$tool" "settings")
-                _ADOPT_REFUSAL="OpenCode opencode.json is a multi-source output. Edit ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} separately."
+                if [[ "$mcp_format" == "opencode_json" ]]; then
+                    _ADOPT_REFUSAL="OpenCode opencode.json is a multi-source output. Edit ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} separately."
+                else
+                    _ADOPT_REFUSAL="Codex config.toml is a multi-source output. Edit ${settings_source#"$REPO_ROOT/"} and ${mcp_source#"$REPO_ROOT/"} separately."
+                fi
                 return 0
             fi
         fi

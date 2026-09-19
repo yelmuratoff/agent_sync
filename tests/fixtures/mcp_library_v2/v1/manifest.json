@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "example",
+  "title": "V1 example",
+  "connection": {
+    "type": "stdio",
+    "command": "printf",
+    "args": ["hello", "quote: \"", "line\nbreak", "Grüße", "nul\u0000data"]
+  },
+  "requirements": {
+    "binaries": [],
+    "inputs": []
+  }
+}

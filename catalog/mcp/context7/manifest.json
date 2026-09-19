@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "id": "context7",
+  "title": "Context7",
+  "description": "Remote library documentation, with authentication delegated to the MCP client.",
+  "provenance": {"homepage": "https://context7.com", "repository": "https://github.com/upstash/context7"},
+  "connection": {"type": "http", "url": "https://mcp.context7.com/mcp/oauth"},
+  "requirements": {"binaries": [], "inputs": []},
+  "guidance": {
+    "recommended": "default",
+    "authority": "maintainer",
+    "source": "https://context7.com/docs/resources/all-clients",
+    "checked_at": "2026-09-16",
+    "reason": "This catalog selects documented client-managed OAuth to avoid embedding API keys; not a claim that the provider prefers OAuth."
+  },
+  "extensions": {
+    "agentsync.dev": {
+      "requirements_version": 1,
+      "checked_at": "2026-09-16",
+      "review_after_days": 30,
+      "sources": ["https://context7.com/docs/resources/all-clients", "https://context7.com/docs/resources/developer"],
+      "variants": {
+        "default": {
+          "auth": {"kind": "oauth", "owner": "client", "required_for": ["remote-requests"]},
+          "runtime": {},
+          "network_hosts": ["mcp.context7.com"],
+          "capabilities": ["library-resolution", "documentation-query"],
+          "notes": ["Requires an OAuth-capable Streamable HTTP client and account authorization. AgentSync does not perform login or verify entitlement."]
+        }
+      },
+      "optional_methods": [
+        {"id": "api-key-http", "status": "documented-only", "source": "https://context7.com/docs/resources/all-clients", "notes": "Provider also documents /mcp with an Authorization Bearer API key. Not selectable until secret-reference binding is implemented."},
+        {"id": "local-npx", "status": "documented-only", "source": "https://context7.com/docs/resources/developer", "notes": "Provider documents @upstash/context7-mcp with CONTEXT7_API_KEY; not selectable here yet."}
+      ]
+    }
+  }
+}

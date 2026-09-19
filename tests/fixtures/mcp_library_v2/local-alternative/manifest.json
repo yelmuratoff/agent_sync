@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "id": "example",
+  "title": "Synthetic local alternative",
+  "connection": {
+    "type": "http",
+    "url": "https://example.invalid/default"
+  },
+  "requirements": {
+    "binaries": [],
+    "inputs": []
+  },
+  "alternatives": {
+    "uvx": {
+      "description": "Synthetic local option only",
+      "connection": {
+        "type": "stdio",
+        "command": "uvx",
+        "args": ["example-mcp"]
+      },
+      "requirements": {
+        "binaries": ["uvx"],
+        "inputs": []
+      }
+    }
+  },
+  "guidance": {
+    "recommended": "default",
+    "authority": "maintainer",
+    "source": "https://example.invalid/guidance",
+    "checked_at": "2024-02-29",
+    "reason": "Synthetic fixture; no real maintainer claim."
+  }
+}

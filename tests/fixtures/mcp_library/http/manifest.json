@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "http",
+  "title": "Remote docs",
+  "connection": {
+    "type": "http",
+    "url": "https://example.invalid/mcp"
+  },
+  "requirements": {
+    "binaries": [],
+    "inputs": []
+  },
+  "extensions": {
+    "example.invalid": {"note": "opaque extension data"}
+  }
+}

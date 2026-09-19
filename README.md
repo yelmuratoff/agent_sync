@@ -224,6 +224,7 @@ agentsync <command> [options]
 | `enable <tools…>`        |       | Opt in to one or more tools (scaffolds editable settings/hooks payloads)                        |
 | `disable <tools…>`       |       | Opt out of one or more tools                                                                    |
 | `add <kind> <name>`      |       | Scaffold a `rule`, `skill`, `command`, `subagent`, or `mcp` server                              |
+| `mcp <list\|show\|validate\|render\|use>` |       | Inspect a local MCP library, select documented variants, and prepare per-tool sources ([guide](docs/mcp-library.md)) |
 | `customize <tool> [res]` |       | Create a per-field override for a tool                                                          |
 | `simplify [tool]`        |       | Remove override fields that match the base (`--apply`)                                          |
 | `show <tool>`            |       | Show effective (merged) config for a tool                                                       |

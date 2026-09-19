@@ -56,6 +56,8 @@ source "$SCRIPT_DIR/helpers/shared.sh"
 source "$SCRIPT_DIR/helpers/profiles.sh"
 # shellcheck source=helpers/opencode.sh
 source "$SCRIPT_DIR/helpers/opencode.sh"
+# shellcheck source=helpers/codex.sh
+source "$SCRIPT_DIR/helpers/codex.sh"
 
 # Tool outputs are written as siblings of `.ai/`. A run rooted inside the
 # `.ai/` tree would nest generated files under the source dir, so refuse and
@@ -607,7 +609,17 @@ _sync_payloads_step() {
         src_mcp_abs=$(resolve_payload_source "$tool_name" "mcp")
     fi
 
-    if [[ "$mcp_format" == "opencode_json" ]]; then
+    if [[ "$mcp_format" == "codex_toml" ]]; then
+        if [[ -n "$src_mcp_abs" && -f "$src_mcp_abs" ]]; then
+            if [[ -z "$dest_settings_abs" || "$dest_settings_abs" != "$dest_mcp_abs" ]]; then
+                log_error "Codex MCP and settings must share the same destination."
+                return 1
+            fi
+            sync_codex_config "$src_settings_abs" "$src_mcp_abs" "$dest_settings_abs" "$DRY_RUN"
+        elif [[ -n "$src_settings_abs" && -f "$src_settings_abs" ]]; then
+            copy_file "$src_settings_abs" "$dest_settings_abs" "$DRY_RUN"
+        fi
+    elif [[ "$mcp_format" == "opencode_json" ]]; then
         if [[ -n "$src_settings_abs" ]] && [[ -f "$src_settings_abs" ]]; then
             if [[ -n "$src_mcp_abs" ]] && [[ -f "$src_mcp_abs" ]]; then
                 sync_opencode_config "$src_settings_abs" "$src_mcp_abs" "$dest_settings_abs" "$DRY_RUN"

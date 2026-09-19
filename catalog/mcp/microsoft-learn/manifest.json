@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "id": "microsoft-learn",
+  "title": "Microsoft Learn",
+  "description": "Public Microsoft documentation search and retrieval over Streamable HTTP.",
+  "provenance": {"homepage": "https://learn.microsoft.com/en-us/training/support/mcp"},
+  "connection": {"type": "http", "url": "https://learn.microsoft.com/api/mcp"},
+  "requirements": {"binaries": [], "inputs": []},
+  "guidance": {
+    "recommended": "default",
+    "authority": "vendor",
+    "source": "https://learn.microsoft.com/en-us/training/support/mcp",
+    "checked_at": "2026-09-16",
+    "reason": "Microsoft documents this hosted Streamable HTTP endpoint without authentication."
+  },
+  "extensions": {
+    "agentsync.dev": {
+      "requirements_version": 1,
+      "checked_at": "2026-09-16",
+      "review_after_days": 30,
+      "sources": ["https://learn.microsoft.com/en-us/training/support/mcp"],
+      "variants": {
+        "default": {
+          "auth": {"kind": "none", "owner": "none", "required_for": []},
+          "runtime": {},
+          "network_hosts": ["learn.microsoft.com"],
+          "capabilities": ["documentation-search", "documentation-fetch", "code-sample-search"],
+          "notes": ["Requires a Streamable HTTP MCP client; provider terms apply."]
+        }
+      },
+      "optional_methods": []
+    }
+  }
+}

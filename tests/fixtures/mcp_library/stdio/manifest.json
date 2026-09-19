@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "stdio",
+  "title": "Local printf",
+  "description": "Arguments with spaces, quotes, and Unicode are data only.",
+  "provenance": {
+    "homepage": "https://example.invalid/stdio"
+  },
+  "connection": {
+    "type": "stdio",
+    "command": "printf",
+    "args": ["hello world", "quote: \\\"", "Grüße"]
+  },
+  "requirements": {
+    "binaries": ["printf"],
+    "inputs": []
+  }
+}
