@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::mcp_merge;
 use crate::Error;
 use crate::config::{mcp_catalog, payload, tool::Tool, yaml_subset};
 use crate::engine::staging;
@@ -20,12 +21,12 @@ pub const HELP: Help = Help {
         "mcp show <id> --library <directory>",
         "mcp validate [id] --library <directory>",
         "mcp render <id>[@variant] --library <directory>",
-        "mcp use <id>[@variant] --tool <slug> [--apply] --library <directory>",
+        "mcp use <id>[@variant] --tool <slug> [--merge] [--replace <id>] [--apply] --library <directory>",
     ],
     description: &[
         "Reads bounded JSON manifests from an explicit library or the configured\nlibrary.mcp.path. It never starts servers or contacts endpoints.",
         "list prints ID and title. show prints the original manifest bytes.\nvalidate checks one entry or the complete library, including all variants.\nrender prints one selected connection as AgentSync MCP source JSON.",
-        "use previews a new per-tool source; --apply creates it without replacing\nan existing source. Run agentsync sync separately to update client files.",
+        "use previews a per-tool source; --apply writes it. --merge extends an\nexisting per-tool JSON source; --replace <id> permits one explicit replacement.\nRun agentsync sync separately to update client files.",
     ],
     sections: &[Section {
         title: "OPTIONS",
@@ -39,6 +40,11 @@ pub const HELP: Help = Help {
                 "Enabled tool receiving a per-tool MCP source",
             ),
             ("--apply", "Create the source after previewing"),
+            ("--merge", "Extend the existing per-tool MCP JSON source"),
+            (
+                "--replace <id>",
+                "Replace this selected server ID during --merge",
+            ),
             ("-h, --help", "Show this help"),
         ],
     }],
@@ -67,6 +73,8 @@ struct Args {
     variant: Option<String>,
     tool: Option<String>,
     apply: bool,
+    merge: bool,
+    replace: Option<String>,
     library: Option<PathBuf>,
 }
 
@@ -176,6 +184,17 @@ fn use_source(
     };
     let rel = rel.to_string();
     let dest = PathBuf::from(backup::safe_target_path(&root, &rel, false)?);
+    if args.merge {
+        return merge_source(
+            project,
+            args,
+            &tool,
+            (&root, &rel, &dest),
+            &rendered,
+            style,
+            (out, err),
+        );
+    }
     let override_dir = project.user_tools_dir().join(slug);
     let entries = match std::fs::read_dir(&override_dir) {
         Ok(entries) => Some(entries),
@@ -275,6 +294,144 @@ fn use_source(
     Ok(0)
 }
 
+fn merge_source(
+    project: &Project,
+    args: &Args,
+    tool: &Tool,
+    target: (&str, &str, &Path),
+    rendered: &[u8],
+    style: &Style,
+    output: (&mut dyn Write, &mut dyn Write),
+) -> Result<u8, Error> {
+    let (root, rel, dest) = target;
+    let (out, err) = output;
+    let slug = args.tool.as_deref().expect("use requires a tool");
+    let id = args.id.as_deref().expect("use requires an id");
+    let variant = args.variant.as_deref().unwrap_or("default");
+    let intended = project.user_tools_dir().join(slug).join("mcp.json");
+    let meta = match std::fs::symlink_metadata(&intended) {
+        Ok(meta) if meta.file_type().is_file() => meta,
+        _ => {
+            return refuse(
+                style,
+                "--merge requires a regular per-tool mcp.json source",
+                err,
+            );
+        }
+    };
+    if meta.len() > mcp_catalog::MAX_MANIFEST_BYTES {
+        return refuse(
+            style,
+            "Existing MCP source exceeds the merge byte limit",
+            err,
+        );
+    }
+    let override_dir = project.user_tools_dir().join(slug);
+    for entry in std::fs::read_dir(&override_dir).map_err(|e| Error::io(&override_dir, e))? {
+        let entry = entry.map_err(|e| Error::io(&override_dir, e))?;
+        let name = entry.file_name();
+        if name
+            .to_str()
+            .is_some_and(|name| name.starts_with("mcp.") && name != "mcp.json")
+        {
+            return refuse(style, "Per-tool MCP source is ambiguous", err);
+        }
+    }
+    match payload::effective_source(project, tool, "mcp")?.0 {
+        Some(payload::Source::Disk(path)) if path == intended => {}
+        _ => {
+            return refuse(
+                style,
+                "--merge requires the per-tool source to own MCP",
+                err,
+            );
+        }
+    }
+    let _lock = if args.apply {
+        Some(mcp_merge::Lock::acquire(&override_dir)?)
+    } else {
+        None
+    };
+    let previous = std::fs::read(&intended).map_err(|e| Error::io(&intended, e))?;
+    let merged = match mcp_merge::compose(&previous, rendered, id, args.replace.is_some()) {
+        Ok(Some(merged)) => merged,
+        Ok(None) => {
+            put(
+                out,
+                format!("{rel} already contains {id}; no change needed.\n").as_bytes(),
+            )?;
+            return Ok(0);
+        }
+        Err(reason) => return refuse(style, reason, err),
+    };
+    let selection = format!("{id}@{variant}");
+    if !args.apply {
+        put(
+            out,
+            format!("Would merge {selection} into {rel} for {slug}:\n").as_bytes(),
+        )?;
+        put(out, rendered)?;
+        put(out, b"Run with --apply to write it.\n")?;
+        return Ok(0);
+    }
+    let config = project
+        .config_path
+        .as_ref()
+        .map(|path| std::fs::read_to_string(path).map(|text| (path.clone(), text)))
+        .transpose()
+        .map_err(|e| Error::io(project.config_path.as_ref().expect("config path exists"), e))?;
+    let limit = std::env::var("AGENTSYNC_BACKUP_LIMIT").ok();
+    let age = std::env::var("AGENTSYNC_BACKUP_MAX_AGE_DAYS").ok();
+    let retention = backup::configure(
+        config
+            .as_ref()
+            .map(|(path, text)| (path.to_str().unwrap_or("<config>"), text.as_str())),
+        limit.as_deref(),
+        age.as_deref(),
+    )?;
+    let previous_latest = backup::latest(root)?.map_or_else(String::new, |path| paths::leaf(&path));
+    let snapshot = backup::create(root, "mcp-use", &[paths::from_disk(dest)], retention)?;
+    let written = (|| {
+        if !std::fs::symlink_metadata(&intended)
+            .map_err(|e| Error::io(&intended, e))?
+            .file_type()
+            .is_file()
+            || std::fs::read(&intended).map_err(|e| Error::io(&intended, e))? != previous
+        {
+            return Err(Error::io(
+                &intended,
+                std::io::Error::other("MCP source changed while preparing merge"),
+            ));
+        }
+        staging::write_beside(dest, &merged)
+    })();
+    if let Err(error) = written {
+        let store = format!("{root}/.ai/backups");
+        if let Err(cleanup) = backup::discard_safety(&store, &snapshot, &previous_latest) {
+            return refuse(
+                style,
+                &format!("Could not merge MCP source: {error}; backup cleanup failed: {cleanup}"),
+                err,
+            );
+        }
+        return refuse(style, &format!("Could not merge MCP source: {error}"), err);
+    }
+    if let Err(reason) = witness::seal(root, &snapshot) {
+        put(
+            err,
+            format!("Warning: Could not record MCP source backup state: {reason}\n").as_bytes(),
+        )?;
+    }
+    if let Err(error) = backup::prune(root, limit.as_deref(), age.as_deref(), retention) {
+        put(
+            err,
+            format!("Warning: Could not prune backups: {error}\n").as_bytes(),
+        )?;
+    }
+    put(out, format!("Merged {selection} into {rel} for {slug}\nReview the source, then run agentsync sync to update client files.\n").as_bytes())?;
+    Ok(0)
+}
+
 fn library_path(project: &Project, explicit: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(path) = explicit {
         let path = paths::from_msys(
@@ -341,6 +498,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
     let mut variant = None;
     let mut tool = None;
     let mut apply = false;
+    let mut merge = false;
+    let mut replace = None;
     let mut index = 1;
     while let Some(arg) = args.get(index) {
         match arg.as_str() {
@@ -351,6 +510,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     variant: None,
                     tool: None,
                     apply: false,
+                    merge: false,
+                    replace: None,
                     library: None,
                 });
             }
@@ -376,6 +537,19 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--apply" if matches!(action, Action::Use) && !apply => {
                 apply = true;
                 index += 1;
+            }
+            "--merge" if matches!(action, Action::Use) && !merge => {
+                merge = true;
+                index += 1;
+            }
+            "--replace" if matches!(action, Action::Use) => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| "--replace requires a server ID".to_string())?;
+                if !mcp_catalog::valid_id(value) || replace.replace(value.clone()).is_some() {
+                    return Err("--replace requires one valid server ID".to_string());
+                }
+                index += 2;
             }
             flag if flag.starts_with('-') => {
                 return Err(format!(
@@ -431,12 +605,19 @@ fn parse(args: &[String]) -> Result<Args, String> {
     if matches!(action, Action::Use) && tool.is_none() {
         return Err("mcp use requires --tool <slug>".to_string());
     }
+    if let Some(replaced) = &replace {
+        if !merge || id.as_deref() != Some(replaced) {
+            return Err("--replace must name the selected ID and requires --merge".to_string());
+        }
+    }
     Ok(Args {
         action,
         id,
         variant,
         tool,
         apply,
+        merge,
+        replace,
         library,
     })
 }

@@ -11,6 +11,7 @@ pub mod generate;
 pub mod init;
 pub mod list;
 pub mod mcp;
+mod mcp_merge;
 pub mod migrate;
 pub mod notice;
 pub mod profile;

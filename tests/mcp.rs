@@ -245,6 +245,219 @@ fn use_previews_then_creates_a_per_tool_source_without_syncing() {
 }
 
 #[test]
+fn use_merge_preserves_other_servers_and_rolls_back() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let original = "{\"notes\":{\"private\":\"SECRET_SOURCE_VALUE\"},\"mcpServers\":{\"existing\":{\"command\":\"old\"}}}\n";
+    project.write(".ai/src/tools/claude/mcp.json", original);
+    let output = project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--merge",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SECRET_SOURCE_VALUE"));
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), original);
+    assert!(!project.exists(".ai/backups"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--merge",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    let merged = project.read(".ai/src/tools/claude/mcp.json");
+    let value: serde_json::Value = serde_json::from_str(&merged).unwrap();
+    assert_eq!(value["notes"]["private"], "SECRET_SOURCE_VALUE");
+    assert_eq!(value["mcpServers"]["existing"]["command"], "old");
+    assert_eq!(value["mcpServers"]["alpha"]["command"], "never-run");
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--merge",
+            "--apply",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no change needed"));
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), merged);
+    project
+        .agentsync()
+        .args(["rollback", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), original);
+}
+
+#[test]
+fn use_merge_requires_explicit_replacement_and_refuses_ambiguous_sources() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let original = "{\"mcpServers\":{\"alpha\":{\"command\":\"old\"}}}";
+    project.write(".ai/src/tools/claude/mcp.json", original);
+    let base = [
+        "mcp",
+        "use",
+        "alpha",
+        "--tool",
+        "claude",
+        "--library",
+        "catalog",
+        "--merge",
+        "--apply",
+    ];
+    project.agentsync().args(base).assert().failure().stdout("");
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), original);
+    project
+        .agentsync()
+        .args(base)
+        .args(["--replace", "other"])
+        .assert()
+        .failure()
+        .stdout("");
+    project
+        .agentsync()
+        .args(base)
+        .args(["--replace", "alpha"])
+        .assert()
+        .success();
+    assert!(
+        project
+            .read(".ai/src/tools/claude/mcp.json")
+            .contains("never-run")
+    );
+
+    project.write(".ai/src/tools/claude/mcp.json.bak", "other");
+    project.agentsync().args(base).assert().failure().stdout("");
+}
+
+#[test]
+fn use_merge_refuses_a_live_or_stale_lock_without_writing() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let original = "{\"mcpServers\":{}}";
+    project.write(".ai/src/tools/claude/mcp.json", original);
+    project.write(".ai/src/tools/claude/.agentsync-mcp-use.lock", "occupied");
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--merge",
+            "--apply",
+        ])
+        .assert()
+        .failure()
+        .stdout("");
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), original);
+    assert!(!project.exists(".ai/backups"));
+}
+
+#[test]
+fn use_merge_refuses_invalid_sources_and_backup_failure() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let command = [
+        "mcp",
+        "use",
+        "alpha",
+        "--tool",
+        "claude",
+        "--library",
+        "catalog",
+        "--merge",
+        "--apply",
+    ];
+    for invalid in [
+        "{\"mcpServers\":{},\"mcpServers\":{}}",
+        "{\"mcpServers\":[]}",
+        "{\"mcpServers\":{\"other\":[]}}",
+    ] {
+        project.write(".ai/src/tools/claude/mcp.json", invalid);
+        project
+            .agentsync()
+            .args(command)
+            .assert()
+            .failure()
+            .stdout("");
+        assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), invalid);
+    }
+    let original = "{\"mcpServers\":{}}";
+    project.write(".ai/src/tools/claude/mcp.json", original);
+    project.write(".ai/backups", "private bytes");
+    project
+        .agentsync()
+        .args(command)
+        .assert()
+        .failure()
+        .stdout("");
+    assert_eq!(project.read(".ai/src/tools/claude/mcp.json"), original);
+    assert_eq!(project.read(".ai/backups"), "private bytes");
+    assert!(!project.exists(".ai/src/tools/claude/.agentsync-mcp-use.lock"));
+}
+
+#[test]
+fn use_merge_does_not_migrate_a_shared_source() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let original = "{\"mcpServers\":{}}";
+    project.write(".ai/src/mcp.json", original);
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--merge",
+            "--apply",
+        ])
+        .assert()
+        .failure()
+        .stdout("");
+    assert_eq!(project.read(".ai/src/mcp.json"), original);
+    assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
+    assert!(!project.exists(".ai/backups"));
+}
+
+#[test]
 fn use_respects_source_tools_and_opencode_composition() {
     let project = Project::empty();
     project.write(".ai/src/AGENTS.md", "# Agent\n");
