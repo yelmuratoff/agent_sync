@@ -36,6 +36,7 @@ pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
             }
         }
     }
+    check_shared_agents_dests(s, run)?;
     check_shared_mcp_dests(s, run)?;
     let mut slugs = run.tools.clone();
     order_shared_agents(s, &mut slugs);
@@ -100,6 +101,43 @@ fn order_shared_agents(s: &mut Session, slugs: &mut [String]) {
             slugs[*index] = slug;
         }
     }
+}
+
+fn check_shared_agents_dests(s: &mut Session, run: &Run) -> Step {
+    let mut owners: BTreeMap<String, (String, String, Vec<u8>)> = BTreeMap::new();
+    for slug in &run.tools {
+        if !run.enabled.contains(slug)
+            || run.profile_tools.contains(slug)
+            || !run.selection.includes(slug)
+        {
+            continue;
+        }
+        let tool = load_tool(s, slug);
+        let display = tool.display_name();
+        let dest = resolve_one_dest(s, &tool, "agents", &display);
+        if dest.is_empty() {
+            continue;
+        }
+        let source = tool_source(s, &tool, "agents", &run.sources.agents, &display)?;
+        if !s.ws.is_file(&source) {
+            continue;
+        }
+        let bytes = s.ws.read(&source).map_err(|e| io(s, e))?;
+        if let Some((other_slug, other_source, other_bytes)) = owners.get(&dest) {
+            if other_bytes != &bytes {
+                s.log.error(&format!(
+                    "Agents destination {} is shared by {other_slug} ({}) and {slug} ({}), but their sources differ",
+                    s.display(&dest),
+                    s.display(other_source),
+                    s.display(&source)
+                ));
+                return Err(Stop(1));
+            }
+        } else {
+            owners.insert(dest, (slug.clone(), source, bytes));
+        }
+    }
+    Ok(())
 }
 
 fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
