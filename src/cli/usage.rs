@@ -8,7 +8,7 @@ use super::customize::put;
 use crate::output::style::Style;
 use crate::{Error, engine_version};
 
-const COMMANDS: [(&str, &str); 30] = [
+const COMMANDS: [(&str, &str); 31] = [
     ("init", "Create .ai/ structure in current project"),
     ("sync", "Sync instructions to all enabled tools"),
     ("rollback", "Restore targets from the latest backup"),
@@ -18,6 +18,7 @@ const COMMANDS: [(&str, &str); 30] = [
         "skills",
         "Inspect project skills and explicit external catalogs",
     ),
+    ("mcp", "Inspect an offline MCP catalog"),
     ("enable", "Opt in to one or more tools"),
     ("disable", "Opt out of one or more tools"),
     ("add", "Scaffold a rule, skill, command, or subagent"),
@@ -89,6 +90,7 @@ const EXAMPLES: &str = "    agentsync init
     agentsync skills show agentsync
     agentsync skills check
     agentsync skills catalog list --catalog cards.tsv
+    agentsync mcp list --library catalog/mcp
     agentsync enable claude cursor
     agentsync add rule testing
     agentsync add skill deploy
@@ -195,7 +197,7 @@ mod tests {
         assert!(text.ends_with(
             "    agentsync refresh --dry-run\n\n  DOCS\n    https://github.com/yelmuratoff/agent\n\n"
         ));
-        assert_eq!(text.lines().count(), 90);
+        assert_eq!(text.lines().count(), 92);
     }
 
     #[test]

@@ -274,6 +274,7 @@ agentsync <command> [options]
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
 | `skills list\|show\|check` |     | Inspect effective project skills and check their `SKILL.md` metadata (`--profile <name>`)     |
+| `mcp list\|show\|validate` |     | Inspect a selected offline MCP catalog without running servers or changing configuration     |
 | `update`                 |       | Replace the binary with the latest release, or `update <version>` to pin a release tag         |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
@@ -296,6 +297,10 @@ metadata:
 `skills show` labels these entries as **unverified annotations**; it does not probe tools, authorize actions, or select a skill automatically. The built-in check covers the required fields and common scalar forms. Use the [reference validator](https://agentskills.io/specification#validation) (`skills-ref validate <skill-dir>`) for full format validation. [OASF](https://github.com/agntcy/oasf) provides a separate capability taxonomy; AgentSync does not infer OASF mappings from a skill description.
 
 For skills outside this project's effective source tree, `agentsync skills catalog list/show --catalog FILE` reads an explicitly selected, manually curated catalog. Optional `--source ALIAS=LOCAL_REPO` inspects metadata from a full pinned commit in a local Git repository. It does not fetch, install, execute, or verify the curator's suitability claims. See the [experimental catalog contract](docs/skill-cards.md) and [pinned example](docs/examples/skill-cards/pilot/catalog.tsv).
+
+### Inspecting an MCP catalog
+
+`agentsync mcp list/show/validate --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, and `validate` checks one entry or the whole catalog. These commands are offline and read-only: they do not start a server, probe an endpoint, or change MCP sources or client configuration. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting.
 
 ### Sync options
 
