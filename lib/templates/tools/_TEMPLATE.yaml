@@ -125,6 +125,7 @@ targets:
   #   source: ".ai/src/mcp/tool.json"
   #   dest: ".tool/.mcp.json"
   #   # format: opencode_json     # Optional: compose into OpenCode settings
+  #   # format: kimi_json         # Optional: mcp use writes Kimi-native HTTP JSON
 
   # Hooks (optional, file copy)
   # hooks:

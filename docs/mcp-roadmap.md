@@ -28,11 +28,11 @@ a separate action. The source creation can be undone with `agentsync rollback`.
    conflict, backup, interruption, and concurrent-writer cases before enabling
    writes. Do not silently migrate shared, legacy, or alternate sources.
 
-2. **Review client adapters independently.** Confirm Claude, OpenCode, and Kimi
-   against their current tool YAML and normal sync behavior. Codex needs a
-   separate Rust change because its MCP configuration shares
-   `.codex/config.toml` with settings; detect ownership conflicts rather than
-   rewriting arbitrary TOML. Test `sync`, `check`, `doctor`, and `adopt` for each
+2. **Add Codex composition separately.** Claude, OpenCode, and Kimi catalog
+   selections have command-level coverage through their normal `sync`, `check`,
+   `doctor`, and applicable `adopt` paths. Codex needs a separate Rust change
+   because its MCP configuration shares `.codex/config.toml` with settings;
+   detect ownership conflicts rather than rewriting arbitrary TOML. Test the
    supported path on Linux, macOS, and Windows before claiming compatibility.
 
 The opt-in [pilot catalog](../catalog/mcp/README.md) contains Microsoft Learn,

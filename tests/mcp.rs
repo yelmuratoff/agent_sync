@@ -302,6 +302,136 @@ fn use_source_reaches_claude_on_a_separate_sync() {
 }
 
 #[test]
+fn use_kimi_http_writes_native_source_and_round_trips_through_sync_and_adopt() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["kimi"]);
+    project.write(
+        "catalog/docs/manifest.json",
+        r#"{"schema_version":1,"id":"docs","title":"Docs","connection":{"type":"http","url":"https://example.invalid/mcp"},"requirements":{"binaries":[],"inputs":[]}}"#,
+    );
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "docs",
+            "--tool",
+            "kimi",
+            "--library",
+            "catalog",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "{\"mcpServers\":{\"docs\":{\"url\":\"https://example.invalid/mcp\"}}}",
+        ));
+    assert!(!project.exists(".ai/src/tools/kimi/mcp.json"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "docs",
+            "--tool",
+            "kimi",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    let native = "{\"mcpServers\":{\"docs\":{\"url\":\"https://example.invalid/mcp\"}}}\n";
+    assert_eq!(project.read(".ai/src/tools/kimi/mcp.json"), native);
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".kimi-code/mcp.json"), native);
+    project.agentsync().arg("check").assert().success();
+    project.agentsync().arg("doctor").assert().success();
+    project.append(".kimi-code/mcp.json", "\n");
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".kimi-code/mcp.json"])
+        .assert()
+        .success();
+    assert_eq!(
+        project.read(".ai/src/tools/kimi/mcp.json"),
+        format!("{native}\n")
+    );
+}
+
+#[test]
+fn use_kimi_stdio_keeps_native_command_and_args() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [kimi]\n");
+    project.write("catalog/docs/manifest.json", &manifest("docs", "Docs"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "docs",
+            "--tool",
+            "kimi",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        project.read(".ai/src/tools/kimi/mcp.json"),
+        "{\"mcpServers\":{\"docs\":{\"args\":[],\"command\":\"never-run\"}}}\n"
+    );
+}
+
+#[test]
+fn use_http_selection_reaches_claude_and_opencode_through_normal_sync() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude", "opencode"]);
+    project.write(
+        "catalog/docs/manifest.json",
+        r#"{"schema_version":1,"id":"docs","title":"Docs","connection":{"type":"http","url":"https://example.invalid/mcp"},"requirements":{"binaries":[],"inputs":[]}}"#,
+    );
+    for slug in ["claude", "opencode"] {
+        project
+            .agentsync()
+            .args([
+                "mcp",
+                "use",
+                "docs",
+                "--tool",
+                slug,
+                "--library",
+                "catalog",
+                "--apply",
+            ])
+            .assert()
+            .success();
+    }
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(
+        project.read(".mcp.json"),
+        "{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/mcp\"}}}\n"
+    );
+    let opencode = project.read("opencode.json");
+    assert!(
+        opencode
+            .contains("\"docs\": {\"type\": \"remote\", \"url\": \"https://example.invalid/mcp\"}")
+    );
+    project.agentsync().arg("check").assert().success();
+    project.agentsync().arg("doctor").assert().success();
+    project.append(".mcp.json", "\n");
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".mcp.json"])
+        .assert()
+        .success();
+    assert_eq!(
+        project.read(".ai/src/tools/claude/mcp.json"),
+        project.read(".mcp.json")
+    );
+}
+
+#[test]
 fn use_refuses_occupied_sources_without_revealing_or_changing_them() {
     let project = Project::empty();
     project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");

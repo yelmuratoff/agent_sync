@@ -122,6 +122,22 @@ pub fn render(catalog: &Path, id: &str, variant: &str) -> Result<Vec<u8>, String
     Ok(output)
 }
 
+pub fn render_kimi_source(canonical: &[u8], id: &str) -> Vec<u8> {
+    let mut source: Value = serde_json::from_slice(canonical)
+        .expect("canonical MCP source was just serialized from validated JSON");
+    let server = source
+        .get_mut("mcpServers")
+        .and_then(|value| value.get_mut(id))
+        .and_then(Value::as_object_mut)
+        .expect("canonical MCP source contains selected server");
+    if server.get("type").and_then(Value::as_str) == Some("http") {
+        server.remove("type");
+    }
+    let mut output = serde_json::to_vec(&source).expect("JSON value serializes");
+    output.push(b'\n');
+    output
+}
+
 pub fn valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     (1..=64).contains(&bytes.len())

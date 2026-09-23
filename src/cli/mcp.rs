@@ -147,12 +147,15 @@ fn use_source(
     if tool.value("targets.mcp.dest").is_empty() {
         return refuse(style, "MCP target tool has no MCP destination", err);
     }
-    if !matches!(
-        tool.value("targets.mcp.format").as_str(),
-        "" | "opencode_json"
-    ) {
+    let format = tool.value("targets.mcp.format");
+    if !matches!(format.as_str(), "" | "opencode_json" | "kimi_json") {
         return refuse(style, "MCP target tool uses an unsupported MCP format", err);
     }
+    let rendered = if format == "kimi_json" {
+        mcp_catalog::render_kimi_source(rendered, id)
+    } else {
+        rendered.to_vec()
+    };
     let root = backup::canonical_root(&paths::from_disk(&project.root))?;
     let intended = project.user_tools_dir().join(slug).join("mcp.json");
     let disk_paths = paths::Paths::on_disk(&paths::from_disk(&project.root));
@@ -214,7 +217,7 @@ fn use_source(
             out,
             format!("Would create {rel} from {selection} for {slug}:\n").as_bytes(),
         )?;
-        put(out, rendered)?;
+        put(out, &rendered)?;
         put(out, b"Run with --apply to write it.\n")?;
         return Ok(0);
     }
@@ -240,7 +243,7 @@ fn use_source(
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
-        staging::write_new_beside(&dest, rendered)
+        staging::write_new_beside(&dest, &rendered)
     })();
     if let Err(error) = written {
         let store = format!("{root}/.ai/backups");

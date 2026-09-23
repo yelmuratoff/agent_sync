@@ -66,6 +66,12 @@ can restore. It refuses an existing per-tool, declared, legacy, or shared MCP
 source; use `mcp render` and edit that source yourself if it is occupied. The
 preview and errors never print existing source values. `agentsync sync` is a
 separate step to update generated client files.
+For Kimi, `use` writes its native `mcp.json` form: HTTP connections have a
+`url` without the canonical `type: "http"` field. Claude keeps the canonical
+form in `.mcp.json`; OpenCode composes it into `opencode.json` during `sync`.
+`render` always prints the canonical form, independent of the target tool.
+Hand-written shared HTTP sources are copied to Kimi unchanged; use a per-tool
+Kimi source with its native `url` shape for those servers.
 
 ## Manifest format
 
