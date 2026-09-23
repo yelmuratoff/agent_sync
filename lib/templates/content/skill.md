@@ -1,7 +1,7 @@
 ---
 name: "content"
 description: >-
-  One imperative sentence on what this skill does + concrete trigger conditions. Be pushy — list contexts including ones where the user doesn't name the domain ("even when phrased as 'X' or 'Y'"). Pack relevant keywords. Stay under 1024 characters.
+  One imperative sentence on what this skill does + concrete trigger conditions. Open with the domain keywords, then the trigger conditions. Be pushy about phrasings — list contexts including ones where the user doesn't name the domain ("even when phrased as 'X' or 'Y'") — but keep the domain narrow so the skill loads only for the workflow it serves. Stay under 1024 characters; the first 50 carry the match once a host shortens the listing.
 ---
 
 # {{TITLE}}

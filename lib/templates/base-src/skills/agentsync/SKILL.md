@@ -56,7 +56,8 @@ The agent's identity. Every sentence should change behavior.
 - **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
 - **Include the stack** — The agent needs to know what it's working with.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
-- **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase positively when practical; reserve `do not` for cases where the wrong action is genuinely tempting.
+- **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase positively when practical; reserve `do not` for cases where the wrong action is genuinely tempting. Grant the safe workflows explicitly ("the local tests use disposable fixtures and have no production access — run them and rerun affected tests without asking at each step"): ask-first language written to rein in an older model reads to a current one (GPT-6 Astra in OpenAI's guidance) as a stop sign, and it stops where you wanted it to continue.
+- **Point to docs contextually** — "use `database.md` for schema changes, `deployment.md` when preparing a release"; a rule that reads three docs before every edit spends that context on a typo fix too. Revisit each line regularly and drop the ones a current model no longer needs.
 - 40–70 lines. No generic filler.
 
 ## Writing Rules
@@ -74,7 +75,7 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 
 Skills are the highest-leverage configuration. AgentSync skills follow the open [agentskills.io](https://agentskills.io) format — a portable standard supported by Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, and ~30 other agents. Validate with `skills-ref validate <path>`.
 
-The **description is the trigger** — vague descriptions never activate. Be imperative ("Use this skill when…"), pushy (list cases where the user doesn't name the domain), and keyword-rich. Hard limit: 1024 chars.
+The **description is the trigger** — vague descriptions never activate. Open with the domain keywords the user would say, then the "Use when…" conditions; be pushy about phrasings (list cases where the user doesn't name the domain) and keyword-rich, but keep the domain itself narrow: as short as it can be while the trigger is unambiguous. OpenAI's GPT-6 Astra example — "Use when adding or changing a migration, or reviewing its rollout", not "Use when working with databases, queries, models, or persistence" — the broad form loads the skill on every database task. Hosts shorten descriptions once many skills are installed, so the first 50 characters carry the match on their own. Hard limit: 1024 chars.
 
 The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand docs), `scripts/` (executable code), `assets/` (templates). Keep `SKILL.md` ≤ 500 lines / ≤ 5000 tokens; move detail behind explicit triggers ("read `references/X.md` when Y").
 
