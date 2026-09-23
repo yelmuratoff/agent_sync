@@ -8,12 +8,13 @@ use super::customize::put;
 use crate::output::style::Style;
 use crate::{Error, engine_version};
 
-const COMMANDS: [(&str, &str); 29] = [
+const COMMANDS: [(&str, &str); 30] = [
     ("init", "Create .ai/ structure in current project"),
     ("sync", "Sync instructions to all enabled tools"),
     ("rollback", "Restore targets from the latest backup"),
     ("check", "Verify outputs are in sync with source"),
     ("list", "Show available tools and their status"),
+    ("skills", "List and check project skills"),
     ("enable", "Opt in to one or more tools"),
     ("disable", "Opt out of one or more tools"),
     ("add", "Scaffold a rule, skill, command, or subagent"),
@@ -81,6 +82,8 @@ const SYNC_OPTIONS: &str = "    --only <tools>    Sync only these tools (comma-s
 
 const EXAMPLES: &str = "    agentsync init
     agentsync list
+    agentsync skills list
+    agentsync skills check
     agentsync enable claude cursor
     agentsync add rule testing
     agentsync add skill deploy
@@ -187,7 +190,7 @@ mod tests {
         assert!(text.ends_with(
             "    agentsync refresh --dry-run\n\n  DOCS\n    https://github.com/yelmuratoff/agent\n\n"
         ));
-        assert_eq!(text.lines().count(), 85);
+        assert_eq!(text.lines().count(), 88);
     }
 
     #[test]

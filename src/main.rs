@@ -43,6 +43,18 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
     let style = Style::for_stdout();
     match command {
         Command::Version => print_version(),
+        Command::Skills => {
+            let root = notice_root()?;
+            let env = sync_env();
+            cli::skills::run(
+                rest,
+                &root,
+                &env.render,
+                &style,
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+            )
+        }
         Command::Catalog => {
             let mut out = std::io::stdout().lock();
             out.write_all(cli::update::catalog_dump().as_bytes())

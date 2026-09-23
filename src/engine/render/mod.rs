@@ -19,6 +19,7 @@ pub use tools::build_catalog;
 
 use crate::Error;
 use crate::engine::session::Session;
+use crate::{config::profiles, engine::overlay};
 
 pub const TARGET_KEYS: [&str; 9] = [
     "agents",
@@ -37,6 +38,69 @@ pub const TARGET_KEYS: [&str; 9] = [
 pub struct Stop(pub u8);
 
 pub type Step = Result<(), Stop>;
+
+pub struct SkillSource {
+    pub effective: String,
+    pub origins: Vec<String>,
+}
+
+pub fn skill_source(
+    s: &mut Session,
+    env: &Env,
+    profile: Option<&str>,
+) -> Result<SkillSource, Stop> {
+    let mut run = prepare(s, env, Selection::default())?;
+    refuse_escaping_source_links(s, &run)?;
+    let configured = s
+        .paths
+        .clone()
+        .resolve_source(&run.sources.skills, "source.skills", &mut s.log)
+        .ok_or(Stop(1))?;
+    setup_overlays(s, &mut run, true)?;
+
+    let mut origins = Vec::new();
+    if let Some(name) = profile {
+        let config = run.config.as_deref().unwrap_or_default();
+        if !profiles::names(config)
+            .iter()
+            .any(|candidate| candidate == name)
+        {
+            s.log.error(&format!("Unknown profile: {name}"));
+            return Err(Stop(1));
+        }
+        let overlay_dir = profiles::overlay_dir(config, name);
+        let profile_root = s.paths.absolute(&overlay_dir);
+        origins.push(format!("{profile_root}/src/skills"));
+        overlay::setup_profile(s, config, name, &run.profile_base_src, &mut run.sources)
+            .map_err(|e| io(s, e))?;
+    }
+    origins.push(configured);
+    if let Some(config) = run.config.as_deref() {
+        if overlay::inherit_categories(&crate::config::yaml_subset::value(config, "shared.inherit"))
+            .contains(&"skills")
+            && let Some(parent) = overlay::shared_parent_src(config, &s.paths.root)
+        {
+            origins.push(format!("{parent}/skills"));
+        }
+        if crate::config::yaml_subset::value(config, "base_skills") != "false" {
+            origins.push(format!(
+                "{}/lib/templates/base-src/skills",
+                crate::paths::ENGINE_ROOT
+            ));
+        }
+    } else {
+        origins.push(format!(
+            "{}/lib/templates/base-src/skills",
+            crate::paths::ENGINE_ROOT
+        ));
+    }
+    let effective = s
+        .paths
+        .clone()
+        .resolve_source(&run.sources.skills, "source.skills", &mut s.log)
+        .ok_or(Stop(1))?;
+    Ok(SkillSource { effective, origins })
+}
 
 fn io(s: &mut Session, error: Error) -> Stop {
     s.log.err(error.to_string());

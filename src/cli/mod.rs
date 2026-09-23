@@ -21,6 +21,7 @@ pub mod setup_hooks;
 pub mod shell_init;
 pub mod show;
 pub mod simplify;
+pub mod skills;
 pub mod sync;
 pub mod update;
 pub mod upgrade_config;
@@ -60,6 +61,7 @@ pub(crate) fn refuse_outside_tools_dir(
 pub enum Command {
     Version,
     List,
+    Skills,
     Check,
     Sync,
     Rollback,
@@ -97,6 +99,7 @@ impl Command {
         Some(match word {
             "version" | "--version" | "-v" => Self::Version,
             "list" | "ls" => Self::List,
+            "skills" => Self::Skills,
             "check" => Self::Check,
             "sync" => Self::Sync,
             "rollback" => Self::Rollback,

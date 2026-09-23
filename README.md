@@ -273,6 +273,7 @@ agentsync <command> [options]
 | `export`                 |       | Bundle `.ai/src/` into a shareable archive                                                      |
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
+| `skills list\|check`     |       | List effective project skills or validate their `SKILL.md` metadata (`--profile <name>`)       |
 | `update`                 |       | Replace the binary with the latest release, or `update <version>` to pin a release tag         |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
