@@ -10,6 +10,8 @@ use crate::output::style::Style;
 use crate::paths::Paths;
 use crate::{Error, paths};
 
+mod catalog;
+
 pub const HELP: Help = Help {
     command: "skills",
     tagline: "inspect skills used by this project",
@@ -17,11 +19,14 @@ pub const HELP: Help = Help {
         "skills list [--profile <name>] [--include <globs>] [--exclude <globs>]",
         "skills show <name> [--profile <name>]",
         "skills check [--profile <name>]",
+        "skills catalog list --catalog <file> [--source <alias=local-repo>]...",
+        "skills catalog show <id> --catalog <file> [--source <alias=local-repo>]...",
     ],
     description: &[
         "Reads the effective source.skills tree, including shared and bundled\nskills. --profile applies the same profile overlay as sync. No project\nfiles are changed.",
         "show displays the skill's declared metadata and optional annotations.\nThose annotations and requirements are not verified by AgentSync.",
         "check verifies the required fields and supported scalar forms. For\nfull Agent Skills validation, use skills-ref validate <skill-dir>.\nIt does not change whether sync accepts a skill.",
+        "catalog inspects explicitly declared external skills. Its curator\nnotes are unverified; pinned local Git metadata is read only when a source\nmapping is supplied. It never installs or runs a skill.",
     ],
     sections: &[Section {
         title: "OPTIONS",
@@ -40,6 +45,7 @@ pub const HELP: Help = Help {
         "skills show deploy",
         "skills check",
         "skills list --profile work --include 'review*'",
+        "skills catalog list --catalog cards.tsv",
     ],
 };
 
@@ -64,6 +70,9 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
+    if args.first().is_some_and(|arg| arg == "catalog") {
+        return catalog::run(&args[1..], style, out, err);
+    }
     if args
         .iter()
         .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
@@ -264,7 +273,15 @@ fn append_globs(slot: &mut String, value: &str) {
 fn cell(value: &str) -> String {
     value
         .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if c.is_control()
+                || matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}')
+            {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 

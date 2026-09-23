@@ -295,6 +295,8 @@ metadata:
 
 `skills show` labels these entries as **unverified annotations**; it does not probe tools, authorize actions, or select a skill automatically. The built-in check covers the required fields and common scalar forms. Use the [reference validator](https://agentskills.io/specification#validation) (`skills-ref validate <skill-dir>`) for full format validation. [OASF](https://github.com/agntcy/oasf) provides a separate capability taxonomy; AgentSync does not infer OASF mappings from a skill description.
 
+For skills outside this project's effective source tree, `agentsync skills catalog list/show --catalog FILE` reads an explicitly selected, manually curated catalog. Optional `--source ALIAS=LOCAL_REPO` inspects metadata from a full pinned commit in a local Git repository. It does not fetch, install, execute, or verify the curator's suitability claims. See the [experimental catalog contract](docs/skill-cards.md) and [pinned example](docs/examples/skill-cards/pilot/catalog.tsv).
+
 ### Sync options
 
 ```bash

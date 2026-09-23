@@ -1,0 +1,2 @@
+id	source	commit	path	oasf_version	oasf_terms	mapping	use_when	not_for	requirements
+pdf	anthropic-skills	34040c9c568585f6929bedeaad110ad08f079624	skills/pdf	-	-	unmapped	Inspect the PDF skill before deciding whether to use it.	Treating this card as approval to install or run the skill.	Check the pinned SKILL.md and bundled license; runtime dependencies are not verified.

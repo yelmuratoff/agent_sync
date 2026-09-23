@@ -27,6 +27,21 @@ fn list_reads_project_skills_without_a_catalog() {
 }
 
 #[test]
+fn list_neutralizes_invisible_formatting_in_skill_metadata() {
+    let project = project();
+    project.write(
+        ".ai/src/skills/deploy/SKILL.md",
+        "---\nname: deploy\ndescription: safe\u{202e}spoof\n---\n",
+    );
+    project
+        .agentsync()
+        .args(["skills", "list"])
+        .assert()
+        .success()
+        .stdout("name\tdescription\tpath\ndeploy\tsafe spoof\t.ai/src/skills/deploy/SKILL.md\n");
+}
+
+#[test]
 fn list_reads_bundled_skill_and_folded_description() {
     let project = project();
     project.write(".ai/agent_sync.yaml", "base_skills: true\n");

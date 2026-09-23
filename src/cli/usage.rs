@@ -14,7 +14,10 @@ const COMMANDS: [(&str, &str); 30] = [
     ("rollback", "Restore targets from the latest backup"),
     ("check", "Verify outputs are in sync with source"),
     ("list", "Show available tools and their status"),
-    ("skills", "List, inspect, and check project skills"),
+    (
+        "skills",
+        "Inspect project skills and explicit external catalogs",
+    ),
     ("enable", "Opt in to one or more tools"),
     ("disable", "Opt out of one or more tools"),
     ("add", "Scaffold a rule, skill, command, or subagent"),
@@ -85,6 +88,7 @@ const EXAMPLES: &str = "    agentsync init
     agentsync skills list
     agentsync skills show agentsync
     agentsync skills check
+    agentsync skills catalog list --catalog cards.tsv
     agentsync enable claude cursor
     agentsync add rule testing
     agentsync add skill deploy
@@ -191,7 +195,7 @@ mod tests {
         assert!(text.ends_with(
             "    agentsync refresh --dry-run\n\n  DOCS\n    https://github.com/yelmuratoff/agent\n\n"
         ));
-        assert_eq!(text.lines().count(), 89);
+        assert_eq!(text.lines().count(), 90);
     }
 
     #[test]
