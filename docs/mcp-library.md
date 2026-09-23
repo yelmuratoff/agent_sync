@@ -104,4 +104,5 @@ limits define the catalog format, not general JSON Schema support.
 
 This is the read-only first stage of the MCP library work. Rendering an MCP
 source, choosing a variant for a client, editing configuration, and connecting
-to a server are outside these commands.
+to a server are outside these commands. The remaining work is tracked in the
+[MCP roadmap](mcp-roadmap.md).
