@@ -20,7 +20,7 @@ pub const HELP: Help = Help {
     tagline: "install the git hooks that suit the project's outputs mode",
     synopsis: &["setup-hooks [--pre-commit]"],
     description: &[
-        "Installs the git hooks that suit this project's outputs mode. Each hook\ngets one marked block appended; whatever the hook already ran stays.",
+        "Installs the git hooks that suit this project's outputs mode. Each hook\ngets one marked block appended; whatever the hook already ran stays.\nRunning it again rewrites a block an older release installed.",
     ],
     sections: &[
         Section {
@@ -137,6 +137,14 @@ fn physical(path: &str) -> String {
     }
 }
 
+fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    haystack
+        .get(from..)?
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .map(|i| from + i)
+}
+
 /// `OUTPUTS_MODE` from the first config present: `outputs`, else `committed`
 /// when `gitignore.update` is `false`, else `local`.
 fn outputs_mode(root: &str) -> &'static str {
@@ -169,18 +177,32 @@ fn install_hook(
         std::fs::write(&hook, "#!/bin/sh\n\n").map_err(|e| Error::io(&hook, e))?;
     }
     let existing = std::fs::read(&hook).map_err(|e| Error::io(&hook, e))?;
-    let present = existing
-        .windows(BLOCK_START.len())
-        .any(|w| w == BLOCK_START.as_bytes());
-    if present {
-        put(
-            out,
-            format!("AgentSync hook already present in {name}.\n").as_bytes(),
-        )?;
-    } else {
-        let mut appended = existing;
-        appended.extend_from_slice(format!("\n{BLOCK_START}\n{body}\n{BLOCK_END}\n").as_bytes());
-        std::fs::write(&hook, appended).map_err(|e| Error::io(&hook, e))?;
+    let block = format!("{BLOCK_START}\n{body}\n{BLOCK_END}");
+    match find(&existing, BLOCK_START.as_bytes(), 0) {
+        None => {
+            let mut appended = existing;
+            appended.extend_from_slice(format!("\n{block}\n").as_bytes());
+            std::fs::write(&hook, appended).map_err(|e| Error::io(&hook, e))?;
+        }
+        Some(start) => {
+            let end = find(&existing, BLOCK_END.as_bytes(), start).map(|i| i + BLOCK_END.len());
+            match end {
+                Some(end) if existing[start..end] != *block.as_bytes() => {
+                    let mut rewritten = existing[..start].to_vec();
+                    rewritten.extend_from_slice(block.as_bytes());
+                    rewritten.extend_from_slice(&existing[end..]);
+                    std::fs::write(&hook, rewritten).map_err(|e| Error::io(&hook, e))?;
+                    put(
+                        out,
+                        format!("Updated AgentSync hook in {name}.\n").as_bytes(),
+                    )?;
+                }
+                _ => put(
+                    out,
+                    format!("AgentSync hook already present in {name}.\n").as_bytes(),
+                )?,
+            }
+        }
     }
     executable(&hook)?;
     put(out, format!("Configured {name} hook.\n").as_bytes())
@@ -356,6 +378,18 @@ mod tests {
     }
 
     #[test]
+    fn a_block_without_its_end_marker_is_left_alone() {
+        let (dir, root) = repo("outputs: local\n");
+        let hook = dir.path().join(".git/hooks/post-merge");
+        let unterminated = format!("#!/bin/sh\n{BLOCK_START}\nbash lib/sync.sh\n");
+        std::fs::write(&hook, &unterminated).unwrap();
+        let (status, out, _) = run(&root, &[]);
+        assert_eq!(status, 0);
+        assert!(out.starts_with("AgentSync hook already present in post-merge.\n"));
+        assert_eq!(std::fs::read_to_string(&hook).unwrap(), unterminated);
+    }
+
+    #[test]
     fn committed_outputs_get_the_gate_like_setup_hooks_sh() {
         let (dir, root) = repo("gitignore:\n  update: false\n");
         let (status, out, _) = run(&root, &[]);
@@ -410,7 +444,7 @@ mod tests {
         assert_eq!(status, 0);
         assert_eq!(
             out,
-            "\n  agentsync setup-hooks — install the git hooks that suit the project's outputs mode\n\n  USAGE\n    agentsync setup-hooks [--pre-commit]\n\n  DESCRIPTION\n    Installs the git hooks that suit this project's outputs mode. Each hook\n    gets one marked block appended; whatever the hook already ran stays.\n\n  MODES\n    committed   pre-commit re-syncs and fails the commit when a generated file\n                changed, so outputs never lag source\n    local       post-merge and post-checkout run agentsync sync after\n                pull/checkout\n\n  OPTIONS\n    --pre-commit   In local mode, also install a pre-commit hook that runs\n                   agentsync sync --if-stale\n    -h, --help     Show this help\n\n  ENVIRONMENT\n    AGENTSYNC_SKIP_HOOKS=1   Make the installed hooks no-ops\n\n  EXAMPLES\n    agentsync setup-hooks\n    agentsync setup-hooks --pre-commit\n\n"
+            "\n  agentsync setup-hooks — install the git hooks that suit the project's outputs mode\n\n  USAGE\n    agentsync setup-hooks [--pre-commit]\n\n  DESCRIPTION\n    Installs the git hooks that suit this project's outputs mode. Each hook\n    gets one marked block appended; whatever the hook already ran stays.\n    Running it again rewrites a block an older release installed.\n\n  MODES\n    committed   pre-commit re-syncs and fails the commit when a generated file\n                changed, so outputs never lag source\n    local       post-merge and post-checkout run agentsync sync after\n                pull/checkout\n\n  OPTIONS\n    --pre-commit   In local mode, also install a pre-commit hook that runs\n                   agentsync sync --if-stale\n    -h, --help     Show this help\n\n  ENVIRONMENT\n    AGENTSYNC_SKIP_HOOKS=1   Make the installed hooks no-ops\n\n  EXAMPLES\n    agentsync setup-hooks\n    agentsync setup-hooks --pre-commit\n\n"
         );
         let missing = format!("{root}/nowhere");
         let (status, _, err) = run(&missing, &[]);

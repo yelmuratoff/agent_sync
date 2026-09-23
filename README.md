@@ -556,7 +556,7 @@ agentsync setup-hooks                 # the hooks this project's outputs: mode n
 agentsync setup-hooks --pre-commit    # local mode: also add a pre-commit sync
 ```
 
-`setup-hooks` installs what the project's `outputs:` mode calls for. With `committed` (the default) that is a single pre-commit gate: it runs `sync --if-stale` and **fails the commit** when a generated file would be left out of it, so outputs never lag source. With `local` it installs `post-merge` and `post-checkout` hooks that run `agentsync sync` after `git pull` / `git checkout`, and `--pre-commit` adds a hook that runs `sync --if-stale` before each commit; those three are non-fatal — a failed sync warns but never blocks the git operation. `AGENTSYNC_SKIP_HOOKS=1` turns any installed hook into a no-op. Safe to run multiple times: an AgentSync block already in a hook is left alone.
+`setup-hooks` installs what the project's `outputs:` mode calls for. With `committed` (the default) that is a single pre-commit gate: it runs `sync --if-stale` and **fails the commit** when a generated file would be left out of it, so outputs never lag source. With `local` it installs `post-merge` and `post-checkout` hooks that run `agentsync sync` after `git pull` / `git checkout`, and `--pre-commit` adds a hook that runs `sync --if-stale` before each commit; those three are non-fatal — a failed sync warns but never blocks the git operation. `AGENTSYNC_SKIP_HOOKS=1` turns any installed hook into a no-op. Safe to run multiple times: a current AgentSync block is left alone, one an older release installed is rewritten in place, and the rest of the hook is kept.
 
 ### Manual / CI
 

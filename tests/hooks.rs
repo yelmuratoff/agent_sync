@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::{Command as StdCommand, Output};
 
 use common::Project;
+use predicates::prelude::*;
 
 /// Scaffold a project in `mode` without templates or a first sync — these
 /// tests only need `agent_sync.yaml` and a git repo.
@@ -159,6 +160,39 @@ fn setup_hooks_local_mode_preserves_existing_hook_content() {
     let hook = project.read(".git/hooks/post-merge");
     assert!(hook.contains("existing hook"));
     assert!(hook.contains("AGENTSYNC AUTO SYNC"));
+}
+
+#[test]
+fn setup_hooks_local_mode_rewrites_an_outdated_block_in_place() {
+    let project = Project::empty();
+    init_mode(&project, "local");
+    project.write(
+        ".git/hooks/post-checkout",
+        "#!/bin/sh\necho before\n\n# >>> AGENTSYNC AUTO SYNC START >>>\nif [ -f \"lib/system/sync.sh\" ]; then\n    bash lib/system/sync.sh\nfi\n# <<< AGENTSYNC AUTO SYNC END <<<\necho after\n",
+    );
+    project
+        .agentsync()
+        .arg("setup-hooks")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Updated AgentSync hook in post-checkout.\n",
+        ));
+    let hook = project.read(".git/hooks/post-checkout");
+    assert!(!hook.contains("lib/system/sync.sh"), "{hook}");
+    assert!(hook.starts_with("#!/bin/sh\necho before\n\n# >>> AGENTSYNC"));
+    assert!(hook.ends_with("# <<< AGENTSYNC AUTO SYNC END <<<\necho after\n"));
+    assert_eq!(hook.matches("AGENTSYNC AUTO SYNC START").count(), 1);
+    assert!(hook.contains("agentsync sync ||"));
+    project
+        .agentsync()
+        .arg("setup-hooks")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "AgentSync hook already present in post-checkout.\n",
+        ));
+    assert_eq!(project.read(".git/hooks/post-checkout"), hook);
 }
 
 #[test]

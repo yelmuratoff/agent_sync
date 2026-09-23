@@ -760,6 +760,10 @@ Appended one line at a time as they are found, with the phase:
   `--help` with its own usage in one shape (`output::help`), including
   `check`, `list`, `disable`, `resolve`, and `doctor`, which had answered with
   the top-level usage, and `upgrade-config`, which had run instead.
+- After Phase 7: `setup-hooks` rewrites a marked block whose body differs from
+  the current one, keeping the rest of the hook; Bash reported any existing
+  block as already present, so a hook that fell back to `bash lib/sync.sh`
+  survived every upgrade. A block missing its end marker is still left alone.
 
 ## Risks
 

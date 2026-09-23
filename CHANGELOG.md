@@ -15,6 +15,7 @@
 
 - **`upgrade-config --help` re-pinned the project.** The command took no arguments, so `--help` ran it. It prints its usage now, and an unknown argument is refused with exit status 2 before anything is written.
 - **`generate --help` and `release --help` answer with usage.** `generate` treated the flag as the project description; `release` refused it as an unknown bump type.
+- **`setup-hooks` repairs a hook an older release installed.** It found the marked block and stopped, so a hook that still ran `bash lib/sync.sh` or a `dart` wrapper kept failing after an upgrade. Running `agentsync setup-hooks` now rewrites an outdated block in place (`Updated AgentSync hook in post-checkout.`) and leaves the rest of the hook as it was.
 
 ## 0.39.0
 
