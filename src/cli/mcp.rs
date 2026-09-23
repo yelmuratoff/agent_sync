@@ -212,11 +212,10 @@ fn use_source(
     if !args.apply {
         put(
             out,
-            format!(
-                "Would create {rel} from {selection} for {slug}\nRun with --apply to write it.\n"
-            )
-            .as_bytes(),
+            format!("Would create {rel} from {selection} for {slug}:\n").as_bytes(),
         )?;
+        put(out, rendered)?;
+        put(out, b"Run with --apply to write it.\n")?;
         return Ok(0);
     }
     let config = project
@@ -266,7 +265,7 @@ fn use_source(
             format!("Warning: Could not prune backups: {error}\n").as_bytes(),
         )?;
     }
-    put(out, format!("Created {rel} from {selection} for {slug}\nRun agentsync sync to update client files.\n").as_bytes())?;
+    put(out, format!("Created {rel} from {selection} for {slug}\nReview the source, then run agentsync sync to update client files.\n").as_bytes())?;
     Ok(0)
 }
 

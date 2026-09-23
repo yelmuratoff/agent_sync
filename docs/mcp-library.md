@@ -53,7 +53,8 @@ HTTP connections render with `type: "http"` and `url`. Only the selected
 connection is included; manifest metadata and requirements are not copied.
 Rendering does not execute the command, contact the URL, or write a source.
 
-`use <id>[@variant] --tool <slug>` previews creating a per-tool MCP source.
+`use <id>[@variant] --tool <slug>` previews the selected connection JSON and
+the path of the per-tool MCP source it would create.
 The tool must be enabled and have an MCP destination. `--apply` writes the
 source under the configured `source.tools` directory (by default
 `.ai/src/tools/<slug>/mcp.json`) and records a backup that `agentsync rollback`

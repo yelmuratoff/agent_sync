@@ -173,7 +173,7 @@ fn use_previews_then_creates_a_per_tool_source_without_syncing() {
         .args(["mcp", "use", "alpha", "--tool", "claude", "--library", "catalog"])
         .assert()
         .success()
-        .stdout("Would create .ai/src/tools/claude/mcp.json from alpha@default for claude\nRun with --apply to write it.\n");
+        .stdout("Would create .ai/src/tools/claude/mcp.json from alpha@default for claude:\n{\"mcpServers\":{\"alpha\":{\"args\":[],\"command\":\"never-run\"}}}\nRun with --apply to write it.\n");
     assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
     assert!(!project.exists(".ai/backups"));
     project
@@ -181,7 +181,7 @@ fn use_previews_then_creates_a_per_tool_source_without_syncing() {
         .args(["mcp", "use", "alpha", "--tool", "claude", "--library", "catalog", "--apply"])
         .assert()
         .success()
-        .stdout("Created .ai/src/tools/claude/mcp.json from alpha@default for claude\nRun agentsync sync to update client files.\n");
+        .stdout("Created .ai/src/tools/claude/mcp.json from alpha@default for claude\nReview the source, then run agentsync sync to update client files.\n");
     assert_eq!(
         project.read(".ai/src/tools/claude/mcp.json"),
         "{\"mcpServers\":{\"alpha\":{\"args\":[],\"command\":\"never-run\"}}}\n"
