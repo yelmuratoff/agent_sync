@@ -25,8 +25,20 @@ pub(super) struct Dests {
 
 /// `_run_personal_pass` and `_run_profile_passes`.
 pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
+    let config = run.config.as_deref().unwrap_or_default();
+    for profile in &run.profiles {
+        for slug in profiles::tools(config, profile) {
+            if load_tool(s, &slug).flag("profile_supported") == Some(false) {
+                s.log.error(&format!(
+                    "{slug} reads project-root files and does not support config-home profiles"
+                ));
+                return Err(Stop(1));
+            }
+        }
+    }
     check_shared_mcp_dests(s, run)?;
-    let slugs = run.tools.clone();
+    let mut slugs = run.tools.clone();
+    order_shared_agents(s, &mut slugs);
     for slug in &slugs {
         if run.profile_tools.contains(slug) {
             continue;
@@ -68,6 +80,26 @@ pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
         overlay::cleanup_profile(&mut s.ws).map_err(|e| io(s, e))?;
     }
     Ok(())
+}
+
+fn order_shared_agents(s: &mut Session, slugs: &mut [String]) {
+    let mut positions: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (index, slug) in slugs.iter().enumerate() {
+        let tool = load_tool(s, slug);
+        let dest = resolve_one_dest(s, &tool, "agents", &tool.display_name());
+        if !dest.is_empty() {
+            positions.entry(dest).or_default().push(index);
+        }
+    }
+    for indexes in positions.values().filter(|indexes| indexes.len() > 1) {
+        let mut group: Vec<String> = indexes.iter().map(|index| slugs[*index].clone()).collect();
+        group.sort_by_key(|slug| {
+            load_tool(s, slug).value("targets.rules.inline_into_agents") == "true"
+        });
+        for (index, slug) in indexes.iter().zip(group) {
+            slugs[*index] = slug;
+        }
+    }
 }
 
 fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {

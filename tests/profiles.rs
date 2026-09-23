@@ -43,6 +43,40 @@ fn profile_add_scaffolds_a_thin_variant_tool_with_config_home_dests() {
 }
 
 #[test]
+fn profile_add_refuses_minimax_project_files_before_writing() {
+    let project = seeded();
+    project
+        .agentsync()
+        .args(["profile", "add", "hub", "--tools", "minimax"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "does not support config-home profiles",
+        ));
+    assert!(!project.exists(".ai/profiles/hub"));
+    assert!(!project.exists(".ai/src/tools/minimax-hub.yaml"));
+}
+
+#[test]
+fn sync_refuses_a_hand_written_minimax_profile() {
+    let project = seeded();
+    project.write(".ai/src/tools/minimax-hub.yaml", "base: minimax\n");
+    project.append(
+        ".ai/agent_sync.yaml",
+        "\nprofiles:\n  hub:\n    overlay: \".ai/profiles/hub\"\n    active: true\n    tools: [minimax-hub]\n",
+    );
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "does not support config-home profiles",
+        ));
+    assert!(!project.exists(".mcp.json"));
+}
+
+#[test]
 fn profile_add_nested_base_dest_keeps_internal_structure_not_basename() {
     let project = seeded();
     project

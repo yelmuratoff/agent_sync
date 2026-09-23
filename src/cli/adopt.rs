@@ -115,6 +115,7 @@ pub struct Resolver<'a> {
     pub paths: Paths,
     pub sources: Sources,
     tools: Vec<String>,
+    blocked_agents: Vec<(String, String)>,
     style: &'a Style,
     warned_legacy: bool,
 }
@@ -131,9 +132,24 @@ impl<'a> Resolver<'a> {
             paths: Paths::on_disk(&root),
             sources,
             tools,
+            blocked_agents: Vec::new(),
             style,
             warned_legacy: false,
         })
+    }
+
+    fn for_adopt(mut self) -> Result<Self, Error> {
+        let enabled = self.project.enabled_tools()?;
+        self.tools.sort_by_key(|slug| !enabled.contains(slug));
+        for slug in &enabled {
+            let tool = Tool::load(self.project, slug)?;
+            if tool.flag("targets.agents.adoptable") == Some(false)
+                && let Some(dest) = self.dest_for(&tool, "agents")
+            {
+                self.blocked_agents.push((dest, slug.clone()));
+            }
+        }
+        Ok(self)
     }
 
     fn root(&self) -> String {
@@ -163,6 +179,11 @@ impl<'a> Resolver<'a> {
             return Ok(Err(format!("Destination file not found: {raw}")));
         }
         let dest_rel = self.strip_root(&abs);
+        if let Some((_, slug)) = self.blocked_agents.iter().find(|(dest, _)| dest == &abs) {
+            return Ok(Err(format!(
+                "{slug} has generated content in {dest_rel}. Edit the source AGENTS.md and rules instead."
+            )));
+        }
         for slug in self.tools.clone() {
             let tool = Tool::load(self.project, &slug)?;
             if let Some(found) = self.try_tool(&tool, &abs, &dest_rel, err)? {
@@ -207,6 +228,12 @@ impl<'a> Resolver<'a> {
     ) -> Result<Option<Result<Adoption, String>>, Error> {
         let dest = (abs, dest_rel);
         if self.dest_for(tool, "agents").as_deref() == Some(abs) {
+            if tool.flag("targets.agents.adoptable") == Some(false) {
+                return Ok(Some(Err(format!(
+                    "{} has generated content in {}. Edit the source AGENTS.md and rules instead.",
+                    tool.slug, dest_rel
+                ))));
+            }
             return Ok(Some(
                 self.agents_source(tool, self.adoption(tool, "agents", dest)),
             ));
@@ -537,7 +564,7 @@ pub fn adopt(
         )?;
         return Ok(1);
     }
-    let mut resolver = Resolver::new(&project, sources, style)?;
+    let mut resolver = Resolver::new(&project, sources, style)?.for_adopt()?;
     let mut run = Run {
         style,
         root: &root,

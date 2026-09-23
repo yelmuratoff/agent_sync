@@ -436,7 +436,7 @@ always skips it.
 | `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs (Cursor, Copilot, Windsurf, Antigravity) |
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
-| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, OpenCode)       |
+| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode) |
 | `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Cline, Amazon Q, Zed)                            |
 | `as_skills` (commands)          | Emit each command as a generated skill at `<skills.dest>/command-<name>/SKILL.md` (Codex, Kimi Code)                  |
 | `inline_into_agents` (commands) | Append a `## Commands` index (`` `/<name>` — description ``) into AGENTS file (Amazon Q, Zed)                          |
@@ -448,6 +448,8 @@ always skips it.
 | `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
 | `guard` (target)                | Copy the tool's write-guard script to `dest` and mark it executable; override the base at `.ai/src/tools/<tool>/guard.sh` and register it from the tool's settings (Claude) |
 | `profile_scoped: false`         | On any target: `agentsync profile add` keeps the base `dest` instead of rewriting it into the profile's config home     |
+| `profile_supported: false`      | Refuse config-home profiles for a client that reads only project-root files                                             |
+| `adoptable: false` (agents)     | Refuse `adopt` when the generated agents file cannot safely round-trip into its source                                 |
 
 [`lib/templates/tools/_TEMPLATE.yaml`](lib/templates/tools/_TEMPLATE.yaml)
 documents every option, including the ones this table leaves out.
@@ -676,7 +678,8 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 - **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
 - **Updates flow through.** Because the base ships with the engine, `agentsync update` improves every project that hasn't locked the file in as an override.
 - **Shared MCP is converted where schemas differ.** One `.ai/src/mcp.json` reaches every enabled MCP target. OpenCode's adapter validates local and remote transports, then atomically composes the result into `opencode.json`.
-- **MiniMax Code MCP uses the project `.mcp.json`.** Claude Code shares that destination. When their effective MCP sources differ, sync stops before writing either version.
+- **MiniMax Code MCP uses the project `.mcp.json`.** Claude Code shares that destination. When their effective MCP sources differ, sync stops before writing either version. MiniMax may start a configured server during tool discovery or use, so review an MCP source before syncing it.
+- **MiniMax Code has no config-home profile.** It reads files from the primary project workspace, so `profile add` and `sync` refuse MiniMax profile variants instead of creating files the client would not load.
 - **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/tools/cursor/hooks.json`. Delete the file later to resume inheriting.
 - **Safe hooks.** `customize <tool> hooks` prints the base content first and requires `--yes` in non-interactive mode — you never scaffold executable intent silently.
 - **`simplify` prunes noise.** Scaffolded payloads that are still byte-identical to base are flagged by `agentsync simplify` and removed with `--apply`, so you don't accidentally pin yesterday's defaults forever.

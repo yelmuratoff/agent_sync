@@ -399,6 +399,15 @@ fn sync_claude_minimax_and_opencode_keep_their_mcp_outputs() {
 }
 
 #[test]
+fn sync_minimax_and_windsurf_preserve_rule_references() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["minimax", "windsurf"]);
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.read("AGENTS.md").contains("## Rules"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
 fn sync_cursor_mcp_json_exists() {
     assert!(synced_project().exists(".cursor/mcp.json"));
 }

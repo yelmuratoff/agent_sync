@@ -1,9 +1,11 @@
 name: "MiniMax Code"
 enabled: false
+profile_supported: false
 
 targets:
   agents:
     dest: "AGENTS.md"
+    adoptable: false
 
   rules:
     inline_into_agents: true
