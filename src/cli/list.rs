@@ -254,7 +254,7 @@ mod tests {
             text.contains("    ○    Zed                    zed           available   ·  ·  S  \n")
         );
         assert!(
-            text.contains("\n  0 of 13 enabled\n\n  Enable a tool:     agentsync enable <slug>\n")
+            text.contains("\n  0 of 14 enabled\n\n  Enable a tool:     agentsync enable <slug>\n")
         );
         assert!(text.contains("  Add MCP server:    agentsync add mcp <server> --command …\n"));
         assert!(text.ends_with("  Sync outputs:      agentsync sync\n\n"));
@@ -288,7 +288,7 @@ mod tests {
         assert!(
             text.contains("    ○    Kimi Code              kimi          available   ·  M* ·  \n")
         );
-        assert!(text.contains("\n  1 of 13 enabled, 1 tool override(s), 3 payload override(s)\n"));
+        assert!(text.contains("\n  1 of 14 enabled, 1 tool override(s), 3 payload override(s)\n"));
         assert!(text.contains("  Shared MCP: .ai/src/mcp.json (+ 1 per-tool override)\n"));
         assert!(!text.contains("Enable a tool:"));
         assert!(!text.contains("Add MCP server:"));

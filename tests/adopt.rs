@@ -100,6 +100,55 @@ fn adopt_agents_md_round_trips_into_ai_src_agents_md() {
 }
 
 #[test]
+fn adopt_refuses_minimax_agents_with_generated_rule_references() {
+    let project = synced_project(&["minimax"]);
+    let source = project.read(".ai/src/AGENTS.md");
+    project.append("AGENTS.md", "\nManual edit\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", "AGENTS.md"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("generated content"));
+    assert_eq!(project.read(".ai/src/AGENTS.md"), source);
+}
+
+#[test]
+fn adopt_refuses_shared_agents_when_minimax_is_enabled_with_codex() {
+    let project = synced_project(&["codex", "minimax"]);
+    let source = project.read(".ai/src/AGENTS.md");
+    project.append("AGENTS.md", "\nManual edit\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", "AGENTS.md"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("minimax has generated content"));
+    assert_eq!(project.read(".ai/src/AGENTS.md"), source);
+}
+
+#[test]
+fn adopt_allows_agents_owned_by_cursor_when_minimax_agents_are_disabled() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["cursor", "minimax"]);
+    project.write(
+        ".ai/src/tools/minimax.yaml",
+        "targets:\n  agents:\n    enabled: false\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.append("AGENTS.md", "\nManual edit\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", "AGENTS.md"])
+        .assert()
+        .success();
+    assert!(project.read(".ai/src/AGENTS.md").contains("Manual edit"));
+}
+
+#[test]
 fn adopt_settings_scaffolds_canonical_override_path() {
     let project = synced_project(&["claude"]);
     project.write(".claude/settings.json", "{\"manualEdit\": true}\n");

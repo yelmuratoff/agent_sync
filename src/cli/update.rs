@@ -703,9 +703,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_catalog_dump_round_trips_the_thirteen_tools() {
+    fn the_catalog_dump_round_trips_the_fourteen_tools() {
         let entries = catalog_entries();
-        assert_eq!(entries.len(), 13);
+        assert_eq!(entries.len(), 14);
         let dump = catalog_dump();
         assert!(dump.starts_with("amazonq "));
         assert_eq!(parse_catalog_dump(&dump), Some(entries));

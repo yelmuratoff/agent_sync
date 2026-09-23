@@ -80,6 +80,29 @@ fn sync_skip_excludes_a_tool() {
 }
 
 #[test]
+fn sync_only_and_skip_filter_minimax() {
+    let project = seeded();
+    project.enable_tools(&["claude", "minimax"]);
+    project
+        .agentsync()
+        .args(["sync", "--only", "minimax"])
+        .assert()
+        .success();
+    assert!(project.exists("AGENTS.md"));
+    assert!(!project.exists("CLAUDE.md"));
+
+    let skipped = seeded();
+    skipped.enable_tools(&["claude", "minimax"]);
+    skipped
+        .agentsync()
+        .args(["sync", "--skip", "minimax"])
+        .assert()
+        .success();
+    assert!(skipped.exists("CLAUDE.md"));
+    assert!(!skipped.exists("AGENTS.md"));
+}
+
+#[test]
 fn sync_only_multiple_tools() {
     let project = seeded();
     project.enable_tools(&["claude", "cursor", "copilot"]);

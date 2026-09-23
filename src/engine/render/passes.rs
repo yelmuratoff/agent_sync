@@ -7,7 +7,8 @@ use super::tools::load_tool;
 use super::{Run, Step, Stop, TARGET_KEYS, checkpoint, io};
 use crate::config::tool::Tool;
 use crate::engine::session::Session;
-use crate::{config::profiles, engine::file_ops, engine::overlay};
+use crate::{config::payload, config::profiles, engine::file_ops, engine::overlay};
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub(super) struct Dests {
@@ -24,7 +25,21 @@ pub(super) struct Dests {
 
 /// `_run_personal_pass` and `_run_profile_passes`.
 pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
-    let slugs = run.tools.clone();
+    let config = run.config.as_deref().unwrap_or_default();
+    for profile in &run.profiles {
+        for slug in profiles::tools(config, profile) {
+            if load_tool(s, &slug).flag("profile_supported") == Some(false) {
+                s.log.error(&format!(
+                    "{slug} reads project-root files and does not support config-home profiles"
+                ));
+                return Err(Stop(1));
+            }
+        }
+    }
+    check_shared_agents_dests(s, run)?;
+    check_shared_mcp_dests(s, run)?;
+    let mut slugs = run.tools.clone();
+    order_shared_agents(s, &mut slugs);
     for slug in &slugs {
         if run.profile_tools.contains(slug) {
             continue;
@@ -64,6 +79,98 @@ pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
             }
         }
         overlay::cleanup_profile(&mut s.ws).map_err(|e| io(s, e))?;
+    }
+    Ok(())
+}
+
+fn order_shared_agents(s: &mut Session, slugs: &mut [String]) {
+    let mut positions: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (index, slug) in slugs.iter().enumerate() {
+        let tool = load_tool(s, slug);
+        let dest = resolve_one_dest(s, &tool, "agents", &tool.display_name());
+        if !dest.is_empty() {
+            positions.entry(dest).or_default().push(index);
+        }
+    }
+    for indexes in positions.values().filter(|indexes| indexes.len() > 1) {
+        let mut group: Vec<String> = indexes.iter().map(|index| slugs[*index].clone()).collect();
+        group.sort_by_key(|slug| {
+            load_tool(s, slug).value("targets.rules.inline_into_agents") == "true"
+        });
+        for (index, slug) in indexes.iter().zip(group) {
+            slugs[*index] = slug;
+        }
+    }
+}
+
+fn check_shared_agents_dests(s: &mut Session, run: &Run) -> Step {
+    let mut owners: BTreeMap<String, (String, String, Vec<u8>)> = BTreeMap::new();
+    for slug in &run.tools {
+        if !run.enabled.contains(slug)
+            || run.profile_tools.contains(slug)
+            || !run.selection.includes(slug)
+        {
+            continue;
+        }
+        let tool = load_tool(s, slug);
+        let display = tool.display_name();
+        let dest = resolve_one_dest(s, &tool, "agents", &display);
+        if dest.is_empty() {
+            continue;
+        }
+        let source = tool_source(s, &tool, "agents", &run.sources.agents, &display)?;
+        if !s.ws.is_file(&source) {
+            continue;
+        }
+        let bytes = s.ws.read(&source).map_err(|e| io(s, e))?;
+        if let Some((other_slug, other_source, other_bytes)) = owners.get(&dest) {
+            if other_bytes != &bytes {
+                s.log.error(&format!(
+                    "Agents destination {} is shared by {other_slug} ({}) and {slug} ({}), but their sources differ",
+                    s.display(&dest),
+                    s.display(other_source),
+                    s.display(&source)
+                ));
+                return Err(Stop(1));
+            }
+        } else {
+            owners.insert(dest, (slug.clone(), source, bytes));
+        }
+    }
+    Ok(())
+}
+
+fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
+    let mut owners: BTreeMap<String, (String, String, Vec<u8>)> = BTreeMap::new();
+    for slug in &run.tools {
+        if !run.enabled.contains(slug) || run.profile_tools.contains(slug) {
+            continue;
+        }
+        let tool = load_tool(s, slug);
+        let dest = resolve_one_dest(s, &tool, "mcp", &tool.display_name());
+        if dest.is_empty() {
+            continue;
+        }
+        let Some(source) = payload::resolve_source(s, &tool, "mcp") else {
+            continue;
+        };
+        if !s.ws.is_file(&source) {
+            continue;
+        }
+        let bytes = s.ws.read(&source).map_err(|e| io(s, e))?;
+        if let Some((other_slug, other_source, other_bytes)) = owners.get(&dest) {
+            if other_bytes != &bytes {
+                s.log.error(&format!(
+                    "MCP destination {} is shared by {other_slug} ({}) and {slug} ({}), but their sources differ",
+                    s.display(&dest),
+                    s.display(other_source),
+                    s.display(&source)
+                ));
+                return Err(Stop(1));
+            }
+        } else {
+            owners.insert(dest, (slug.clone(), source, bytes));
+        }
     }
     Ok(())
 }

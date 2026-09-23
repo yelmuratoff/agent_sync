@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "id": "microsoft-learn",
+  "title": "Microsoft Learn",
+  "description": "Public Microsoft documentation over Streamable HTTP.",
+  "provenance": {
+    "homepage": "https://learn.microsoft.com/en-us/training/support/mcp"
+  },
+  "connection": {
+    "type": "http",
+    "url": "https://learn.microsoft.com/api/mcp"
+  },
+  "requirements": {
+    "binaries": [],
+    "inputs": []
+  },
+  "guidance": {
+    "recommended": "default",
+    "authority": "vendor",
+    "source": "https://learn.microsoft.com/en-us/training/support/mcp",
+    "checked_at": "2026-09-23",
+    "reason": "Microsoft documents this public Streamable HTTP endpoint without authentication."
+  }
+}

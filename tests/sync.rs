@@ -19,6 +19,7 @@ const ENABLED_TOOLS: &[&str] = &[
     "junie",
     "antigravity",
     "kimi",
+    "minimax",
     "opencode",
 ];
 
@@ -350,6 +351,98 @@ fn sync_windsurf_hooks_json_exists() {
 #[test]
 fn sync_claude_mcp_json_exists() {
     assert!(synced_project().exists(".mcp.json"));
+}
+
+#[test]
+fn sync_minimax_uses_project_agents_and_shared_mcp() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["minimax"]);
+    project.write(
+        ".ai/src/mcp.json",
+        "{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.com/mcp\"}}}\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.read("AGENTS.md").contains("## Rules"));
+    assert_eq!(project.read(".mcp.json"), project.read(".ai/src/mcp.json"));
+    project.agentsync().arg("sync").assert().success();
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_rejects_different_mcp_sources_at_one_destination() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude", "minimax"]);
+    project.write(
+        ".ai/src/tools/minimax/mcp.json",
+        "{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.com/mcp\"}}}\n",
+    );
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "MCP destination .mcp.json is shared by claude",
+        ));
+    assert!(!project.exists(".mcp.json"));
+}
+
+#[test]
+fn sync_claude_minimax_and_opencode_keep_their_mcp_outputs() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude", "minimax", "opencode"]);
+    project.write(".ai/src/mcp.json", "{\"mcpServers\":{}}\n");
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".mcp.json"), project.read(".ai/src/mcp.json"));
+    assert!(project.exists("opencode.json"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_minimax_and_windsurf_preserve_rule_references() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["minimax", "windsurf"]);
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.read("AGENTS.md").contains("## Rules"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_rejects_different_agents_sources_at_one_destination() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["minimax", "windsurf"]);
+    project.write(".ai/src/AGENTS.md", "Shared instructions\n");
+    project.write(".ai/src/other-agents.md", "Different instructions\n");
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  agents:\n    source: .ai/src/other-agents.md\n",
+    );
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("their sources differ"));
+    assert!(!project.exists("AGENTS.md"));
+}
+
+#[test]
+fn sync_only_ignores_a_shared_agents_conflict_in_skipped_tools() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["minimax", "windsurf"]);
+    project.write(".ai/src/AGENTS.md", "Shared instructions\n");
+    project.write(".ai/src/other-agents.md", "Different instructions\n");
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  agents:\n    source: .ai/src/other-agents.md\n",
+    );
+
+    project
+        .agentsync()
+        .args(["sync", "--only", "minimax"])
+        .assert()
+        .success();
+    assert!(project.read("AGENTS.md").contains("Shared instructions"));
 }
 
 #[test]

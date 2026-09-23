@@ -11,7 +11,7 @@ use crate::Error;
 /// Replaces `dest` with `bytes`. The staging file is created `0600`, as
 /// `mktemp` creates it, and takes the mode of an existing `dest`.
 pub fn write_beside(dest: &Path, bytes: &[u8]) -> Result<(), Error> {
-    let (path, mut file) = create_sibling(dest)?;
+    let (path, mut file) = create_sibling(dest, None)?;
     let written = file
         .write_all(bytes)
         .and_then(|()| match std::fs::metadata(dest) {
@@ -26,13 +26,32 @@ pub fn write_beside(dest: &Path, bytes: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-fn create_sibling(dest: &Path) -> Result<(PathBuf, File), Error> {
+pub fn write_new_beside(dest: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let (path, mut file) = create_sibling(dest, Some(".agentsync-stage."))?;
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| std::fs::hard_link(&path, dest));
+    let _ = std::fs::remove_file(&path);
+    if let Err(e) = written {
+        return Err(Error::io(dest, e));
+    }
+    Ok(())
+}
+
+fn create_sibling(dest: &Path, hidden_prefix: Option<&str>) -> Result<(PathBuf, File), Error> {
     let pid = std::process::id();
     let mut attempt = 0u64;
     loop {
-        let mut name = dest.as_os_str().to_owned();
-        name.push(format!(".{pid}{attempt:04}"));
-        let path = PathBuf::from(name);
+        let path = if let Some(prefix) = hidden_prefix {
+            dest.parent()
+                .unwrap_or(Path::new("."))
+                .join(format!("{prefix}{pid}{attempt:04}"))
+        } else {
+            let mut name = dest.as_os_str().to_owned();
+            name.push(format!(".{pid}{attempt:04}"));
+            PathBuf::from(name)
+        };
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -89,5 +108,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(write_beside(&dir.path().join("missing/x"), b"x").is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn exclusive_write_preserves_an_occupied_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("mcp.json");
+        std::fs::write(&dest, b"private bytes").unwrap();
+        assert!(write_new_beside(&dest, b"new bytes").is_err());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"private bytes");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

@@ -10,6 +10,8 @@ pub mod enable;
 pub mod generate;
 pub mod init;
 pub mod list;
+pub mod mcp;
+mod mcp_merge;
 pub mod migrate;
 pub mod notice;
 pub mod profile;
@@ -62,6 +64,7 @@ pub enum Command {
     Version,
     List,
     Skills,
+    Mcp,
     Check,
     Sync,
     Rollback,
@@ -100,6 +103,7 @@ impl Command {
             "version" | "--version" | "-v" => Self::Version,
             "list" | "ls" => Self::List,
             "skills" => Self::Skills,
+            "mcp" => Self::Mcp,
             "check" => Self::Check,
             "sync" => Self::Sync,
             "rollback" => Self::Rollback,

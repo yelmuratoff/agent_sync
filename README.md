@@ -4,7 +4,7 @@
     <img src="https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/assets/agent_sync_light.svg" alt="AgentSync" width="400">
   </picture>
 
-  <h3>One source → 13 AI tools. Stop copy-pasting rules.</h3>
+  <h3>One source → 14 AI tools. Stop copy-pasting rules.</h3>
 
   <p>
     <a href="https://github.com/yelmuratoff/agent_sync">
@@ -27,7 +27,7 @@ Use more than one tool — or work on a team where different people use differen
 
 ## The solution
 
-AgentSync syncs from a single source (`.ai/src/`) into **13 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, OpenCode, Windsurf, JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
+AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Windsurf, JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
@@ -39,7 +39,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 ├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
 ├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
 ├── .amazonq/rules/testing.md
-├── AGENTS.md                             # inlined rule reference (Codex, Gemini, Junie, Kimi, OpenCode)
+├── AGENTS.md                             # inlined rule reference (Codex, Gemini, Junie, Kimi, MiniMax, OpenCode)
 └── .rules                                # merged into single file (Zed)
 ```
 
@@ -72,7 +72,7 @@ recorded before the migration started.
 ## Why not just...?
 
 - **...symlink the files?** Tools demand different extensions (`.mdc`, `.instructions.md`), different frontmatter, different nesting. Symlinks can't transform content — AgentSync does.
-- **...a shell script per tool?** You'd be writing the same copy / rename / header-injection logic 13 times. AgentSync is that script, declarative (YAML), already tested on macOS, Linux, and Windows.
+- **...a shell script per tool?** You'd be writing the same copy / rename / header-injection logic 14 times. AgentSync is that script, declarative (YAML), already tested on macOS, Linux, and Windows.
 - **...stick to the one tool I use today?** Teammates pick different ones. Your future self might too. A single source file future-proofs you.
 - **Zero runtime dependencies.** A single static binary. No Node, Python, `yq`, or `jq`. Install with one `curl | bash`.
 
@@ -233,11 +233,11 @@ AgentSync supports two source layouts:
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | **AGENTS.md** | Agent identity — role, approach, principles. Copied as-is (renamed per tool: `CLAUDE.md`, `GEMINI.md`, `.junie/AGENTS.md`, `00-context.md`).                                                                                                                                                                                                                      | All                                                         |
 | **rules/**    | Always-on constraints by default. Add `paths:` frontmatter (a list of globs) to scope a domain rule so it loads only when matching files are touched — translated to each tool's native trigger (Claude keeps `paths:`, Cursor `globs`+`alwaysApply:false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`). One file per topic; keep the always-on set lean so individual rules aren't diluted. | All                                                         |
-| **skills/**   | On-demand recipes in the open [agentskills.io](https://agentskills.io) format. Each skill = directory with `SKILL.md` + optional `references/`, `scripts/`, `assets/`. Description is the trigger (keyword-first, pushy about phrasings, narrow about the domain, ≤1024 chars). `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All                                                         |
+| **skills/**   | On-demand recipes in the open [agentskills.io](https://agentskills.io) format. Each skill = directory with `SKILL.md` + optional `references/`, `scripts/`, `assets/`. Description is the trigger (keyword-first, pushy about phrasings, narrow about the domain, ≤1024 chars). `Gotchas` section prevents repeated mistakes. Inlined as index for tools without native skills support. | All except MiniMax Code; its project skill path is unverified |
 | **commands/** | Custom slash commands. `review.md` → `/project:review`. Support `$ARGUMENTS` and `` !`shell` `` syntax. Auto-converted to TOML for Gemini. For tools without a native commands surface, AgentSync converts commands to generated skills or an inlined index. | Claude, Cursor, Copilot (`.prompt.md`), Gemini (TOML), Junie, Cline, Windsurf, Antigravity, OpenCode; Codex and Kimi Code (as skills); Amazon Q, Zed (inlined) |
 | **agents/**   | Subagent personas. Isolated context, restricted tools. Frontmatter: `model`, `tools`, `readonly`. Converted when the target needs a different schema. | Claude, Cursor, Copilot (`.agent.md`), Gemini, Junie, Codex (TOML), Amazon Q (JSON), OpenCode (safe MD) |
 | **settings/** | Permissions & config. Per-tool files (`claude.json`, `gemini.json`, `codex.toml`, `opencode.json`, `zed.json`). Controls allow/deny rules. Claude hooks also go here. | Claude, Gemini, Codex, OpenCode, Zed |
-| **mcp.json**  | Shared canonical `mcpServers` map. Copied to compatible targets and converted into OpenCode's top-level `mcp` map. | Claude, Cursor, Windsurf, Junie, Amazon Q, Kimi Code, OpenCode |
+| **mcp.json**  | Shared canonical `mcpServers` map. Copied to compatible targets and converted into OpenCode's top-level `mcp` map. | Claude, Cursor, Windsurf, Junie, Amazon Q, Kimi Code, MiniMax Code, OpenCode |
 | **hooks/**    | Event hooks and native project plugins. Per-tool overrides can be JSON or TypeScript. | Cursor, Copilot, Codex, Windsurf, OpenCode |
 | **tools/**    | YAML configs — define where and how files are synced per tool.                                                                                                                                                                                                                                                                                | —                                                           |
 
@@ -274,6 +274,7 @@ agentsync <command> [options]
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
 | `skills list\|show\|check` |     | Inspect effective project skills and check their `SKILL.md` metadata (`--profile <name>`)     |
+| `mcp list\|show\|validate\|render\|use` |     | Inspect a selected offline MCP catalog or prepare a per-tool source without running servers     |
 | `update`                 |       | Replace the binary with the latest release, or `update <version>` to pin a release tag         |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
@@ -296,6 +297,10 @@ metadata:
 `skills show` labels these entries as **unverified annotations**; it does not probe tools, authorize actions, or select a skill automatically. The built-in check covers the required fields and common scalar forms. Use the [reference validator](https://agentskills.io/specification#validation) (`skills-ref validate <skill-dir>`) for full format validation. [OASF](https://github.com/agntcy/oasf) provides a separate capability taxonomy; AgentSync does not infer OASF mappings from a skill description.
 
 For skills outside this project's effective source tree, `agentsync skills catalog list/show --catalog FILE` reads an explicitly selected, manually curated catalog. Optional `--source ALIAS=LOCAL_REPO` inspects metadata from a full pinned commit in a local Git repository. It does not fetch, install, execute, or verify the curator's suitability claims. See the [experimental catalog contract](docs/skill-cards.md) and [pinned example](docs/examples/skill-cards/pilot/catalog.tsv).
+
+### Inspecting an MCP catalog
+
+`agentsync mcp list/show/validate/render --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, `validate` checks one entry or the whole catalog, and `render <id>[@variant]` prints the selected connection as AgentSync MCP source JSON. `mcp use <id>[@variant] --tool SLUG` previews a per-tool source; `--apply` writes it, and `--merge --apply` extends an existing per-tool JSON source with one server. Replacing an ID requires `--replace <id>`. These commands do not start a server or probe an endpoint, and `use` does not run `sync` for you. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting. The opt-in [pilot catalog](catalog/mcp/README.md) includes Microsoft Learn, Context7, and Octocode with their requirements and source references.
 
 ### Sync options
 
@@ -431,7 +436,7 @@ always skips it.
 | `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs (Cursor, Copilot, Windsurf, Antigravity) |
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
-| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, OpenCode)       |
+| `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode) |
 | `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Cline, Amazon Q, Zed)                            |
 | `as_skills` (commands)          | Emit each command as a generated skill at `<skills.dest>/command-<name>/SKILL.md` (Codex, Kimi Code)                  |
 | `inline_into_agents` (commands) | Append a `## Commands` index (`` `/<name>` — description ``) into AGENTS file (Amazon Q, Zed)                          |
@@ -443,6 +448,8 @@ always skips it.
 | `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
 | `guard` (target)                | Copy the tool's write-guard script to `dest` and mark it executable; override the base at `.ai/src/tools/<tool>/guard.sh` and register it from the tool's settings (Claude) |
 | `profile_scoped: false`         | On any target: `agentsync profile add` keeps the base `dest` instead of rewriting it into the profile's config home     |
+| `profile_supported: false`      | Refuse config-home profiles for a client that reads only project-root files                                             |
+| `adoptable: false` (agents)     | Refuse `adopt` when the generated agents file cannot safely round-trip into its source                                 |
 
 [`lib/templates/tools/_TEMPLATE.yaml`](lib/templates/tools/_TEMPLATE.yaml)
 documents every option, including the ones this table leaves out.
@@ -457,6 +464,7 @@ documents every option, including the ones this table leaves out.
 | **Gemini CLI**         | `gemini.yaml`      | GEMINI.md (+inlined rules), skills, commands (MD→TOML), agents, settings.json                              |
 | **OpenAI Codex**       | `codex.yaml`       | AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), subagents (MD→TOML), hooks.json, config.toml |
 | **Kimi Code**          | `kimi.yaml`        | .kimi-code/AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), mcp.json                         |
+| **MiniMax Code**       | `minimax.yaml`     | AGENTS.md (+inlined rule references), project .mcp.json                                                          |
 | **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
 | **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
@@ -475,7 +483,7 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.instructions.md` + `applyTo` header            | Copilot                     |
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                    |
 | Rules `.md`    | Single merged file                               | Zed                         |
-| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini, Junie, Kimi Code, OpenCode |
+| Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode |
 | Skills dirs    | Inline index (name + description) in AGENTS.md   | Cline, Amazon Q, Zed        |
 | AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q             |
 | AGENTS.md      | Prepended before merged rules                    | Zed                         |
@@ -491,7 +499,7 @@ You write everything in Markdown. AgentSync handles the rest.
 
 ## Models and Providers Are Not Tools
 
-AgentSync targets coding tools and their filesystem formats, not model vendors. Kimi and GLM models used through Claude Code, Cline, or OpenCode continue to use that tool's target; there is deliberately no `glm.yaml` or `zai.yaml`.
+AgentSync targets coding tools and their filesystem formats, not model vendors. Kimi and GLM models used through Claude Code, Cline, or OpenCode continue to use that tool's target; there is deliberately no `glm.yaml` or `zai.yaml`. MiniMax Code has a standalone CLI with its own project files; a MiniMax model used through another client still uses that client's target.
 
 - **Kimi model in another tool:** configure the provider with [Kimi's official third-party-agent setup](https://www.kimi.com/code/docs/en/third-party-tools/other-coding-agents), then keep syncing the existing Claude/Cline/OpenCode target. Use the `kimi` target only for the standalone Kimi Code CLI.
 - **GLM Coding Plan:** authenticate Z.AI using its official [Claude Code](https://docs.z.ai/devpack/tool/claude) or [OpenCode](https://docs.z.ai/devpack/tool/opencode) flow. Keep API keys in the provider's credential store or environment, never in `.ai/src/`.
@@ -667,9 +675,12 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 
 **Why it matters:**
 
-- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 13 tools you don't use.
+- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
 - **Updates flow through.** Because the base ships with the engine, `agentsync update` improves every project that hasn't locked the file in as an override.
 - **Shared MCP is converted where schemas differ.** One `.ai/src/mcp.json` reaches every enabled MCP target. OpenCode's adapter validates local and remote transports, then atomically composes the result into `opencode.json`.
+- **MiniMax Code MCP uses the project `.mcp.json`.** Claude Code shares that destination. When their effective MCP sources differ, sync stops before writing either version. MiniMax may start a configured server during tool discovery or use, so review an MCP source before syncing it.
+- **Shared `AGENTS.md` needs one source of truth.** If enabled tools read different agents content for the same destination, sync stops before either output is written.
+- **MiniMax Code has no config-home profile.** It reads files from the primary project workspace, so `profile add` and `sync` refuse MiniMax profile variants instead of creating files the client would not load.
 - **Opt in per tool.** Need to edit Cursor's hooks? `agentsync customize cursor hooks` copies the current base into `.ai/src/tools/cursor/hooks.json`. Delete the file later to resume inheriting.
 - **Safe hooks.** `customize <tool> hooks` prints the base content first and requires `--yes` in non-interactive mode — you never scaffold executable intent silently.
 - **`simplify` prunes noise.** Scaffolded payloads that are still byte-identical to base are flagged by `agentsync simplify` and removed with `--apply`, so you don't accidentally pin yesterday's defaults forever.
@@ -964,7 +975,7 @@ Resolves the destination back to its source file (`.ai/src/rules/core.md`), copi
 
 - Rules that get a frontmatter header (`cursor`, `copilot`, `windsurf`, `antigravity`) — adopting would push that tool's header into every other tool's rules.
 - Rules merged into a single file (`zed`) — many sources collapsed into one dest can't be split back apart.
-- Rules or skills inlined into AGENTS.md (rules: `codex`, `gemini`, `junie`, `kimi`, `opencode`; skills: `amazonq`, `cline`, `zed`).
+- Rules or skills inlined into AGENTS.md (rules: `codex`, `gemini`, `junie`, `kimi`, `minimax`, `opencode`; skills: `amazonq`, `cline`, `zed`).
 - Format-converted output (`codex` subagents → TOML, `amazonq` subagents → JSON, `opencode` subagents → OpenCode Markdown).
 
 For these, edit `.ai/src/` directly. AgentSync names the offending file when it refuses.

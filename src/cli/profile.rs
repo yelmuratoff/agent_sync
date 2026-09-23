@@ -233,6 +233,17 @@ fn add(
         )?;
         return Ok(1);
     }
+    for base in &base_tools {
+        if Tool::load(&project, base)?.flag("profile_supported") == Some(false) {
+            return usage_error(
+                style,
+                err,
+                &format!(
+                    "{base} reads project-root files and does not support config-home profiles."
+                ),
+            );
+        }
+    }
 
     let overlay_rel = format!(".ai/profiles/{name}");
     let overlay_root = project.root.join(&overlay_rel);

@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "id": "octocode",
+  "title": "Octocode",
+  "description": "Local stdio code-research server; running it requires Node.js and may download an npm package.",
+  "provenance": {
+    "homepage": "https://octocode.ai",
+    "repository": "https://github.com/bgauryy/octocode",
+    "artifact": "https://www.npmjs.com/package/octocode-mcp/v/19.1.0"
+  },
+  "connection": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "octocode-mcp@19.1.0"]
+  },
+  "requirements": {
+    "binaries": ["node", "npx"],
+    "inputs": []
+  },
+  "guidance": {
+    "recommended": "default",
+    "authority": "maintainer",
+    "source": "https://github.com/bgauryy/octocode/blob/main/README.md",
+    "checked_at": "2026-09-23",
+    "reason": "Octocode documents npx with octocode-mcp; this catalog pins a verified npm version instead of following latest."
+  }
+}

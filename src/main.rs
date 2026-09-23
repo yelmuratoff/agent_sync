@@ -55,6 +55,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
                 &mut std::io::stderr(),
             )
         }
+        Command::Mcp => cli::mcp::run(rest, &style, &mut std::io::stdout(), &mut std::io::stderr()),
         Command::Catalog => {
             let mut out = std::io::stdout().lock();
             out.write_all(cli::update::catalog_dump().as_bytes())

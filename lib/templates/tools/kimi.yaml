@@ -17,3 +17,4 @@ targets:
   mcp:
     source: ".ai/src/mcp/kimi.json"
     dest: ".kimi-code/mcp.json"
+    format: kimi_json

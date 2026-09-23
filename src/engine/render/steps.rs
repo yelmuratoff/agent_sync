@@ -5,7 +5,7 @@ use super::{Run, Step, Stop, io};
 use crate::config::tool::Tool;
 use crate::engine::rules::{self, Conversion, RuleOptions};
 use crate::engine::session::Session;
-use crate::{config::payload, engine::file_ops, engine::opencode_json, paths};
+use crate::{config::payload, engine::codex_toml, engine::file_ops, engine::opencode_json, paths};
 
 pub(super) fn sync_rules_step(
     s: &mut Session,
@@ -370,7 +370,18 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
     }
     .filter(|path| s.ws.is_file(path));
 
-    if tool.value("targets.mcp.format") == "opencode_json" {
+    if tool.value("targets.mcp.format") == "codex_toml" {
+        if let Some(mcp) = &src_mcp {
+            if !dests.settings.is_empty() && dests.settings != dests.mcp {
+                s.log
+                    .error("Codex settings and MCP destinations must match");
+                return Err(Stop(1));
+            }
+            compose_codex(s, src_settings.as_deref(), mcp, &dests.mcp)?;
+        } else if let Some(settings) = &src_settings {
+            file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
+        }
+    } else if tool.value("targets.mcp.format") == "opencode_json" {
         if let Some(settings) = &src_settings {
             if let Some(mcp) = &src_mcp {
                 let label = payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp");
@@ -400,6 +411,39 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
             }
         }
     }
+    Ok(())
+}
+
+fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str) -> Step {
+    let settings_bytes = match settings {
+        Some(path) => s.ws.read(path).map_err(|e| io(s, e))?,
+        None => Vec::new(),
+    };
+    let settings_text = String::from_utf8(settings_bytes).map_err(|_| {
+        s.log
+            .error("Cannot compose Codex config: settings are not UTF-8");
+        Stop(1)
+    })?;
+    let mcp_bytes = s.ws.read(mcp).map_err(|e| io(s, e))?;
+    let composed = codex_toml::compose(&settings_text, &mcp_bytes).map_err(|reason| {
+        s.log
+            .error(&format!("Cannot compose Codex config: {reason}"));
+        Stop(1)
+    })?;
+    if s.dry_run {
+        s.log.step(&format!(
+            "Would compose Codex settings and MCP → {} (dry-run)",
+            s.display(dest)
+        ));
+        return Ok(());
+    }
+    s.ws.create_dir_all(&paths::parent(dest))
+        .map_err(|e| io(s, e))?;
+    s.ws.replace_atomically(dest, composed.into_bytes())
+        .map_err(|e| io(s, e))?;
+    s.record_write(dest);
+    s.log
+        .step(&format!("Codex settings and MCP → {}", s.display(dest)));
     Ok(())
 }
 
