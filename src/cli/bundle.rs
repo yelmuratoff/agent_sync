@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use super::customize::put;
+use super::{files_below, put};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::{Error, config::yaml_subset};
@@ -95,24 +95,6 @@ fn resolve_sources(root: &str) -> Sources {
         }
     }
     sources
-}
-
-/// `find <dir> -type f`, recursively; symlinks are not followed.
-fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if meta.is_dir() {
-            files_below(&path, found);
-        } else if meta.is_file() {
-            found.push(path);
-        }
-    }
 }
 
 fn count_files(dir: &Path) -> usize {

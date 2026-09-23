@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::mcp_merge;
+use super::{mcp_merge, put};
 use crate::Error;
 use crate::config::{mcp_catalog, payload, tool::Tool, yaml_subset};
 use crate::engine::staging;
@@ -628,8 +628,4 @@ fn refuse(style: &Style, message: &str, err: &mut dyn Write) -> Result<u8, Error
         format!("{}: {message}\n", style.red("Error")).as_bytes(),
     )?;
     Ok(1)
-}
-
-fn put(out: &mut dyn Write, text: &[u8]) -> Result<(), Error> {
-    out.write_all(text).map_err(|e| Error::io("<output>", e))
 }

@@ -8,9 +8,9 @@ mod secrets;
 mod tool_checks;
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::customize::put;
+use super::put;
 use crate::config::payload::{self, Source};
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};
@@ -175,38 +175,6 @@ impl Doctor<'_> {
 
     fn source_shown(&self, source: &Source) -> String {
         self.rel(&source.shown())
-    }
-}
-
-/// Directory entries in byte order, as `LC_ALL=C` globs list them.
-fn sorted_entries(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.file_name().disk_text())
-        .filter(|name| !name.starts_with('.'))
-        .collect();
-    names.sort();
-    names.into_iter().map(|name| dir.join(name)).collect()
-}
-
-/// `find <dir> -type f`.
-fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let path = entry.path();
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if meta.is_dir() {
-            files_below(&path, found);
-        } else if meta.is_file() {
-            found.push(path);
-        }
     }
 }
 

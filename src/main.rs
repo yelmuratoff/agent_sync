@@ -44,7 +44,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
     match command {
         Command::Version => print_version(),
         Command::Skills => {
-            let root = notice_root()?;
+            let root = repo_root()?;
             let env = sync_env();
             cli::skills::run(
                 rest,
@@ -76,7 +76,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
                 .unwrap_or(0);
             let mut env = cli::update::Env {
                 exe,
-                project_dir: notice_root()?,
+                project_dir: repo_root()?,
                 today: agentsync::config::snapshot::utc_date(now),
                 width: cli::update::terminal_width(),
                 fetch: &mut cli::update::curl_fetch,
@@ -92,8 +92,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Dedupe => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let cwd = paths::logical_root(None, &cwd, var("PWD").as_deref());
+            let cwd = logical_cwd()?;
             cli::dedupe::dedupe(
                 rest,
                 &cwd,
@@ -106,14 +105,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Migrate => {
-            let prompt_root = match path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty())
-            {
-                Some(root) => root,
-                None => {
-                    let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-                    paths::logical_root(None, &cwd, var("PWD").as_deref())
-                }
-            };
+            let prompt_root = supplied_root()?;
             let path_var = var("PATH");
             let mut env = cli::migrate::Env {
                 version: engine_version(),
@@ -166,12 +158,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             &mut std::io::stderr(),
         ),
         Command::SetupHooks => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
-            let root = match env_root {
-                Some(root) => root,
-                None => paths::logical_root(None, &cwd, var("PWD").as_deref()),
-            };
+            let root = supplied_root()?;
             cli::setup_hooks::setup_hooks(
                 rest,
                 &root,
@@ -181,7 +168,6 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Release => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
             let mut read_line = || {
                 let mut line = String::new();
                 match std::io::stdin().read_line(&mut line) {
@@ -190,7 +176,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
                 }
             };
             let mut env = cli::release::Env {
-                cwd: paths::logical_root(None, &cwd, var("PWD").as_deref()),
+                cwd: logical_cwd()?,
                 install_dir: var("AGENTSYNC_HOME")
                     .filter(|home| Path::new(home).join(".git").is_dir()),
                 read_line: &mut read_line,
@@ -204,9 +190,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Export => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
-            let root = paths::logical_root(env_root.as_deref(), &cwd, var("PWD").as_deref());
+            let root = repo_root()?;
             cli::bundle::export(
                 rest,
                 &root,
@@ -216,17 +200,14 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Import => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let logical_cwd = paths::logical_root(None, &cwd, var("PWD").as_deref());
-            let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
-            let root = paths::logical_root(env_root.as_deref(), &cwd, var("PWD").as_deref());
+            let root = repo_root()?;
             let mut read_line = || {
                 let mut line = String::new();
                 let _ = std::io::stdin().read_line(&mut line);
                 line.trim_end_matches(['\n', '\r']).to_string()
             };
             let mut env = cli::bundle::Env {
-                cwd: logical_cwd,
+                cwd: logical_cwd()?,
                 interactive: std::io::stdin().is_terminal(),
                 path: var("PATH"),
                 read_line: &mut read_line,
@@ -241,9 +222,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Add => {
-            let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let root = paths::logical_root(env_root.as_deref(), &cwd, var("PWD").as_deref());
+            let root = repo_root()?;
             cli::add::add(
                 rest,
                 &root,
@@ -267,8 +246,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Init => {
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let cwd = paths::logical_root(None, &cwd, var("PWD").as_deref());
+            let cwd = logical_cwd()?;
             let sync_env = sync_env();
             let colors = log_colors();
             let mut sync = |root: &str| cli::sync::run(root, &[], &sync_env, colors, streams());
@@ -297,13 +275,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             )
         }
         Command::Refresh => {
-            let root = match path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty()) {
-                Some(root) => root,
-                None => {
-                    let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-                    paths::logical_root(None, &cwd, var("PWD").as_deref())
-                }
-            };
+            let root = supplied_root()?;
             let mut env = cli::refresh::Env {
                 interactive: prompts::is_tty(),
                 read_line: &mut prompts::read_terminal,
@@ -440,8 +412,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
                 .filter(|a| *a != "--workspace")
                 .cloned()
                 .collect();
-            let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-            let cwd = paths::logical_root(None, &cwd, var("PWD").as_deref());
+            let cwd = logical_cwd()?;
             Ok(cli::workspace::run(
                 &cwd,
                 &forwarded,
@@ -462,14 +433,7 @@ fn run(args: Vec<OsString>) -> Result<u8, Error> {
             ))
         }
         Command::Rollback => {
-            let supplied_root =
-                match path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty()) {
-                    Some(root) => root,
-                    None => {
-                        let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-                        paths::logical_root(None, &cwd, var("PWD").as_deref())
-                    }
-                };
+            let supplied_root = supplied_root()?;
             let env = cli::rollback::Env {
                 config_path: path_var("AGENTSYNC_CONFIG_PATH"),
                 backup_limit: var("AGENTSYNC_BACKUP_LIMIT"),
@@ -587,16 +551,10 @@ fn streams() -> Sink {
 /// `REPO_ROOT` as `lib/check.sh` derives it: `AGENTSYNC_REPO_ROOT`, else the
 /// working directory, spelled logically.
 fn project_root() -> Result<String, Error> {
-    let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
-    let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
-    let root = paths::logical_root(
-        env_root.as_deref(),
-        &cwd,
-        std::env::var("PWD").ok().as_deref(),
-    );
-    if !std::path::Path::new(&root).is_dir() {
+    let root = repo_root()?;
+    if !Path::new(&root).is_dir() {
         return Err(Error::ProjectRootNotFound(PathBuf::from(
-            env_root.unwrap_or(root),
+            repo_root_var().unwrap_or(root),
         )));
     }
     Ok(root)
@@ -607,15 +565,31 @@ fn current_exe() -> std::io::Result<PathBuf> {
     std::env::current_exe()?.canonicalize()
 }
 
+fn repo_root_var() -> Option<String> {
+    path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty())
+}
+
+fn logical_cwd() -> Result<String, Error> {
+    let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
+    Ok(paths::logical_root(None, &cwd, var("PWD").as_deref()))
+}
+
 /// `${AGENTSYNC_REPO_ROOT:-$PWD}`, spelled logically.
-fn notice_root() -> Result<String, Error> {
-    let env_root = path_var("AGENTSYNC_REPO_ROOT").filter(|root| !root.is_empty());
+fn repo_root() -> Result<String, Error> {
     let cwd = std::env::current_dir().map_err(|e| Error::io(".", e))?;
     Ok(paths::logical_root(
-        env_root.as_deref(),
+        repo_root_var().as_deref(),
         &cwd,
         var("PWD").as_deref(),
     ))
+}
+
+/// `AGENTSYNC_REPO_ROOT` as given, else the logical working directory.
+fn supplied_root() -> Result<String, Error> {
+    match repo_root_var() {
+        Some(root) => Ok(root),
+        None => logical_cwd(),
+    }
 }
 
 /// `check_for_updates`: on a terminal, unless `AGENTSYNC_NO_UPDATE_CHECK` is
@@ -629,7 +603,7 @@ fn check_for_updates() -> Result<(), Error> {
         return Ok(());
     }
     let style = Style::for_stdout();
-    let root = notice_root()?;
+    let root = repo_root()?;
     let mut out = std::io::stdout().lock();
     out.write_all(cli::notice::format_notice(Path::new(&root), &style).as_bytes())
         .map_err(|e| Error::io("<stdout>", e))?;

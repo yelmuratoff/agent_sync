@@ -2,9 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use super::Doctor;
 use super::json::json_valid;
 use super::secrets::scan_secrets;
-use super::{Doctor, files_below, sorted_entries};
+use crate::cli::{files_below, sorted_entries};
 use crate::paths::{self, DiskText};
 use crate::transaction::manifest::{self, Manifest};
 use crate::{

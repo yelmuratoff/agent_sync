@@ -3,7 +3,8 @@
 use crate::paths::DiskText;
 use std::io::Write;
 
-use super::customize::{VALID_RESOURCES, put, unknown_resource};
+use super::customize::{VALID_RESOURCES, unknown_resource};
+use super::put;
 use crate::config::payload::{self, Source};
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};

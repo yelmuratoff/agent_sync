@@ -111,6 +111,21 @@ fn rollback_list_shows_complete_init_and_sync_backups() {
 }
 
 #[test]
+fn rollback_reads_the_project_named_by_agentsync_repo_root() {
+    let project = project_with_claude();
+    std::fs::create_dir_all(project.join("sub")).unwrap();
+
+    project
+        .agentsync()
+        .current_dir(project.join("sub"))
+        .env("AGENTSYNC_REPO_ROOT", project.path())
+        .args(["rollback", "--list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\tinit\t"));
+}
+
+#[test]
 fn rollback_requires_confirmation_outside_a_tty_unless_yes_is_passed() {
     let project = project_with_claude();
     project.write("CLAUDE.md", "before-sync\n");

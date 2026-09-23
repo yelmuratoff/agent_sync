@@ -3,8 +3,9 @@
 
 use std::io::Write;
 
-use super::customize::{put, relative};
+use super::customize::relative;
 use super::diff::KEYS;
+use super::put;
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;

@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use crate::Error;
+use crate::cli::put;
 use crate::config::{skill_cards, skill_source};
 use crate::engine::filters;
 use crate::output::help::{Help, Section};
@@ -92,7 +93,7 @@ pub fn run(
         Err(message) => return refuse(style, &message, err),
     };
     if matches!(parsed.action, Action::Help) {
-        put(out, &HELP.render(style))?;
+        put(out, HELP.render(style).as_bytes())?;
         return Ok(0);
     }
     let cards = match skill_cards::read(&parsed.catalog) {
@@ -112,7 +113,7 @@ pub fn run(
                     card.id, card.source, info.status, card.mapping
                 ));
             }
-            put(out, &rendered)?;
+            put(out, rendered.as_bytes())?;
             Ok(0)
         }
         Action::Show => {
@@ -138,7 +139,7 @@ pub fn run(
                 card.not_for,
                 card.requirements,
             );
-            put(out, &rendered)?;
+            put(out, rendered.as_bytes())?;
             Ok(0)
         }
         Action::Help => unreachable!(),
@@ -281,13 +282,11 @@ fn slug(value: &str) -> bool {
 }
 
 fn refuse(style: &Style, message: &str, err: &mut dyn Write) -> Result<u8, Error> {
-    put(err, &format!("{}: {message}\n", style.red("Error")))?;
+    put(
+        err,
+        format!("{}: {message}\n", style.red("Error")).as_bytes(),
+    )?;
     Ok(1)
-}
-
-fn put(out: &mut dyn Write, text: &str) -> Result<(), Error> {
-    out.write_all(text.as_bytes())
-        .map_err(|err| Error::io("<output>", err))
 }
 
 #[cfg(test)]

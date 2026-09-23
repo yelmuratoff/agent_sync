@@ -5,7 +5,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use super::customize::put;
+use super::put;
 use crate::config::project_config::{self, Selection};
 use crate::output::prompts::Cancelled;
 use crate::output::style::Style;
@@ -472,8 +472,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::path::PathBuf;
 
-    use super::discover::files_below;
     use super::*;
+    use crate::cli::files_below;
     use crate::config::template_manifest::REL;
     use crate::paths::DiskText;
 

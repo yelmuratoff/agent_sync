@@ -10,7 +10,7 @@ mod session;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::customize::put;
+use super::put;
 use crate::config::template_manifest::TemplateManifest;
 use crate::output::style::Style;
 use crate::{Error, config::catalog};

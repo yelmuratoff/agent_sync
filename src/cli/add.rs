@@ -5,7 +5,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::customize::put;
+use super::put;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::{Error, config::catalog, engine::staging};

@@ -32,10 +32,49 @@ pub mod workspace;
 
 use crate::paths::DiskText;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use crate::Error;
 use crate::output::style::Style;
 use crate::project::Project;
+
+pub(crate) fn put(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), Error> {
+    writer
+        .write_all(bytes)
+        .map_err(|e| Error::io("<output>", e))
+}
+
+/// `find <dir> -type f`, recursively; symlinks are not followed.
+pub(crate) fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.is_dir() {
+            files_below(&path, found);
+        } else if meta.is_file() {
+            found.push(path);
+        }
+    }
+}
+
+/// Non-hidden entries of a directory in byte order, as `printf '%s\0' dir/* | LC_ALL=C sort -z`.
+pub(crate) fn sorted_entries(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().disk_text())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort();
+    names.into_iter().map(|name| dir.join(name)).collect()
+}
 
 /// `tool_resolver_require_project_user_dir`: prints why and returns status 1.
 pub(crate) fn refuse_outside_tools_dir(
@@ -139,7 +178,49 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
-    use super::Command;
+    use super::{Command, files_below, sorted_entries};
+
+    #[test]
+    fn sorted_entries_skips_hidden_names_and_sorts_bytewise() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["b", "Z", "a", ".hidden"] {
+            std::fs::write(dir.path().join(name), "").unwrap();
+        }
+        std::fs::create_dir(dir.path().join("c")).unwrap();
+        let names: Vec<String> = sorted_entries(dir.path())
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["Z", "a", "b", "c"]);
+        assert!(sorted_entries(&dir.path().join("missing")).is_empty());
+    }
+
+    #[test]
+    fn files_below_lists_nested_files_but_not_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("x/y")).unwrap();
+        std::fs::write(dir.path().join("top"), "").unwrap();
+        std::fs::write(dir.path().join("x/y/deep"), "").unwrap();
+        let mut found = Vec::new();
+        files_below(dir.path(), &mut found);
+        found.sort();
+        assert_eq!(found, [dir.path().join("top"), dir.path().join("x/y/deep")]);
+    }
+
+    // Windows creates symlinks only with developer mode or administrator rights.
+    #[cfg(unix)]
+    #[test]
+    fn files_below_does_not_follow_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret"), "").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("dir-link")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), dir.path().join("file-link"))
+            .unwrap();
+        let mut found = Vec::new();
+        files_below(dir.path(), &mut found);
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     #[test]
     fn aliases_name_the_same_command() {

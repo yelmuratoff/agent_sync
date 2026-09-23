@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
-use super::customize::put;
+use super::put;
 use crate::Error;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;

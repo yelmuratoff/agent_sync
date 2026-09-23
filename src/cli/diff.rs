@@ -5,7 +5,8 @@ use crate::paths::DiskText;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use super::customize::{VALID_RESOURCES, put, unknown_resource};
+use super::customize::{VALID_RESOURCES, unknown_resource};
+use super::put;
 use super::show::{base_tool_shown, read_text};
 use crate::config::payload;
 use crate::config::tool::Tool;

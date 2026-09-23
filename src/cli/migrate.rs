@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use super::customize::put;
+use super::{files_below, put, sorted_entries};
 use crate::config::template_manifest::{self, TemplateManifest};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
@@ -282,20 +282,6 @@ impl Run<'_, '_> {
     }
 }
 
-/// Non-hidden entries of a directory in byte order, as `printf '%s\0' dir/* | LC_ALL=C sort -z`.
-fn sorted_entries(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.file_name().disk_text())
-        .filter(|name| !name.starts_with('.'))
-        .collect();
-    names.sort();
-    names.into_iter().map(|name| dir.join(name)).collect()
-}
-
 /// `_migrate_scan_legacy`.
 fn scan_legacy(root: &Path) -> Vec<Legacy> {
     let mut found = Vec::new();
@@ -348,24 +334,6 @@ fn consolidation_candidate(root: &Path) -> Option<PathBuf> {
         .iter()
         .all(|other| std::fs::read(other).is_ok_and(|b| b == bytes))
         .then_some(first)
-}
-
-/// `find <dir> -type f`.
-fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let path = entry.path();
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if meta.is_dir() {
-            files_below(&path, found);
-        } else if meta.is_file() {
-            found.push(path);
-        }
-    }
 }
 
 /// `_migrate_scan_base_skills`: each engine-owned skill the project copies, and

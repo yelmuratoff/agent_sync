@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use super::{Doctor, sorted_entries};
+use super::Doctor;
+use crate::cli::sorted_entries;
 use crate::config::payload;
 use crate::config::tool::Tool;
 use crate::paths::{self, DiskText};

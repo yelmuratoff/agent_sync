@@ -4,7 +4,7 @@
 
 use std::io::Write;
 
-use super::customize::put;
+use super::put;
 use crate::Error;
 use crate::output::help::{Help, Section};
 use crate::output::log::Log;

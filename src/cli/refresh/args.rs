@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::Error;
-use crate::cli::customize::put;
+use crate::cli::put;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 

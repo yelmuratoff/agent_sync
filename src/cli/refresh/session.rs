@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use super::Env;
 use super::classify::{Candidate, Changes};
 use crate::Error;
-use crate::cli::customize::put;
+use crate::cli::put;
 use crate::config::template_manifest::TemplateManifest;
 use crate::output::style::Style;
 

@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::bundle::Scratch;
-use super::customize::put;
 use super::notice::{CACHE_FILE, REPO};
+use super::put;
 use crate::config::snapshot::{self, Conflict};
 use crate::output::changelog;
 use crate::output::help::{Help, Section};

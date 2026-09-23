@@ -1,10 +1,11 @@
 //! What the project already has: tool markers, existing destinations, and the paths init backs up.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::Run;
 use crate::Error;
+use crate::cli::files_below;
 use crate::config::tool::Tool;
 use crate::engine::render::TARGET_KEYS;
 use crate::output::log::Log;
@@ -102,24 +103,6 @@ pub(super) fn existing_dest_files(
         }
     }
     Ok(found.into_iter().collect())
-}
-
-/// `find <dir> -type f`.
-pub(super) fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let path = entry.path();
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if meta.is_dir() {
-            files_below(&path, found);
-        } else if meta.is_file() {
-            found.push(path);
-        }
-    }
 }
 
 /// `_init_collect_backup_targets`; a destination that cannot be resolved is

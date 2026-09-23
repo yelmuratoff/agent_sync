@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use super::customize::put;
+use super::put;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::{

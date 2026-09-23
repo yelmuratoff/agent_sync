@@ -5,7 +5,8 @@ use crate::paths::DiskText;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::customize::{put, relative};
+use super::customize::relative;
+use super::put;
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;

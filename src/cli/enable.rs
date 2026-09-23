@@ -5,6 +5,7 @@ use crate::paths::DiskText;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::put;
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
@@ -61,12 +62,6 @@ enum Scaffold {
     Auto,
     Always,
     Never,
-}
-
-fn put(writer: &mut dyn Write, text: &str) -> Result<(), Error> {
-    writer
-        .write_all(text.as_bytes())
-        .map_err(|e| Error::io("<output>", e))
 }
 
 /// `_enable_resolve_or_create_config`.
@@ -133,18 +128,19 @@ pub fn enable(
             "--no-scaffold" => scaffold = Scaffold::Never,
             "--yes" | "-y" => yes = true,
             "--help" | "-h" => {
-                put(out, &ENABLE_HELP.render(style))?;
+                put(out, ENABLE_HELP.render(style).as_bytes())?;
                 return Ok(0);
             }
             "--" => tools.extend(rest.by_ref().cloned()),
             flag if flag.starts_with('-') => {
                 put(
                     err,
-                    &format!(
+                    format!(
                         "{}: Unknown flag: {flag}\nUsage: {}\n",
                         style.red("Error"),
                         ENABLE_HELP.synopsis_line()
-                    ),
+                    )
+                    .as_bytes(),
                 )?;
                 return Ok(1);
             }
@@ -154,12 +150,13 @@ pub fn enable(
     if tools.is_empty() {
         put(
             err,
-            &format!(
+            format!(
                 "{}: {}\n\nRun {} to see available tools.\n",
                 style.red("Error"),
                 ENABLE_HELP.synopsis_line(),
                 style.cyan("agentsync list")
-            ),
+            )
+            .as_bytes(),
         )?;
         return Ok(1);
     }
@@ -188,44 +185,51 @@ pub fn enable(
     if !added.is_empty() {
         put(
             out,
-            &format!(
+            format!(
                 "\n{}\n",
                 style.green(&format!("Enabled {} tool(s)", added.len()))
-            ),
+            )
+            .as_bytes(),
         )?;
         for slug in &added {
             let tool = Tool::load(&project, slug)?;
             put(
                 out,
-                &format!(
+                format!(
                     "    {} {} {}\n",
                     style.green("●"),
                     tool.display_name(),
                     style.dim(&format!("({slug})"))
-                ),
+                )
+                .as_bytes(),
             )?;
         }
     }
     if already > 0 {
         put(
             out,
-            &format!(
+            format!(
                 "\n{}\n",
                 style.dim(&format!("{already} tool(s) were already enabled"))
-            ),
+            )
+            .as_bytes(),
         )?;
     }
     if !unknown.is_empty() {
-        put(out, &format!("\n{}\n", style.yellow("Unknown tool(s):")))?;
+        put(
+            out,
+            format!("\n{}\n", style.yellow("Unknown tool(s):")).as_bytes(),
+        )?;
         for slug in &unknown {
-            put(out, &format!("    {slug}\n"))?;
+            put(out, format!("    {slug}\n").as_bytes())?;
         }
         put(
             out,
-            &format!(
+            format!(
                 "\nRun {} to see available tool slugs.\n",
                 style.cyan("agentsync list")
-            ),
+            )
+            .as_bytes(),
         )?;
     }
     let status = if unknown.is_empty() { 0 } else { 1 };
@@ -252,11 +256,11 @@ pub fn enable(
                 std::fs::write(path, bytes).map_err(|e| Error::io(path, e))?;
             }
         }
-        put(out, &edit_paths::block(&project, &tool, style))?;
+        put(out, edit_paths::block(&project, &tool, style).as_bytes())?;
     }
     put(
         out,
-        &format!("\nRun {} to apply.\n\n", style.cyan("agentsync sync")),
+        format!("\nRun {} to apply.\n\n", style.cyan("agentsync sync")).as_bytes(),
     )?;
     Ok(status)
 }
@@ -269,13 +273,13 @@ pub fn disable(
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        put(out, &DISABLE_HELP.render(style))?;
+        put(out, DISABLE_HELP.render(style).as_bytes())?;
         return Ok(0);
     }
     if args.is_empty() {
         put(
             err,
-            &format!("{}: {}\n", style.red("Error"), DISABLE_HELP.synopsis_line()),
+            format!("{}: {}\n", style.red("Error"), DISABLE_HELP.synopsis_line()).as_bytes(),
         )?;
         return Ok(1);
     }
@@ -303,38 +307,39 @@ pub fn disable(
         removed += 1;
     }
 
-    put(out, "\n")?;
+    put(out, b"\n")?;
     if removed > 0 {
         put(
             out,
-            &format!("{}\n", style.yellow(&format!("Disabled {removed} tool(s)"))),
+            format!("{}\n", style.yellow(&format!("Disabled {removed} tool(s)"))).as_bytes(),
         )?;
         let enabled = project.enabled_tools()?;
         for slug in args {
             if !enabled.contains(slug) {
                 put(
                     out,
-                    &format!(
+                    format!(
                         "    {} {} {}\n",
                         style.dim("○"),
                         Tool::load(&project, slug)?.display_name(),
                         style.dim(&format!("({slug})"))
-                    ),
+                    )
+                    .as_bytes(),
                 )?;
             }
         }
         put(
             out,
-            &format!("\nRun {} to apply cleanup.\n", style.cyan("agentsync sync")),
+            format!("\nRun {} to apply cleanup.\n", style.cyan("agentsync sync")).as_bytes(),
         )?;
     }
     if not_enabled > 0 && removed == 0 {
         put(
             out,
-            &format!("{}\n", style.dim("No matching tools were enabled.")),
+            format!("{}\n", style.dim("No matching tools were enabled.")).as_bytes(),
         )?;
     }
-    put(out, "\n")?;
+    put(out, b"\n")?;
     Ok(0)
 }
 #[cfg(all(test, unix))]

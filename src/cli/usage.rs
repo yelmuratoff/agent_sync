@@ -4,7 +4,7 @@
 
 use std::io::Write;
 
-use super::customize::put;
+use super::put;
 use crate::output::style::Style;
 use crate::{Error, engine_version};
 

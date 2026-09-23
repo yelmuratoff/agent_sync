@@ -5,6 +5,7 @@ use crate::paths::DiskText;
 use std::io::Write;
 use std::path::Path;
 
+use super::put;
 use crate::config::payload;
 use crate::config::tool::Tool;
 use crate::output::help::{Help, Section};
@@ -60,12 +61,6 @@ pub const HELP: Help = Help {
         "customize claude hooks --yes",
     ],
 };
-
-pub(crate) fn put(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), Error> {
-    writer
-        .write_all(bytes)
-        .map_err(|e| Error::io("<output>", e))
-}
 
 /// `_validate_resource`, printed; the caller returns the status.
 pub(crate) fn unknown_resource(
