@@ -1,4 +1,4 @@
-//! Read-only inspection of an explicitly selected MCP catalog.
+//! Read-only commands for an explicitly selected MCP catalog.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,10 +17,11 @@ pub const HELP: Help = Help {
         "mcp list --library <directory>",
         "mcp show <id> --library <directory>",
         "mcp validate [id] --library <directory>",
+        "mcp render <id>[@variant] --library <directory>",
     ],
     description: &[
         "Reads bounded JSON manifests from an explicit library or the configured\nlibrary.mcp.path. It never starts servers, contacts endpoints, or changes\nproject or client configuration.",
-        "list prints ID and title. show prints the original manifest bytes.\nvalidate checks one entry or the complete library, including all variants.",
+        "list prints ID and title. show prints the original manifest bytes.\nvalidate checks one entry or the complete library, including all variants.\nrender prints one selected connection as AgentSync MCP source JSON.",
     ],
     sections: &[Section {
         title: "OPTIONS",
@@ -36,6 +37,7 @@ pub const HELP: Help = Help {
         "mcp list --library catalog/mcp",
         "mcp show microsoft-learn --library catalog/mcp",
         "mcp validate --library catalog/mcp",
+        "mcp render microsoft-learn@recommended --library catalog/mcp",
     ],
 };
 
@@ -45,11 +47,13 @@ enum Action {
     List,
     Show,
     Validate,
+    Render,
 }
 
 struct Args {
     action: Action,
     id: Option<String>,
+    variant: Option<String>,
     library: Option<PathBuf>,
 }
 
@@ -72,6 +76,18 @@ pub fn run(
         Ok(path) => path,
         Err(message) => return refuse(style, &message, err),
     };
+    if matches!(args.action, Action::Render) {
+        let rendered = match mcp_catalog::render(
+            &library,
+            args.id.as_deref().expect("render requires an id"),
+            args.variant.as_deref().unwrap_or("default"),
+        ) {
+            Ok(rendered) => rendered,
+            Err(message) => return refuse(style, &message, err),
+        };
+        put(out, &rendered)?;
+        return Ok(0);
+    }
     let entries = match mcp_catalog::read(&library, args.id.as_deref()) {
         Ok(entries) => entries,
         Err(message) => return refuse(style, &message, err),
@@ -89,7 +105,7 @@ pub fn run(
         }
         Action::Show => put(out, &entries[0].raw)?,
         Action::Validate => put(out, b"MCP library is valid\n")?,
-        Action::Help => unreachable!(),
+        Action::Help | Action::Render => unreachable!(),
     }
     Ok(0)
 }
@@ -147,10 +163,12 @@ fn parse(args: &[String]) -> Result<Args, String> {
         Some("list") => Action::List,
         Some("show") => Action::Show,
         Some("validate") => Action::Validate,
-        _ => return Err("Usage: agentsync mcp <list|show|validate> [options]".to_string()),
+        Some("render") => Action::Render,
+        _ => return Err("Usage: agentsync mcp <list|show|validate|render> [options]".to_string()),
     };
     let mut library = None;
     let mut id = None;
+    let mut variant = None;
     let mut index = 1;
     while let Some(arg) = args.get(index) {
         match arg.as_str() {
@@ -158,6 +176,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 return Ok(Args {
                     action: Action::Help,
                     id: None,
+                    variant: None,
                     library: None,
                 });
             }
@@ -178,13 +197,29 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 ));
             }
             value if !matches!(action, Action::List) && id.is_none() => {
-                if !mcp_catalog::valid_id(value) {
+                let (entry_id, selected_variant) = if matches!(action, Action::Render) {
+                    value
+                        .split_once('@')
+                        .map_or((value, None), |(id, variant)| (id, Some(variant)))
+                } else {
+                    (value, None)
+                };
+                if !mcp_catalog::valid_id(entry_id) {
                     return Err(format!(
                         "Unsafe MCP library id: {}",
-                        mcp_catalog::escaped_title(value)
+                        mcp_catalog::escaped_title(entry_id)
                     ));
                 }
-                id = Some(value.to_string());
+                if let Some(selected_variant) = selected_variant {
+                    if !mcp_catalog::valid_id(selected_variant) {
+                        return Err(format!(
+                            "Unsafe MCP variant id: {}",
+                            mcp_catalog::escaped_title(selected_variant)
+                        ));
+                    }
+                    variant = Some(selected_variant.to_string());
+                }
+                id = Some(entry_id.to_string());
                 index += 1;
             }
             value => {
@@ -195,12 +230,18 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
         }
     }
-    if matches!(action, Action::Show) && id.is_none() {
-        return Err("mcp show requires an id".to_string());
+    if matches!(action, Action::Show | Action::Render) && id.is_none() {
+        return Err(if matches!(action, Action::Show) {
+            "mcp show requires an id"
+        } else {
+            "mcp render requires an id"
+        }
+        .to_string());
     }
     Ok(Args {
         action,
         id,
+        variant,
         library,
     })
 }

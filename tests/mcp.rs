@@ -57,6 +57,113 @@ fn show_preserves_exact_source_bytes_and_validates_only_the_selected_entry() {
 }
 
 #[test]
+fn render_default_stdio_as_source_without_running_or_writing() {
+    let project = Project::empty();
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    project.write("catalog/broken/manifest.json", "not JSON");
+    for selection in ["alpha", "alpha@default"] {
+        project
+            .agentsync()
+            .args(["mcp", "render", selection, "--library", "catalog"])
+            .assert()
+            .success()
+            .stdout("{\"mcpServers\":{\"alpha\":{\"args\":[],\"command\":\"never-run\"}}}\n");
+    }
+    assert!(!project.exists("never-run"));
+    assert!(!project.exists(".ai/src/mcp/claude.json"));
+    assert!(!project.exists(".mcp.json"));
+}
+
+#[test]
+fn render_resolves_http_alternatives_and_recommendation_explicitly() {
+    let project = Project::empty();
+    let v2 = r#"{"schema_version":2,"id":"docs","title":"Docs","connection":{"type":"http","url":"https://example.invalid/default"},"requirements":{"binaries":[],"inputs":[]},"alternatives":{"remote":{"connection":{"type":"http","url":"https://example.invalid/remote"},"requirements":{"binaries":[],"inputs":[]}}},"guidance":{"recommended":"remote","authority":"vendor","source":"https://example.invalid/docs","checked_at":"2024-02-29","reason":"Documented remote option"}}"#;
+    project.write("catalog/docs/manifest.json", v2);
+    project
+        .agentsync()
+        .args(["mcp", "render", "docs", "--library", "catalog"])
+        .assert()
+        .success()
+        .stdout("{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/default\"}}}\n");
+    for selection in ["docs@remote", "docs@recommended"] {
+        project
+            .agentsync()
+            .args(["mcp", "render", selection, "--library", "catalog"])
+            .assert()
+            .success()
+            .stdout("{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/remote\"}}}\n");
+    }
+    project.write(
+        "catalog/docs/manifest.json",
+        &v2.replace("\"recommended\":\"remote\"", "\"recommended\":\"default\""),
+    );
+    project
+        .agentsync()
+        .args(["mcp", "render", "docs@recommended", "--library", "catalog"])
+        .assert()
+        .success()
+        .stdout("{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/default\"}}}\n");
+}
+
+#[test]
+fn render_rejects_bad_selections_and_invalid_manifests_without_stdout() {
+    let project = Project::empty();
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    for selection in ["alpha@", "alpha@bad/name", "alpha@@remote", "../alpha"] {
+        project
+            .agentsync()
+            .args(["mcp", "render", selection, "--library", "catalog"])
+            .assert()
+            .failure()
+            .stdout("");
+    }
+    project
+        .agentsync()
+        .args(["mcp", "render", "--library", "catalog"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("requires an id"));
+    project
+        .agentsync()
+        .args(["mcp", "render", "alpha@recommended", "--library", "catalog"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("no attributed recommendation"));
+    project
+        .agentsync()
+        .args(["mcp", "render", "alpha@remote", "--library", "catalog"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("Unknown MCP variant"));
+    project.write("catalog/alpha/manifest.json", "not JSON");
+    project
+        .agentsync()
+        .args(["mcp", "render", "alpha", "--library", "catalog"])
+        .assert()
+        .failure()
+        .stdout("");
+}
+
+#[test]
+fn render_serializes_connection_strings_as_json_data() {
+    let project = Project::empty();
+    let escaped = manifest("alpha", "First").replace(
+        "\"command\":\"never-run\",\"args\":[]",
+        r#""command":"a\"b\\c","args":["line\nnext","\u0000"]"#,
+    );
+    project.write("catalog/alpha/manifest.json", &escaped);
+    project
+        .agentsync()
+        .args(["mcp", "render", "alpha", "--library", "catalog"])
+        .assert()
+        .success()
+        .stdout("{\"mcpServers\":{\"alpha\":{\"args\":[\"line\\nnext\",\"\\u0000\"],\"command\":\"a\\\"b\\\\c\"}}}\n");
+}
+
+#[test]
 fn configured_catalog_stays_inside_project_root() {
     let project = Project::empty();
     project.write(

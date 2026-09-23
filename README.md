@@ -274,7 +274,7 @@ agentsync <command> [options]
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
 | `skills list\|show\|check` |     | Inspect effective project skills and check their `SKILL.md` metadata (`--profile <name>`)     |
-| `mcp list\|show\|validate` |     | Inspect a selected offline MCP catalog without running servers or changing configuration     |
+| `mcp list\|show\|validate\|render` |     | Inspect or render a selected offline MCP catalog without running servers or changing configuration     |
 | `update`                 |       | Replace the binary with the latest release, or `update <version>` to pin a release tag         |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
@@ -300,7 +300,7 @@ For skills outside this project's effective source tree, `agentsync skills catal
 
 ### Inspecting an MCP catalog
 
-`agentsync mcp list/show/validate --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, and `validate` checks one entry or the whole catalog. These commands are offline and read-only: they do not start a server, probe an endpoint, or change MCP sources or client configuration. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting.
+`agentsync mcp list/show/validate/render --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, `validate` checks one entry or the whole catalog, and `render <id>[@variant]` prints the selected connection as AgentSync MCP source JSON. These commands are offline and read-only: they do not start a server, probe an endpoint, or change MCP sources or client configuration. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting.
 
 ### Sync options
 

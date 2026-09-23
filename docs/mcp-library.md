@@ -10,6 +10,7 @@ agentsync mcp list --library catalog/mcp
 agentsync mcp show example --library catalog/mcp
 agentsync mcp validate --library catalog/mcp
 agentsync mcp validate example --library catalog/mcp
+agentsync mcp render example@default --library catalog/mcp
 ```
 
 An explicit path may be absolute or relative to the selected project root. Or
@@ -35,6 +36,20 @@ validates the selected manifest and prints its exact source bytes.
 `validate [id]` checks one entry or the whole catalog. A whole-catalog
 operation validates every entry before writing to stdout. Errors go to stderr
 and leave stdout empty.
+
+`render <id>[@variant]` validates the selected manifest and prints one
+AgentSync MCP source JSON object. An omitted variant or `@default` selects the
+top-level connection. A named variant selects its alternative;
+`@recommended` uses attributed guidance and fails if guidance is absent.
+Unknown variants fail. For example, the version 1 manifest below renders as:
+
+```json
+{"mcpServers":{"example":{"args":[],"command":"example-mcp"}}}
+```
+
+HTTP connections render with `type: "http"` and `url`. Only the selected
+connection is included; manifest metadata and requirements are not copied.
+Rendering does not execute the command, contact the URL, or write a source.
 
 ## Manifest format
 
@@ -102,7 +117,7 @@ keys at any depth, including keys that become equal after escape decoding.
 `show` preserves source spelling; it does not normalize valid JSON. These
 limits define the catalog format, not general JSON Schema support.
 
-This is the read-only first stage of the MCP library work. Rendering an MCP
-source, choosing a variant for a client, editing configuration, and connecting
-to a server are outside these commands. The remaining work is tracked in the
+Catalog inspection and rendering are read-only stages of the MCP library work.
+Writing a per-tool source, editing client configuration, and connecting to a
+server are outside these commands. The remaining work is tracked in the
 [MCP roadmap](mcp-roadmap.md).

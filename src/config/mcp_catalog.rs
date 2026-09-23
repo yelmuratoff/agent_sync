@@ -74,6 +74,54 @@ pub fn read(catalog: &Path, selected: Option<&str>) -> Result<Vec<Entry>, String
         .collect()
 }
 
+pub fn render(catalog: &Path, id: &str, variant: &str) -> Result<Vec<u8>, String> {
+    let entry = read(catalog, Some(id))?
+        .pop()
+        .expect("selected entry exists");
+    let manifest: Value = serde_json::from_slice(&entry.raw)
+        .map_err(|e| format!("Invalid MCP manifest for {id}: {e}"))?;
+    let selected = match variant {
+        "default" => "default",
+        "recommended" => manifest
+            .pointer("/guidance/recommended")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("MCP entry {id} has no attributed recommendation"))?,
+        name => name,
+    };
+    let connection = if selected == "default" {
+        &manifest["connection"]
+    } else {
+        manifest
+            .get("alternatives")
+            .and_then(|alternatives| alternatives.get(selected))
+            .and_then(|alternative| alternative.get("connection"))
+            .ok_or_else(|| format!("Unknown MCP variant for {id}: {}", escaped_title(selected)))?
+    };
+    let mut server = Map::new();
+    match connection["type"]
+        .as_str()
+        .expect("validated connection type")
+    {
+        "stdio" => {
+            server.insert("command".to_string(), connection["command"].clone());
+            server.insert("args".to_string(), connection["args"].clone());
+        }
+        "http" => {
+            server.insert("type".to_string(), Value::String("http".to_string()));
+            server.insert("url".to_string(), connection["url"].clone());
+        }
+        _ => unreachable!(),
+    }
+    let mut servers = Map::new();
+    servers.insert(id.to_string(), Value::Object(server));
+    let mut source = Map::new();
+    source.insert("mcpServers".to_string(), Value::Object(servers));
+    let mut output = serde_json::to_vec(&Value::Object(source))
+        .map_err(|e| format!("Cannot serialize MCP connection for {id}: {e}"))?;
+    output.push(b'\n');
+    Ok(output)
+}
+
 pub fn valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     (1..=64).contains(&bytes.len())
