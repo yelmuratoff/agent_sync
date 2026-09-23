@@ -123,7 +123,10 @@ fn write_map(out: &mut String, name: &str, field: &str, value: &Value) -> Result
 }
 
 fn toml_string(value: &str) -> Result<String, &'static str> {
-    if value.chars().any(|ch| ch == '\0' || ch == '\u{7f}') {
+    if value
+        .chars()
+        .any(|ch| matches!(ch, '\0' | '\u{7f}' | '\u{8}' | '\u{c}'))
+    {
         return Err("MCP string contains an unsupported control character");
     }
     serde_json::to_string(value).map_err(|_| "Cannot encode MCP string")
@@ -152,5 +155,16 @@ mod tests {
         assert!(compose("", br#"{"mcpServers":{"docs":{"url":"a","url":"b"}}}"#).is_err());
         assert!(compose("", br#"{"mcpServers":{"docs":{"url":"a","headers":{}}}}"#).is_err());
         assert!(compose("", br#"{"mcpServers":{"docs":{"url":"file:///tmp/x"}}}"#).is_err());
+    }
+
+    #[test]
+    fn refuses_control_characters_with_non_toml_json_escapes() {
+        for character in ['\u{8}', '\u{c}'] {
+            let source = format!(
+                "{{\"mcpServers\":{{\"local\":{{\"command\":\"tool\",\"args\":[{}]}}}}}}",
+                serde_json::to_string(&character.to_string()).unwrap()
+            );
+            assert!(compose("", source.as_bytes()).is_err());
+        }
     }
 }

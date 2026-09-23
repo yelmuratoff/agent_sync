@@ -439,8 +439,7 @@ fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str)
     }
     s.ws.create_dir_all(&paths::parent(dest))
         .map_err(|e| io(s, e))?;
-    s.ws.remove(dest).map_err(|e| io(s, e))?;
-    s.ws.write(dest, composed.into_bytes())
+    s.ws.replace_atomically(dest, composed.into_bytes())
         .map_err(|e| io(s, e))?;
     s.record_write(dest);
     s.log

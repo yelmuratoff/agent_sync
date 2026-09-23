@@ -254,6 +254,13 @@ impl Workspace {
         Ok(())
     }
 
+    pub fn replace_atomically(&mut self, path: &str, bytes: Vec<u8>) -> Result<(), Error> {
+        if self.writes_disk(path) {
+            return crate::engine::staging::write_beside(Path::new(path), &bytes);
+        }
+        self.write(path, bytes)
+    }
+
     /// `>>`: creates the file when missing, the parent directory must exist.
     pub fn append(&mut self, path: &str, bytes: &[u8]) -> Result<(), Error> {
         if self.writes_disk(path) {
