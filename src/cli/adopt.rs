@@ -212,6 +212,18 @@ impl<'a> Resolver<'a> {
             ));
         }
         if self.dest_for(tool, "settings").as_deref() == Some(abs) {
+            if tool.value("targets.mcp.format") == "codex_toml"
+                && let Some(mcp) = self.payload_source(tool, "mcp", err)?
+            {
+                let settings = self
+                    .payload_source(tool, "settings", err)?
+                    .map(|source| self.strip_root(&source.shown()))
+                    .unwrap_or_default();
+                return Ok(Some(Err(format!(
+                    "Codex config.toml is a multi-source output. Edit {settings} and {} separately.",
+                    self.strip_root(&mcp.shown())
+                ))));
+            }
             if tool.value("targets.mcp.format") == "opencode_json"
                 && let Some(mcp) = self.payload_source(tool, "mcp", err)?
             {

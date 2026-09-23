@@ -28,12 +28,11 @@ a separate action. The source creation can be undone with `agentsync rollback`.
    conflict, backup, interruption, and concurrent-writer cases before enabling
    writes. Do not silently migrate shared, legacy, or alternate sources.
 
-2. **Add Codex composition separately.** Claude, OpenCode, and Kimi catalog
-   selections have command-level coverage through their normal `sync`, `check`,
-   `doctor`, and applicable `adopt` paths. Codex needs a separate Rust change
-   because its MCP configuration shares `.codex/config.toml` with settings;
-   detect ownership conflicts rather than rewriting arbitrary TOML. Test the
-   supported path on Linux, macOS, and Windows before claiming compatibility.
+2. **Client adapters.** Claude, OpenCode, and Kimi catalog selections have
+   command-level coverage through their normal `sync`, `check`, `doctor`, and
+   applicable `adopt` paths. Codex composes supported MCP fields into its
+   settings file and refuses ownership conflicts. Cross-platform CI remains
+   the compatibility gate for each adapter change.
 
 The opt-in [pilot catalog](../catalog/mcp/README.md) contains Microsoft Learn,
 Context7, and Octocode, checked against vendor or maintainer documentation on

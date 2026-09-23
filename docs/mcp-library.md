@@ -72,6 +72,12 @@ form in `.mcp.json`; OpenCode composes it into `opencode.json` during `sync`.
 `render` always prints the canonical form, independent of the target tool.
 Hand-written shared HTTP sources are copied to Kimi unchanged; use a per-tool
 Kimi source with its native `url` shape for those servers.
+For Codex, normal `sync` composes selected MCP servers into the existing
+`.codex/config.toml` settings. It supports stdio `command`, string `args`, and
+string `env` entries, or an HTTP(S) `url`; other server fields are refused.
+Settings that already define or may encode `mcp_servers` conflict with a
+separate MCP source and leave the generated config unchanged. Edit the two
+sources separately; `adopt` cannot split a composed config back into them.
 
 ## Manifest format
 

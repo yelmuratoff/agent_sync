@@ -126,6 +126,7 @@ targets:
   #   dest: ".tool/.mcp.json"
   #   # format: opencode_json     # Optional: compose into OpenCode settings
   #   # format: kimi_json         # Optional: mcp use writes Kimi-native HTTP JSON
+  #   # format: codex_toml        # Optional: compose into Codex settings
 
   # Hooks (optional, file copy)
   # hooks:

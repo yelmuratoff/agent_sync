@@ -214,7 +214,7 @@ fn read_entry(catalog: &Path, id: &str) -> Result<Entry, String> {
     })
 }
 
-fn parse_strict(raw: &[u8]) -> Result<Value, String> {
+pub(crate) fn parse_strict(raw: &[u8]) -> Result<Value, String> {
     let mut parser = serde_json::Deserializer::from_slice(raw);
     StrictSeed { depth: 0 }
         .deserialize(&mut parser)

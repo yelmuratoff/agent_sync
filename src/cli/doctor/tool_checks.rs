@@ -6,7 +6,10 @@ use super::{Doctor, sorted_entries};
 use crate::config::payload;
 use crate::config::tool::Tool;
 use crate::paths::{self, DiskText};
-use crate::{Error, engine::opencode_json};
+use crate::{
+    Error,
+    engine::{codex_toml, opencode_json},
+};
 
 impl Doctor<'_> {
     /// `_doctor_check_commands_config`.
@@ -45,6 +48,20 @@ impl Doctor<'_> {
 
     /// `_doctor_check_payload_ownership`.
     pub(super) fn check_payload_ownership(&mut self, tool: &Tool) -> Result<(), Error> {
+        if tool.value("targets.mcp.format") == "codex_toml" {
+            let settings = self.resolve(tool, "settings")?;
+            let mcp = self.resolve(tool, "mcp")?;
+            if let (Some(settings), Some(mcp)) = (settings, mcp) {
+                let text = String::from_utf8_lossy(&settings.bytes()?).into_owned();
+                if codex_toml::settings_claim_mcp(&text) {
+                    self.fail(&format!(
+                        "Codex MCP ownership conflict: {} and {} both define or may encode mcp_servers. Move the server map into one source.",
+                        self.source_shown(&settings),
+                        self.source_shown(&mcp)
+                    ))?;
+                }
+            }
+        }
         match tool.slug.as_str() {
             "opencode" => {
                 let settings = self.resolve(tool, "settings")?;

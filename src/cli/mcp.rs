@@ -148,7 +148,10 @@ fn use_source(
         return refuse(style, "MCP target tool has no MCP destination", err);
     }
     let format = tool.value("targets.mcp.format");
-    if !matches!(format.as_str(), "" | "opencode_json" | "kimi_json") {
+    if !matches!(
+        format.as_str(),
+        "" | "opencode_json" | "kimi_json" | "codex_toml"
+    ) {
         return refuse(style, "MCP target tool uses an unsupported MCP format", err);
     }
     let rendered = if format == "kimi_json" {

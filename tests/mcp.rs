@@ -432,6 +432,75 @@ fn use_http_selection_reaches_claude_and_opencode_through_normal_sync() {
 }
 
 #[test]
+fn use_codex_composes_selected_http_source_with_settings() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["codex"]);
+    project.write(".ai/src/tools/codex/settings.toml", "model = \"gpt-5\"\n");
+    project.write(
+        "catalog/docs/manifest.json",
+        r#"{"schema_version":1,"id":"docs","title":"Docs","connection":{"type":"http","url":"https://example.invalid/mcp"},"requirements":{"binaries":[],"inputs":[]}}"#,
+    );
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "docs",
+            "--tool",
+            "codex",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    assert!(!project.exists(".codex/config.toml"));
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(
+        project.read(".codex/config.toml"),
+        "model = \"gpt-5\"\n\n[mcp_servers.docs]\nurl = \"https://example.invalid/mcp\"\n"
+    );
+    project.agentsync().arg("check").assert().success();
+    project.agentsync().arg("doctor").assert().success();
+    project.append(".codex/config.toml", "\n");
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".codex/config.toml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("multi-source"));
+}
+
+#[test]
+fn codex_ownership_conflict_refuses_sync_without_changing_output() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["codex"]);
+    project.agentsync().arg("sync").assert().success();
+    project.write(
+        ".ai/src/tools/codex/settings.toml",
+        "[mcp_servers.existing]\ncommand = \"manual\"\n",
+    );
+    project.write(
+        ".ai/src/tools/codex/mcp.json",
+        "{\"mcpServers\":{\"docs\":{\"url\":\"https://example.invalid/mcp\"}}}\n",
+    );
+    let before = project.read(".codex/config.toml");
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("MCP ownership"));
+    assert_eq!(project.read(".codex/config.toml"), before);
+    project
+        .agentsync()
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("Codex MCP ownership conflict"));
+}
+
+#[test]
 fn use_refuses_occupied_sources_without_revealing_or_changing_them() {
     let project = Project::empty();
     project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
