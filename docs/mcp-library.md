@@ -11,6 +11,8 @@ agentsync mcp show example --library catalog/mcp
 agentsync mcp validate --library catalog/mcp
 agentsync mcp validate example --library catalog/mcp
 agentsync mcp render example@default --library catalog/mcp
+agentsync mcp use example --tool claude --library catalog/mcp
+agentsync mcp use example --tool claude --library catalog/mcp --apply
 ```
 
 An explicit path may be absolute or relative to the selected project root. Or
@@ -50,6 +52,15 @@ Unknown variants fail. For example, the version 1 manifest below renders as:
 HTTP connections render with `type: "http"` and `url`. Only the selected
 connection is included; manifest metadata and requirements are not copied.
 Rendering does not execute the command, contact the URL, or write a source.
+
+`use <id>[@variant] --tool <slug>` previews creating a per-tool MCP source.
+The tool must be enabled and have an MCP destination. `--apply` writes the
+source under the configured `source.tools` directory (by default
+`.ai/src/tools/<slug>/mcp.json`) and records a backup that `agentsync rollback`
+can restore. It refuses an existing per-tool, declared, legacy, or shared MCP
+source; use `mcp render` and edit that source yourself if it is occupied. The
+preview and errors never print existing source values. `agentsync sync` is a
+separate step to update generated client files.
 
 ## Manifest format
 
@@ -117,7 +128,8 @@ keys at any depth, including keys that become equal after escape decoding.
 `show` preserves source spelling; it does not normalize valid JSON. These
 limits define the catalog format, not general JSON Schema support.
 
-Catalog inspection and rendering are read-only stages of the MCP library work.
-Writing a per-tool source, editing client configuration, and connecting to a
-server are outside these commands. The remaining work is tracked in the
+Catalog inspection, rendering, and guarded creation of a per-tool source are
+the first stages of the MCP library work. Extending an occupied source, editing
+client configuration, and connecting to a server are outside these commands.
+The remaining work is tracked in the
 [MCP roadmap](mcp-roadmap.md).

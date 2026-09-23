@@ -18,7 +18,7 @@ const COMMANDS: [(&str, &str); 31] = [
         "skills",
         "Inspect project skills and explicit external catalogs",
     ),
-    ("mcp", "Inspect an offline MCP catalog"),
+    ("mcp", "Inspect an MCP catalog and prepare per-tool sources"),
     ("enable", "Opt in to one or more tools"),
     ("disable", "Opt out of one or more tools"),
     ("add", "Scaffold a rule, skill, command, or subagent"),

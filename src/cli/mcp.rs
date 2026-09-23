@@ -1,14 +1,16 @@
-//! Read-only commands for an explicitly selected MCP catalog.
+//! Inspection and explicit source creation from an MCP catalog.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::Error;
-use crate::config::{mcp_catalog, yaml_subset};
+use crate::config::{mcp_catalog, payload, tool::Tool, yaml_subset};
+use crate::engine::staging;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::paths;
 use crate::project::Project;
+use crate::transaction::{backup, witness};
 
 pub const HELP: Help = Help {
     command: "mcp",
@@ -18,10 +20,12 @@ pub const HELP: Help = Help {
         "mcp show <id> --library <directory>",
         "mcp validate [id] --library <directory>",
         "mcp render <id>[@variant] --library <directory>",
+        "mcp use <id>[@variant] --tool <slug> [--apply] --library <directory>",
     ],
     description: &[
-        "Reads bounded JSON manifests from an explicit library or the configured\nlibrary.mcp.path. It never starts servers, contacts endpoints, or changes\nproject or client configuration.",
+        "Reads bounded JSON manifests from an explicit library or the configured\nlibrary.mcp.path. It never starts servers or contacts endpoints.",
         "list prints ID and title. show prints the original manifest bytes.\nvalidate checks one entry or the complete library, including all variants.\nrender prints one selected connection as AgentSync MCP source JSON.",
+        "use previews a new per-tool source; --apply creates it without replacing\nan existing source. Run agentsync sync separately to update client files.",
     ],
     sections: &[Section {
         title: "OPTIONS",
@@ -30,6 +34,11 @@ pub const HELP: Help = Help {
                 "--library <directory>",
                 "Explicit catalog path, absolute or relative to the project root",
             ),
+            (
+                "--tool <slug>",
+                "Enabled tool receiving a per-tool MCP source",
+            ),
+            ("--apply", "Create the source after previewing"),
             ("-h, --help", "Show this help"),
         ],
     }],
@@ -38,6 +47,7 @@ pub const HELP: Help = Help {
         "mcp show microsoft-learn --library catalog/mcp",
         "mcp validate --library catalog/mcp",
         "mcp render microsoft-learn@recommended --library catalog/mcp",
+        "mcp use microsoft-learn --tool claude --library catalog/mcp",
     ],
 };
 
@@ -48,12 +58,15 @@ enum Action {
     Show,
     Validate,
     Render,
+    Use,
 }
 
 struct Args {
     action: Action,
     id: Option<String>,
     variant: Option<String>,
+    tool: Option<String>,
+    apply: bool,
     library: Option<PathBuf>,
 }
 
@@ -72,11 +85,11 @@ pub fn run(
         return Ok(0);
     }
     let project = Project::discover()?;
-    let library = match library_path(&project, args.library) {
+    let library = match library_path(&project, args.library.clone()) {
         Ok(path) => path,
         Err(message) => return refuse(style, &message, err),
     };
-    if matches!(args.action, Action::Render) {
+    if matches!(args.action, Action::Render | Action::Use) {
         let rendered = match mcp_catalog::render(
             &library,
             args.id.as_deref().expect("render requires an id"),
@@ -85,6 +98,9 @@ pub fn run(
             Ok(rendered) => rendered,
             Err(message) => return refuse(style, &message, err),
         };
+        if matches!(args.action, Action::Use) {
+            return use_source(&project, &args, &rendered, style, out, err);
+        }
         put(out, &rendered)?;
         return Ok(0);
     }
@@ -105,8 +121,152 @@ pub fn run(
         }
         Action::Show => put(out, &entries[0].raw)?,
         Action::Validate => put(out, b"MCP library is valid\n")?,
-        Action::Help | Action::Render => unreachable!(),
+        Action::Help | Action::Render | Action::Use => unreachable!(),
     }
+    Ok(0)
+}
+
+fn use_source(
+    project: &Project,
+    args: &Args,
+    rendered: &[u8],
+    style: &Style,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<u8, Error> {
+    let slug = args.tool.as_deref().expect("use requires a tool");
+    let id = args.id.as_deref().expect("use requires an id");
+    let variant = args.variant.as_deref().unwrap_or("default");
+    if !project.tools_dir_in_project() {
+        return refuse(style, "source.tools resolves outside the project root", err);
+    }
+    if !project.enabled_tools()?.contains(slug) {
+        return refuse(style, "MCP target tool is not enabled in this project", err);
+    }
+    let tool = Tool::load(project, slug)?;
+    if tool.value("targets.mcp.dest").is_empty() {
+        return refuse(style, "MCP target tool has no MCP destination", err);
+    }
+    if !matches!(
+        tool.value("targets.mcp.format").as_str(),
+        "" | "opencode_json"
+    ) {
+        return refuse(style, "MCP target tool uses an unsupported MCP format", err);
+    }
+    let root = backup::canonical_root(&paths::from_disk(&project.root))?;
+    let intended = project.user_tools_dir().join(slug).join("mcp.json");
+    let disk_paths = paths::Paths::on_disk(&paths::from_disk(&project.root));
+    let Some(resolved) =
+        disk_paths.canonicalize_with_existing_ancestor(&paths::from_disk(&intended))
+    else {
+        return refuse(style, "Cannot resolve per-tool MCP source path", err);
+    };
+    let Some(rel) = resolved.strip_prefix(&format!("{root}/")) else {
+        return refuse(
+            style,
+            "Per-tool MCP source resolves outside the project root",
+            err,
+        );
+    };
+    let rel = rel.to_string();
+    let dest = PathBuf::from(backup::safe_target_path(&root, &rel, false)?);
+    let override_dir = project.user_tools_dir().join(slug);
+    let entries = match std::fs::read_dir(&override_dir) {
+        Ok(entries) => Some(entries),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {
+            return refuse(style, "Per-tool MCP source parent is not a directory", err);
+        }
+        Err(error) => return Err(Error::io(&override_dir, error)),
+    };
+    if let Some(entries) = entries {
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io(&override_dir, e))?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                return refuse(
+                    style,
+                    "Per-tool source directory has a non-UTF-8 entry",
+                    err,
+                );
+            };
+            if name.starts_with("mcp.") {
+                return refuse(
+                    style,
+                    "Per-tool MCP source is already occupied or ambiguous",
+                    err,
+                );
+            }
+        }
+    }
+    if matches!(
+        payload::effective_source(project, &tool, "mcp")?.0,
+        Some(payload::Source::Disk(_))
+    ) {
+        return refuse(style, "An MCP source already exists for this tool", err);
+    }
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return refuse(style, "Per-tool MCP source is already occupied", err);
+    }
+    let selection = format!("{id}@{variant}");
+    if !args.apply {
+        put(
+            out,
+            format!(
+                "Would create {rel} from {selection} for {slug}\nRun with --apply to write it.\n"
+            )
+            .as_bytes(),
+        )?;
+        return Ok(0);
+    }
+    let config = project
+        .config_path
+        .as_ref()
+        .map(|path| std::fs::read_to_string(path).map(|text| (path.clone(), text)))
+        .transpose()
+        .map_err(|e| Error::io(project.config_path.as_ref().expect("config path exists"), e))?;
+    let limit = std::env::var("AGENTSYNC_BACKUP_LIMIT").ok();
+    let age = std::env::var("AGENTSYNC_BACKUP_MAX_AGE_DAYS").ok();
+    let retention = backup::configure(
+        config
+            .as_ref()
+            .map(|(path, text)| (path.to_str().unwrap_or("<config>"), text.as_str())),
+        limit.as_deref(),
+        age.as_deref(),
+    )?;
+    let previous_latest =
+        backup::latest(&root)?.map_or_else(String::new, |path| paths::leaf(&path));
+    let snapshot = backup::create(&root, "mcp-use", &[resolved], retention)?;
+    let written = (|| {
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        staging::write_new_beside(&dest, rendered)
+    })();
+    if let Err(error) = written {
+        let store = format!("{root}/.ai/backups");
+        if let Err(cleanup) = backup::discard_safety(&store, &snapshot, &previous_latest) {
+            return refuse(
+                style,
+                &format!("Could not create MCP source: {error}; backup cleanup failed: {cleanup}"),
+                err,
+            );
+        }
+        return refuse(style, &format!("Could not create MCP source: {error}"), err);
+    }
+    if let Err(reason) = witness::seal(&root, &snapshot) {
+        put(
+            err,
+            format!("Warning: Could not record MCP source backup state: {reason}\n").as_bytes(),
+        )?;
+    }
+    if let Err(error) = backup::prune(&root, limit.as_deref(), age.as_deref(), retention) {
+        put(
+            err,
+            format!("Warning: Could not prune backups: {error}\n").as_bytes(),
+        )?;
+    }
+    put(out, format!("Created {rel} from {selection} for {slug}\nRun agentsync sync to update client files.\n").as_bytes())?;
     Ok(0)
 }
 
@@ -164,11 +324,18 @@ fn parse(args: &[String]) -> Result<Args, String> {
         Some("show") => Action::Show,
         Some("validate") => Action::Validate,
         Some("render") => Action::Render,
-        _ => return Err("Usage: agentsync mcp <list|show|validate|render> [options]".to_string()),
+        Some("use") => Action::Use,
+        _ => {
+            return Err(
+                "Usage: agentsync mcp <list|show|validate|render|use> [options]".to_string(),
+            );
+        }
     };
     let mut library = None;
     let mut id = None;
     let mut variant = None;
+    let mut tool = None;
+    let mut apply = false;
     let mut index = 1;
     while let Some(arg) = args.get(index) {
         match arg.as_str() {
@@ -177,6 +344,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     action: Action::Help,
                     id: None,
                     variant: None,
+                    tool: None,
+                    apply: false,
                     library: None,
                 });
             }
@@ -190,6 +359,19 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 }
                 index += 2;
             }
+            "--tool" if matches!(action, Action::Use) => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| "--tool requires a slug".to_string())?;
+                if !mcp_catalog::valid_id(value) || tool.replace(value.to_string()).is_some() {
+                    return Err("--tool requires one valid tool slug".to_string());
+                }
+                index += 2;
+            }
+            "--apply" if matches!(action, Action::Use) && !apply => {
+                apply = true;
+                index += 1;
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!(
                     "Unknown MCP option: {}",
@@ -197,7 +379,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 ));
             }
             value if !matches!(action, Action::List) && id.is_none() => {
-                let (entry_id, selected_variant) = if matches!(action, Action::Render) {
+                let (entry_id, selected_variant) = if matches!(action, Action::Render | Action::Use)
+                {
                     value
                         .split_once('@')
                         .map_or((value, None), |(id, variant)| (id, Some(variant)))
@@ -230,18 +413,25 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
         }
     }
-    if matches!(action, Action::Show | Action::Render) && id.is_none() {
+    if matches!(action, Action::Show | Action::Render | Action::Use) && id.is_none() {
         return Err(if matches!(action, Action::Show) {
             "mcp show requires an id"
+        } else if matches!(action, Action::Use) {
+            "mcp use requires an id"
         } else {
             "mcp render requires an id"
         }
         .to_string());
     }
+    if matches!(action, Action::Use) && tool.is_none() {
+        return Err("mcp use requires --tool <slug>".to_string());
+    }
     Ok(Args {
         action,
         id,
         variant,
+        tool,
+        apply,
         library,
     })
 }

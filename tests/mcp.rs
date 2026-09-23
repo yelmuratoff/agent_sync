@@ -164,6 +164,285 @@ fn render_serializes_connection_strings_as_json_data() {
 }
 
 #[test]
+fn use_previews_then_creates_a_per_tool_source_without_syncing() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    project
+        .agentsync()
+        .args(["mcp", "use", "alpha", "--tool", "claude", "--library", "catalog"])
+        .assert()
+        .success()
+        .stdout("Would create .ai/src/tools/claude/mcp.json from alpha@default for claude\nRun with --apply to write it.\n");
+    assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
+    assert!(!project.exists(".ai/backups"));
+    project
+        .agentsync()
+        .args(["mcp", "use", "alpha", "--tool", "claude", "--library", "catalog", "--apply"])
+        .assert()
+        .success()
+        .stdout("Created .ai/src/tools/claude/mcp.json from alpha@default for claude\nRun agentsync sync to update client files.\n");
+    assert_eq!(
+        project.read(".ai/src/tools/claude/mcp.json"),
+        "{\"mcpServers\":{\"alpha\":{\"args\":[],\"command\":\"never-run\"}}}\n"
+    );
+    assert!(!project.exists(".mcp.json"));
+    project
+        .agentsync()
+        .args(["rollback", "--list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("mcp-use"));
+    project
+        .agentsync()
+        .args(["rollback", "--yes"])
+        .assert()
+        .success();
+    assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
+}
+
+#[test]
+fn use_respects_source_tools_and_opencode_composition() {
+    let project = Project::empty();
+    project.write(".ai/src/AGENTS.md", "# Agent\n");
+    project.write(
+        ".ai/agent_sync.yaml",
+        "tools:\n  enabled: [opencode]\nsource:\n  tools: custom/tools\n",
+    );
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "opencode",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("custom/tools/opencode/mcp.json"));
+    assert!(project.exists("custom/tools/opencode/mcp.json"));
+    assert!(!project.exists("opencode.json"));
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.read("opencode.json").contains("\"alpha\""));
+}
+
+#[test]
+fn use_source_reaches_claude_on_a_separate_sync() {
+    let project = Project::empty();
+    project.write(".ai/src/AGENTS.md", "# Agent\n");
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(
+        project.read(".mcp.json"),
+        project.read(".ai/src/tools/claude/mcp.json")
+    );
+}
+
+#[test]
+fn use_refuses_occupied_sources_without_revealing_or_changing_them() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    for occupied in [
+        ".ai/src/mcp.json",
+        ".ai/src/mcp/claude.json",
+        ".ai/src/tools/claude/mcp.json",
+        ".ai/src/tools/claude/mcp.json.bak",
+    ] {
+        project.write(occupied, "SECRET_SOURCE_VALUE");
+        for apply in [false, true] {
+            let mut command = project.agentsync();
+            command.args([
+                "mcp",
+                "use",
+                "alpha",
+                "--tool",
+                "claude",
+                "--library",
+                "catalog",
+            ]);
+            if apply {
+                command.arg("--apply");
+            }
+            let output = command.output().unwrap();
+            assert!(!output.status.success(), "{occupied}");
+            assert!(output.stdout.is_empty());
+            assert!(
+                !output
+                    .stderr
+                    .windows(19)
+                    .any(|bytes| bytes == b"SECRET_SOURCE_VALUE")
+            );
+        }
+        assert_eq!(project.read(occupied), "SECRET_SOURCE_VALUE");
+        std::fs::remove_file(project.join(occupied)).unwrap();
+    }
+    assert!(!project.exists(".ai/backups"));
+}
+
+#[test]
+fn use_refuses_disabled_tools_invalid_selections_and_unsafe_source_roots() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    for args in [
+        vec!["alpha", "--tool", "cursor"],
+        vec!["alpha", "--tool", "codex"],
+        vec!["alpha@missing", "--tool", "claude"],
+    ] {
+        project
+            .agentsync()
+            .arg("mcp")
+            .arg("use")
+            .args(args)
+            .args(["--library", "catalog", "--apply"])
+            .assert()
+            .failure()
+            .stdout("");
+    }
+    let external = tempfile::tempdir().unwrap();
+    project.write(
+        ".ai/agent_sync.yaml",
+        &format!(
+            "tools:\n  enabled: [claude]\nsource:\n  tools: {}\n",
+            external.path().display()
+        ),
+    );
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("outside the project root"));
+    assert!(!project.exists(".ai/backups"));
+}
+
+#[test]
+fn use_keeps_the_source_absent_when_backup_creation_fails() {
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    project.write(".ai/backups", "private bytes");
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .failure()
+        .stdout("");
+    assert_eq!(project.read(".ai/backups"), "private bytes");
+    assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
+}
+
+// Windows does not consistently enforce chmod bits; root can bypass them.
+#[cfg(unix)]
+#[test]
+fn use_discards_a_snapshot_when_the_new_source_cannot_be_written() {
+    if !common::unreadable_dirs_are_possible() {
+        return;
+    }
+    let project = Project::empty();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    let parent = project.join(".ai/src/tools/claude");
+    std::fs::create_dir_all(&parent).unwrap();
+    common::chmod(&parent, 0o500);
+    let output = project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .output()
+        .unwrap();
+    common::chmod(&parent, 0o700);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!project.exists(".ai/src/tools/claude/mcp.json"));
+    project
+        .agentsync()
+        .args(["rollback", "--list"])
+        .assert()
+        .success()
+        .stdout("No AgentSync backups found.\n");
+}
+
+// Windows symlink creation can require Developer Mode or elevated privileges.
+#[cfg(unix)]
+#[test]
+fn use_refuses_a_per_tool_directory_link_outside_the_project() {
+    use std::os::unix::fs::symlink;
+
+    let project = Project::empty();
+    let external = tempfile::tempdir().unwrap();
+    project.write(".ai/agent_sync.yaml", "tools:\n  enabled: [claude]\n");
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", "First"));
+    std::fs::create_dir_all(project.join(".ai/src/tools")).unwrap();
+    symlink(external.path(), project.join(".ai/src/tools/claude")).unwrap();
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "alpha",
+            "--tool",
+            "claude",
+            "--library",
+            "catalog",
+            "--apply",
+        ])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("outside the project root"));
+    assert!(!external.path().join("mcp.json").exists());
+}
+
+#[test]
 fn configured_catalog_stays_inside_project_root() {
     let project = Project::empty();
     project.write(

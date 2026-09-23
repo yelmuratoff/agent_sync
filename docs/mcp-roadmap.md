@@ -15,32 +15,27 @@ attributed guidance. Rendering makes no configuration changes and does not
 execute commands, probe URLs, install packages, or read secrets. The
 [catalog contract](mcp-library.md) defines both read-only commands.
 
+`mcp use <id>[@variant] --tool <slug>` previews a per-tool source and creates it
+only with `--apply`. It refuses occupied sources and leaves `agentsync sync` as
+a separate action. The source creation can be undone with `agentsync rollback`.
+
 ## Next slices
 
-1. **Preview and materialize a per-tool source.** Add `mcp use` with a read-only
-   preview by default and a separate `--apply` write. Require a named, enabled
-   tool and resolve its source location through the existing `source.tools` and
-   payload rules. A first implementation should refuse an occupied or ambiguous
-   source instead of overwriting it. Use the existing transaction and staging
-   patterns for writes, then verify that a failed operation restores the prior
-   bytes. Preview and errors must never print existing source values, which may
-   include credentials. Running `agentsync sync` remains a separate user action.
-
-2. **Support guarded extension of an existing source.** If users need to add a
+1. **Support guarded extension of an existing source.** If users need to add a
    selection to an occupied per-tool source, design `--merge` as its own change.
    Preserve unrelated JSON members, reject duplicate or unsupported structures,
    and require an explicit selected ID for replacement. Cover unchanged replay,
    conflict, backup, interruption, and concurrent-writer cases before enabling
    writes. Do not silently migrate shared, legacy, or alternate sources.
 
-3. **Review client adapters independently.** Confirm Claude, OpenCode, and Kimi
+2. **Review client adapters independently.** Confirm Claude, OpenCode, and Kimi
    against their current tool YAML and normal sync behavior. Codex needs a
    separate Rust change because its MCP configuration shares
    `.codex/config.toml` with settings; detect ownership conflicts rather than
    rewriting arbitrary TOML. Test `sync`, `check`, `doctor`, and `adopt` for each
    supported path on Linux, macOS, and Windows before claiming compatibility.
 
-4. **Curate small pilot entries.** Port the Microsoft Learn, Context7, and
+3. **Curate small pilot entries.** Port the Microsoft Learn, Context7, and
    Octocode examples from PR #16 only after checking their current vendor or
    maintainer documentation. Keep transport and variant requirements explicit;
    record the source and review date of every recommendation. Validation proves
