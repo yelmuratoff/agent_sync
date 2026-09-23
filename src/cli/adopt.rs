@@ -196,6 +196,9 @@ impl<'a> Resolver<'a> {
     }
 
     fn dest_for(&self, tool: &Tool, key: &str) -> Option<String> {
+        if tool.flag(&format!("targets.{key}.enabled")) == Some(false) {
+            return None;
+        }
         let raw = tool.value(&format!("targets.{key}.dest"));
         if raw.is_empty() {
             return None;
