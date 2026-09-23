@@ -35,11 +35,10 @@ a separate action. The source creation can be undone with `agentsync rollback`.
    rewriting arbitrary TOML. Test `sync`, `check`, `doctor`, and `adopt` for each
    supported path on Linux, macOS, and Windows before claiming compatibility.
 
-3. **Curate small pilot entries.** Port the Microsoft Learn, Context7, and
-   Octocode examples from PR #16 only after checking their current vendor or
-   maintainer documentation. Keep transport and variant requirements explicit;
-   record the source and review date of every recommendation. Validation proves
-   catalog structure, not that a service is safe, reachable, or endorsed.
+The opt-in [pilot catalog](../catalog/mcp/README.md) contains Microsoft Learn,
+Context7, and Octocode, checked against vendor or maintainer documentation on
+2026-09-23. Its recommendations identify their sources and dates. Validation
+proves catalog structure, not that a service is safe, reachable, or endorsed.
 
 Each slice should be a separate reviewable PR with focused integration tests.
 Source writes and client composition cross into `src/engine/render/` and

@@ -300,7 +300,7 @@ For skills outside this project's effective source tree, `agentsync skills catal
 
 ### Inspecting an MCP catalog
 
-`agentsync mcp list/show/validate/render --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, `validate` checks one entry or the whole catalog, and `render <id>[@variant]` prints the selected connection as AgentSync MCP source JSON. `mcp use <id>[@variant] --tool SLUG` previews a new per-tool source; `--apply` writes it without replacing an existing source. These commands do not start a server or probe an endpoint, and `use` does not run `sync` for you. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting.
+`agentsync mcp list/show/validate/render --library DIR` reads JSON manifests from a selected local catalog. `list` prints IDs and titles, `show` prints the selected manifest's original bytes, `validate` checks one entry or the whole catalog, and `render <id>[@variant]` prints the selected connection as AgentSync MCP source JSON. `mcp use <id>[@variant] --tool SLUG` previews a new per-tool source; `--apply` writes it without replacing an existing source. These commands do not start a server or probe an endpoint, and `use` does not run `sync` for you. See the [MCP catalog contract](docs/mcp-library.md) for the bounded manifest format and optional `library.mcp.path` setting. The opt-in [pilot catalog](catalog/mcp/README.md) includes Microsoft Learn, Context7, and Octocode with their requirements and source references.
 
 ### Sync options
 

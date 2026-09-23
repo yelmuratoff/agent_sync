@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "id": "context7",
+  "title": "Context7",
+  "description": "Remote documentation server using client-managed OAuth; requires an OAuth-capable MCP client and account authorization.",
+  "provenance": {
+    "homepage": "https://context7.com",
+    "repository": "https://github.com/upstash/context7"
+  },
+  "connection": {
+    "type": "http",
+    "url": "https://mcp.context7.com/mcp/oauth"
+  },
+  "requirements": {
+    "binaries": [],
+    "inputs": []
+  },
+  "guidance": {
+    "recommended": "default",
+    "authority": "maintainer",
+    "source": "https://context7.com/docs/resources/all-clients",
+    "checked_at": "2026-09-23",
+    "reason": "This catalog chooses documented client-managed OAuth so it does not need to embed an API key; the provider also documents other methods."
+  }
+}

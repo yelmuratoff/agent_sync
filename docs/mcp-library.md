@@ -32,6 +32,10 @@ symlinks are rejected. Other files at the catalog root, such as a README, are
 ignored. Concurrent hostile changes to a catalog directory are outside this
 read-only command's filesystem guarantee.
 
+The repository includes an opt-in [pilot catalog](../catalog/mcp/README.md).
+Pass its absolute path when using it from another project; AgentSync does not
+load it by default or embed it in the binary.
+
 `list` prints `id<TAB>title` in ID order and escapes controls, non-space
 whitespace, and Unicode 17.0 default-ignorable characters in titles. `show`
 validates the selected manifest and prints its exact source bytes.

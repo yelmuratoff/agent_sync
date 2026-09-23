@@ -3,6 +3,49 @@ mod common;
 use common::Project;
 use predicates::prelude::*;
 
+#[test]
+fn bundled_pilot_catalog_validates_and_renders_each_connection() {
+    let project = Project::empty();
+    let library = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("catalog/mcp");
+    project
+        .agentsync()
+        .args(["mcp", "list", "--library"])
+        .arg(&library)
+        .assert()
+        .success()
+        .stdout("context7\tContext7\nmicrosoft-learn\tMicrosoft Learn\noctocode\tOctocode\n");
+    project
+        .agentsync()
+        .args(["mcp", "validate", "--library"])
+        .arg(&library)
+        .assert()
+        .success();
+    for (id, expected) in [
+        (
+            "context7",
+            "{\"mcpServers\":{\"context7\":{\"type\":\"http\",\"url\":\"https://mcp.context7.com/mcp/oauth\"}}}\n",
+        ),
+        (
+            "microsoft-learn",
+            "{\"mcpServers\":{\"microsoft-learn\":{\"type\":\"http\",\"url\":\"https://learn.microsoft.com/api/mcp\"}}}\n",
+        ),
+        (
+            "octocode",
+            "{\"mcpServers\":{\"octocode\":{\"args\":[\"-y\",\"octocode-mcp@19.1.0\"],\"command\":\"npx\"}}}\n",
+        ),
+    ] {
+        project
+            .agentsync()
+            .args(["mcp", "render", &format!("{id}@recommended"), "--library"])
+            .arg(&library)
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+    assert!(!project.exists(".ai/backups"));
+    assert!(!project.exists(".mcp.json"));
+}
+
 fn manifest(id: &str, title: &str) -> String {
     format!(
         r#"{{"schema_version":1,"id":"{id}","title":"{title}","connection":{{"type":"stdio","command":"never-run","args":[]}},"requirements":{{"binaries":[],"inputs":[]}}}}"#
