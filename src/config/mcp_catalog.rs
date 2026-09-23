@@ -20,25 +20,32 @@ pub struct Entry {
 }
 
 pub fn read(catalog: &Path, selected: Option<&str>) -> Result<Vec<Entry>, String> {
-    let catalog = fs::canonicalize(catalog)
-        .map_err(|e| format!("Cannot read MCP library {}: {e}", catalog.display()))?;
+    let catalog = fs::canonicalize(catalog).map_err(|e| {
+        format!(
+            "Cannot read MCP library {}: {e}",
+            escaped_title(&catalog.to_string_lossy())
+        )
+    })?;
     if !catalog.is_dir() {
         return Err(format!(
             "MCP library is not a directory: {}",
-            catalog.display()
+            escaped_title(&catalog.to_string_lossy())
         ));
     }
     if let Some(id) = selected {
         if !valid_id(id) {
-            return Err(format!("Unsafe MCP library id: {id}"));
+            return Err(format!("Unsafe MCP library id: {}", escaped_title(id)));
         }
         return read_entry(&catalog, id).map(|entry| vec![entry]);
     }
 
     let mut ids = Vec::new();
-    for item in fs::read_dir(&catalog)
-        .map_err(|e| format!("Cannot read MCP library {}: {e}", catalog.display()))?
-    {
+    for item in fs::read_dir(&catalog).map_err(|e| {
+        format!(
+            "Cannot read MCP library {}: {e}",
+            escaped_title(&catalog.to_string_lossy())
+        )
+    })? {
         let item = item.map_err(|e| format!("Cannot list MCP library: {e}"))?;
         let kind = item
             .file_type()
@@ -51,7 +58,7 @@ pub fn read(catalog: &Path, selected: Option<&str>) -> Result<Vec<Entry>, String
             .into_string()
             .map_err(|_| "MCP library entry name is not UTF-8".to_string())?;
         if !valid_id(&id) {
-            return Err(format!("Unsafe MCP library id: {id}"));
+            return Err(format!("Unsafe MCP library id: {}", escaped_title(&id)));
         }
         if kind.is_symlink() {
             return Err(format!("MCP library entry is a symlink: {id}"));
@@ -84,14 +91,30 @@ pub fn escaped_title(title: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             ch if ch.is_control()
-                || matches!(ch, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}') =>
+                || (ch != ' ' && ch.is_whitespace())
+                || is_default_ignorable(ch) =>
             {
-                out.push_str(&format!("\\u{:04x}", ch as u32));
+                if (ch as u32) <= 0xffff {
+                    out.push_str(&format!("\\u{:04x}", ch as u32));
+                } else {
+                    out.push_str(&format!("\\u{{{:x}}}", ch as u32));
+                }
             }
             ch => out.push(ch),
         }
     }
     out
+}
+
+// Unicode 17.0 DerivedCoreProperties.txt: Default_Ignorable_Code_Point.
+fn is_default_ignorable(ch: char) -> bool {
+    matches!(ch as u32,
+        0x00ad | 0x034f | 0x061c | 0x115f..=0x1160 | 0x17b4..=0x17b5 |
+        0x180b..=0x180f | 0x200b..=0x200f | 0x202a..=0x202e |
+        0x2060..=0x206f | 0x3164 | 0xfe00..=0xfe0f | 0xfeff |
+        0xffa0 | 0xfff0..=0xfff8 | 0x1bca0..=0x1bca3 |
+        0x1d173..=0x1d17a | 0xe0000..=0xe0fff
+    )
 }
 
 fn read_entry(catalog: &Path, id: &str) -> Result<Entry, String> {
@@ -166,7 +189,10 @@ impl<'de> Visitor<'de> for StrictVisitor {
         let mut keys = HashSet::new();
         while let Some(key) = map.next_key::<String>()? {
             if !keys.insert(key.clone()) {
-                return Err(de::Error::custom(format!("duplicate JSON key: {key}")));
+                return Err(de::Error::custom(format!(
+                    "duplicate JSON key: {}",
+                    escaped_title(&key)
+                )));
             }
             map.next_value_seed(StrictSeed {
                 depth: self.depth + 1,
@@ -228,7 +254,7 @@ fn object<'a>(
         .ok_or_else(|| format!("{label} must be an object"))?;
     for key in map.keys() {
         if !required.contains(&key.as_str()) && !optional.contains(&key.as_str()) {
-            return Err(format!("unknown {label} field: {key}"));
+            return Err(format!("unknown {label} field: {}", escaped_title(key)));
         }
     }
     for key in required {
@@ -367,7 +393,10 @@ fn validate<'a>(value: &'a Value, expected_id: &str) -> Result<&'a str, String> 
             .ok_or_else(|| "extensions must be an object".to_string())?;
         for key in fields.keys() {
             if !key.contains('.') || key.starts_with('.') || key.ends_with('.') {
-                return Err(format!("extension key must be namespaced: {key}"));
+                return Err(format!(
+                    "extension key must be namespaced: {}",
+                    escaped_title(key)
+                ));
             }
         }
     }
@@ -378,7 +407,10 @@ fn validate<'a>(value: &'a Value, expected_id: &str) -> Result<&'a str, String> 
             .ok_or_else(|| "alternatives must be an object".to_string())?;
         for (id, value) in fields {
             if !valid_id(id) || matches!(id.as_str(), "default" | "recommended") {
-                return Err(format!("alternative needs a non-reserved variant id: {id}"));
+                return Err(format!(
+                    "alternative needs a non-reserved variant id: {}",
+                    escaped_title(id)
+                ));
             }
             variant(value)?;
             alternatives.push(id.as_str());

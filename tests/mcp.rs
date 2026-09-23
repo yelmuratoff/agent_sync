@@ -224,16 +224,54 @@ fn escaped_nul_is_data_but_raw_nul_is_invalid_json() {
 #[test]
 fn list_escapes_control_characters_in_titles() {
     let project = Project::empty();
-    project.write(
-        "catalog/alpha/manifest.json",
-        &manifest("alpha", r"First\n\t\u0085\u202e"),
+    let title = format!(
+        r"Привет\n\t\u0085\u202e{}{}{}",
+        '\u{00ad}', '\u{3164}', '\u{e0100}'
     );
+    project.write("catalog/alpha/manifest.json", &manifest("alpha", &title));
     project
         .agentsync()
         .args(["mcp", "list", "--library", "catalog"])
         .assert()
         .success()
-        .stdout("alpha\tFirst\\n\\t\\u0085\\u202e\n");
+        .stdout("alpha\tПривет\\n\\t\\u0085\\u202e\\u00ad\\u3164\\u{e0100}\n");
+}
+
+#[test]
+fn diagnostics_escape_untrusted_json_keys() {
+    let project = Project::empty();
+    let path = "catalog/alpha/manifest.json";
+    let original = manifest("alpha", "First");
+    let key = r"\u001b[31m";
+    project.write(
+        path,
+        &original.replace(
+            "\"connection\":",
+            &format!("\"{key}\":1,\"{key}\":2,\"connection\":"),
+        ),
+    );
+    project
+        .agentsync()
+        .args(["mcp", "validate", "alpha", "--library", "catalog"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains(r"duplicate JSON key: \u001b[31m"));
+
+    project.write(
+        path,
+        &original.replace("\"connection\":", &format!("\"{key}\":1,\"connection\":")),
+    );
+    let output = project
+        .agentsync()
+        .args(["mcp", "validate", "alpha", "--library", "catalog"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!output.stderr.contains(&0x1b));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(r"unknown manifest field: \u001b[31m")
+    );
 }
 
 #[test]
@@ -256,6 +294,7 @@ fn catalog_entry_limit_and_unsafe_ids_are_rejected() {
         .stderr(predicate::str::contains("Unsafe MCP library id"));
 }
 
+// Windows symlink creation can require Developer Mode or elevated privileges.
 #[cfg(unix)]
 #[test]
 fn symlinks_cannot_escape_the_selected_catalog() {

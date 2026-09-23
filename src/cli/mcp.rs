@@ -110,8 +110,12 @@ fn library_path(project: &Project, explicit: Option<PathBuf>) -> Result<PathBuf,
     let Some(config) = &project.config_path else {
         return Err("No MCP library selected; pass --library".to_string());
     };
-    let text = std::fs::read_to_string(config)
-        .map_err(|e| format!("Cannot read project config {}: {e}", config.display()))?;
+    let text = std::fs::read_to_string(config).map_err(|e| {
+        format!(
+            "Cannot read project config {}: {e}",
+            mcp_catalog::escaped_title(&config.to_string_lossy())
+        )
+    })?;
     let path = yaml_subset::value(&text, "library.mcp.path");
     if path.is_empty() {
         return Err("No MCP library selected; pass --library".to_string());
@@ -128,7 +132,7 @@ fn library_path(project: &Project, explicit: Option<PathBuf>) -> Result<PathBuf,
     let resolved = std::fs::canonicalize(&path).map_err(|e| {
         format!(
             "Cannot resolve configured MCP library {}: {e}",
-            path.display()
+            mcp_catalog::escaped_title(&path.to_string_lossy())
         )
     })?;
     if !resolved.starts_with(&root) {
@@ -167,15 +171,28 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 }
                 index += 2;
             }
-            flag if flag.starts_with('-') => return Err(format!("Unknown MCP option: {flag}")),
+            flag if flag.starts_with('-') => {
+                return Err(format!(
+                    "Unknown MCP option: {}",
+                    mcp_catalog::escaped_title(flag)
+                ));
+            }
             value if !matches!(action, Action::List) && id.is_none() => {
                 if !mcp_catalog::valid_id(value) {
-                    return Err(format!("Unsafe MCP library id: {value}"));
+                    return Err(format!(
+                        "Unsafe MCP library id: {}",
+                        mcp_catalog::escaped_title(value)
+                    ));
                 }
                 id = Some(value.to_string());
                 index += 1;
             }
-            value => return Err(format!("Unexpected MCP argument: {value}")),
+            value => {
+                return Err(format!(
+                    "Unexpected MCP argument: {}",
+                    mcp_catalog::escaped_title(value)
+                ));
+            }
         }
     }
     if matches!(action, Action::Show) && id.is_none() {

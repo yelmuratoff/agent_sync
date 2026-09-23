@@ -28,11 +28,12 @@ digit. Entry directories and manifests must be regular filesystem objects;
 symlinks are rejected. Other files at the catalog root, such as a README, are
 ignored.
 
-`list` prints `id<TAB>title` in ID order and escapes control and invisible
-formatting characters in titles. `show` validates the selected manifest and
-prints its exact source bytes. `validate [id]` checks one entry or the whole
-catalog. A whole-catalog operation validates every entry before writing to
-stdout. Errors go to stderr and leave stdout empty.
+`list` prints `id<TAB>title` in ID order and escapes controls, non-space
+whitespace, and Unicode 17.0 default-ignorable characters in titles. `show`
+validates the selected manifest and prints its exact source bytes.
+`validate [id]` checks one entry or the whole catalog. A whole-catalog
+operation validates every entry before writing to stdout. Errors go to stderr
+and leave stdout empty.
 
 ## Manifest format
 
