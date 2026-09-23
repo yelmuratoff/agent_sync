@@ -26,7 +26,8 @@ catalog search. The layout is `catalog/mcp/<id>/manifest.json`. IDs have 1–64
 ASCII letters, digits, underscores, or hyphens, beginning with a letter or
 digit. Entry directories and manifests must be regular filesystem objects;
 symlinks are rejected. Other files at the catalog root, such as a README, are
-ignored.
+ignored. Concurrent hostile changes to a catalog directory are outside this
+read-only command's filesystem guarantee.
 
 `list` prints `id<TAB>title` in ID order and escapes controls, non-space
 whitespace, and Unicode 17.0 default-ignorable characters in titles. `show`
