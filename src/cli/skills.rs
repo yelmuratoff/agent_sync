@@ -1,6 +1,7 @@
 use std::io::Write;
 
-use crate::config::yaml_subset;
+use crate::config::skill_metadata;
+use crate::engine::filters;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
 use crate::engine::workspace::Workspace;
@@ -13,12 +14,14 @@ pub const HELP: Help = Help {
     command: "skills",
     tagline: "inspect skills used by this project",
     synopsis: &[
-        "skills list [--profile <name>]",
+        "skills list [--profile <name>] [--include <globs>] [--exclude <globs>]",
+        "skills show <name> [--profile <name>]",
         "skills check [--profile <name>]",
     ],
     description: &[
         "Reads the effective source.skills tree, including shared and bundled\nskills. --profile applies the same profile overlay as sync. No project\nfiles are changed.",
-        "check validates the required name and description in SKILL.md\nfrontmatter. It does not change whether sync accepts a skill.",
+        "show displays the skill's declared metadata and optional annotations.\nThose annotations and requirements are not verified by AgentSync.",
+        "check verifies the required fields and supported scalar forms. For\nfull Agent Skills validation, use skills-ref validate <skill-dir>.\nIt does not change whether sync accepts a skill.",
     ],
     sections: &[Section {
         title: "OPTIONS",
@@ -27,16 +30,30 @@ pub const HELP: Help = Help {
                 "--profile <name>",
                 "Inspect this configured profile's skills",
             ),
+            ("--include <globs>", "List only matching skill names"),
+            ("--exclude <globs>", "Exclude matching skill names"),
             ("-h, --help", "Show this help"),
         ],
     }],
-    examples: &["skills list", "skills check", "skills list --profile work"],
+    examples: &[
+        "skills list",
+        "skills show deploy",
+        "skills check",
+        "skills list --profile work --include 'review*'",
+    ],
 };
 
-#[derive(Clone, Copy)]
 enum Action {
     List,
     Check,
+    Show(String),
+}
+
+struct Args {
+    action: Action,
+    profile: Option<String>,
+    include: String,
+    exclude: String,
 }
 
 pub fn run(
@@ -47,22 +64,22 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let Some((action, profile)) = parse(args) else {
-        if args
-            .iter()
-            .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
-        {
-            write(out, &HELP.render(style))?;
-            return Ok(0);
+    if args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+    {
+        write(out, &HELP.render(style))?;
+        return Ok(0);
+    }
+    let parsed = match parse(args) {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            write(err, &format!("Error: {message}\n"))?;
+            return Ok(1);
         }
-        write(
-            err,
-            "Error: expected skills list|check [--profile <name>]\n",
-        )?;
-        return Ok(1);
     };
     let mut session = Session::new(Workspace::on_disk(root), Paths::on_disk(root));
-    let source = match render::skill_source(&mut session, env, profile.as_deref()) {
+    let source = match render::skill_source(&mut session, env, parsed.profile.as_deref()) {
         Ok(source) => source,
         Err(_) => {
             for (_, line) in session.log.lines() {
@@ -78,12 +95,22 @@ pub fn run(
     }
     let mut count = 0;
     let mut issues = 0;
-    if matches!(action, Action::List) {
+    if matches!(parsed.action, Action::List) {
         write(out, "name\tdescription\tpath\n")?;
     }
     for name in session.ws.glob(&source.effective) {
         let dir = format!("{}/{name}", source.effective);
         if !session.ws.is_dir(&dir) {
+            continue;
+        }
+        if let Action::Show(target) = &parsed.action
+            && &name != target
+        {
+            continue;
+        }
+        if matches!(parsed.action, Action::List)
+            && !filters::matches(&name, &parsed.include, &parsed.exclude)
+        {
             continue;
         }
         count += 1;
@@ -108,13 +135,16 @@ pub fn run(
         };
         let metadata = if session.ws.is_file(&file) {
             let bytes = session.ws.read(&file)?;
-            parse_metadata(&bytes, &name)
+            skill_metadata::read(&bytes, &name)
         } else {
             Err("missing SKILL.md".to_string())
         };
-        match action {
+        match &parsed.action {
             Action::List => {
-                let description = metadata.as_ref().map(String::as_str).unwrap_or_default();
+                let description = metadata
+                    .as_ref()
+                    .map(|metadata| metadata.description.as_str())
+                    .unwrap_or_default();
                 write(
                     out,
                     &format!("{}\t{}\t{}\n", cell(&name), cell(description), cell(&shown)),
@@ -127,84 +157,108 @@ pub fn run(
                     write(out, &format!("{}: {}\n", cell(&shown), cell(&message)))?;
                 }
             },
+            Action::Show(_) => match metadata {
+                Ok(metadata) => {
+                    write(out, &format!("Name: {}\n", cell(&metadata.name)))?;
+                    write(
+                        out,
+                        &format!("Description: {}\n", cell(&metadata.description)),
+                    )?;
+                    if let Some(value) = metadata.compatibility {
+                        write(
+                            out,
+                            &format!("Compatibility (declared): {}\n", cell(&value)),
+                        )?;
+                    }
+                    if let Some(value) = metadata.license {
+                        write(out, &format!("License: {}\n", cell(&value)))?;
+                    }
+                    for (label, value) in [
+                        ("Use when", metadata.use_when),
+                        ("Not for", metadata.not_for),
+                        ("Requirements", metadata.requirements),
+                    ] {
+                        if let Some(value) = value {
+                            write(
+                                out,
+                                &format!("{label} (annotation, unverified): {}\n", cell(&value)),
+                            )?;
+                        }
+                    }
+                    write(out, &format!("Path: {}\n", cell(&shown)))?;
+                }
+                Err(message) => {
+                    write(
+                        err,
+                        &format!("Error: {}: {}\n", cell(&shown), cell(&message)),
+                    )?;
+                    return Ok(1);
+                }
+            },
         }
     }
-    if matches!(action, Action::Check) {
+    if matches!(parsed.action, Action::Check) {
         write(out, &format!("Checked {count} skills: {issues} issue(s)\n"))?;
+    }
+    if let Action::Show(name) = &parsed.action
+        && count == 0
+    {
+        write(err, &format!("Error: unknown skill: {}\n", cell(name)))?;
+        return Ok(1);
     }
     Ok(u8::from(issues > 0))
 }
 
-fn parse(args: &[String]) -> Option<(Action, Option<String>)> {
-    let action = match args.first()?.as_str() {
-        "list" => Action::List,
-        "check" => Action::Check,
-        _ => return None,
-    };
-    match &args[1..] {
-        [] => Some((action, None)),
-        [flag, name] if flag == "--profile" && !name.is_empty() && !name.starts_with('-') => {
-            Some((action, Some(name.clone())))
+fn parse(args: &[String]) -> Result<Args, String> {
+    let action = match args.first().map(String::as_str) {
+        Some("show") => {
+            let Some(name) = args.get(1).filter(|name| !name.starts_with('-')) else {
+                return Err("skills show requires a name".to_string());
+            };
+            Action::Show(name.clone())
         }
-        _ => None,
+        Some("list") => Action::List,
+        Some("check") => Action::Check,
+        _ => return Err("expected skills list|show|check".to_string()),
+    };
+    let mut parsed = Args {
+        action,
+        profile: None,
+        include: String::new(),
+        exclude: String::new(),
+    };
+    let start = if matches!(parsed.action, Action::Show(_)) {
+        2
+    } else {
+        1
+    };
+    let mut options = args[start..].iter();
+    while let Some(option) = options.next() {
+        let Some(value) = options
+            .next()
+            .filter(|value| !value.is_empty() && !value.starts_with('-'))
+        else {
+            return Err(format!("{option} requires a value"));
+        };
+        match option.as_str() {
+            "--profile" if parsed.profile.is_none() => parsed.profile = Some(value.clone()),
+            "--include" if matches!(parsed.action, Action::List) => {
+                append_globs(&mut parsed.include, value)
+            }
+            "--exclude" if matches!(parsed.action, Action::List) => {
+                append_globs(&mut parsed.exclude, value)
+            }
+            _ => return Err(format!("unknown option: {option}")),
+        }
     }
+    Ok(parsed)
 }
 
-fn parse_metadata(bytes: &[u8], directory: &str) -> Result<String, String> {
-    let text = std::str::from_utf8(bytes).map_err(|_| "SKILL.md is not UTF-8".to_string())?;
-    let mut lines = text.lines();
-    if lines.next().map(str::trim) != Some("---") {
-        return Err("missing YAML frontmatter".to_string());
+fn append_globs(slot: &mut String, value: &str) {
+    if !slot.is_empty() {
+        slot.push(',');
     }
-    let frontmatter: Vec<&str> = lines
-        .by_ref()
-        .take_while(|line| line.trim() != "---")
-        .collect();
-    if !text.lines().skip(1).any(|line| line.trim() == "---") {
-        return Err("unclosed YAML frontmatter".to_string());
-    }
-    let frontmatter = frontmatter.join("\n");
-    let name = yaml_subset::value(&frontmatter, "name");
-    if name.is_empty() {
-        return Err("missing name".to_string());
-    }
-    if name != directory {
-        return Err(format!(
-            "name '{name}' does not match directory '{directory}'"
-        ));
-    }
-    if name.len() > 64
-        || !name
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-        || name.starts_with('-')
-        || name.ends_with('-')
-    {
-        return Err("name must be 1–64 lowercase letters, digits, or hyphens".to_string());
-    }
-    let raw = yaml_subset::value(&frontmatter, "description");
-    let description = if matches!(raw.as_str(), ">" | ">-" | "|" | "|-") {
-        let mut folded = Vec::new();
-        let mut collecting = false;
-        for line in frontmatter.lines() {
-            if collecting {
-                if line.starts_with([' ', '\t']) {
-                    folded.push(line.trim());
-                } else {
-                    break;
-                }
-            } else if line.starts_with("description:") {
-                collecting = true;
-            }
-        }
-        folded.join(" ")
-    } else {
-        raw
-    };
-    if description.trim().is_empty() || description.chars().count() > 1024 {
-        return Err("description must be 1–1024 characters".to_string());
-    }
-    Ok(description)
+    slot.push_str(value);
 }
 
 fn cell(value: &str) -> String {

@@ -40,6 +40,20 @@ fn add_skill_creates_ai_src_skills_name_skill_md() {
 }
 
 #[test]
+fn add_skill_rejects_names_outside_the_agent_skills_spec() {
+    let project = seeded();
+    for name in ["MySkill", "my_skill", "my--skill", "my-skill-"] {
+        project
+            .agentsync()
+            .args(["add", "skill", name])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Skill name must be"));
+        assert!(!project.exists(&format!(".ai/src/skills/{name}/SKILL.md")));
+    }
+}
+
+#[test]
 fn add_command_creates_ai_src_commands_name_md_with_description_frontmatter() {
     let project = seeded();
     project

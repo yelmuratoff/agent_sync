@@ -150,6 +150,15 @@ fn profile_list_uses_profile_overlay() {
         .stdout(predicate::str::contains(
             "deploy\tWork deployment\t.ai/profiles/work/src/skills/deploy/SKILL.md",
         ));
+    project
+        .agentsync()
+        .args(["skills", "show", "deploy", "--profile", "work"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Description: Work deployment\n"))
+        .stdout(predicate::str::contains(
+            "Path: .ai/profiles/work/src/skills/deploy/SKILL.md\n",
+        ));
 }
 
 #[test]
@@ -160,6 +169,88 @@ fn unknown_profile_is_an_error() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Unknown profile: missing"));
+}
+
+#[test]
+fn show_displays_declared_fields_and_unverified_annotations() {
+    let project = project();
+    project.write(
+        ".ai/src/skills/review/SKILL.md",
+        "---\nname: review\ndescription: Review a selected diff\nlicense: MIT\ncompatibility: Requires git\nmetadata:\n  agentsync-use-when: Before merging\n  agentsync-not-for: Writing the change\n  agentsync-requirements: A selected diff\n---\n# Review\n",
+    );
+    project
+        .agentsync()
+        .args(["skills", "show", "review"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Description: Review a selected diff\n",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility (declared): Requires git\n",
+        ))
+        .stdout(predicate::str::contains("License: MIT\n"))
+        .stdout(predicate::str::contains(
+            "Use when (annotation, unverified): Before merging\n",
+        ))
+        .stdout(predicate::str::contains(
+            "Not for (annotation, unverified): Writing the change\n",
+        ))
+        .stdout(predicate::str::contains(
+            "Requirements (annotation, unverified): A selected diff\n",
+        ))
+        .stdout(predicate::str::contains(
+            "Path: .ai/src/skills/review/SKILL.md\n",
+        ))
+        .stderr("");
+}
+
+#[test]
+fn list_filters_names_without_affecting_check() {
+    let project = project();
+    for name in ["review", "release", "deploy"] {
+        project.write(
+            &format!(".ai/src/skills/{name}/SKILL.md"),
+            &format!("---\nname: {name}\ndescription: Use {name}\n---\n"),
+        );
+    }
+    project
+        .agentsync()
+        .args(["skills", "list", "--include", "re*", "--exclude", "release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("review\tUse review\t"))
+        .stdout(predicate::str::contains("release\t").not())
+        .stdout(predicate::str::contains("deploy\t").not());
+    project
+        .agentsync()
+        .args(["skills", "check"])
+        .assert()
+        .success()
+        .stdout("Checked 3 skills: 0 issue(s)\n");
+}
+
+#[test]
+fn show_reports_unknown_and_invalid_skills() {
+    let project = project();
+    project
+        .agentsync()
+        .args(["skills", "show", "absent"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown skill: absent"));
+    project.write(
+        ".ai/src/skills/review/SKILL.md",
+        "---\nname: review\ndescription:\n---\n",
+    );
+    project
+        .agentsync()
+        .args(["skills", "show", "review"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "description must be 1–1024 characters",
+        ));
 }
 
 #[test]
@@ -190,5 +281,5 @@ fn help_and_invalid_arguments_do_not_read_the_project() {
         .args(["skills", "install"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("expected skills list|check"));
+        .stderr(predicate::str::contains("expected skills list|show|check"));
 }

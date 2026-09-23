@@ -42,6 +42,7 @@ Use `agentsync add <kind> <name>` to create a new file with the correct frontmat
 
 - `agentsync add rule <name>` — creates `.ai/src/rules/<name>.md`
 - `agentsync add skill <name>` — creates `.ai/src/skills/<name>/SKILL.md`
+- `agentsync skills list` / `show <name>` / `check` — inspect effective skills and check their metadata without changing sync output
 - `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
 - `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
 - `agentsync add mcp <name> (--command CMD [--args '…'] [--env K=V,…] | --url URL)` — adds a server to the shared `.ai/src/mcp.json`

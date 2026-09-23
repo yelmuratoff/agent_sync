@@ -273,12 +273,27 @@ agentsync <command> [options]
 | `export`                 |       | Bundle `.ai/src/` into a shareable archive                                                      |
 | `import <src>`           |       | Import config from a GitHub repo, archive, or directory                                         |
 | `list`                   | `ls`  | Show configured tools and status                                                               |
-| `skills list\|check`     |       | List effective project skills or validate their `SKILL.md` metadata (`--profile <name>`)       |
+| `skills list\|show\|check` |     | Inspect effective project skills and check their `SKILL.md` metadata (`--profile <name>`)     |
 | `update`                 |       | Replace the binary with the latest release, or `update <version>` to pin a release tag         |
 | `upgrade-config`         |       | Re-pin `agentsync_version` in `agent_sync.yaml`                                                 |
 | `release`                |       | Bump version, tag, and push (maintainer)                                                        |
 | `version`                | `-v`  | Print version                                                                                  |
 | `help`                   | `-h`  | Show help                                                                                      |
+
+### Inspecting skills
+
+`agentsync skills list` reads the effective `source.skills` tree, including shared and bundled skills. Use `--profile <name>` to inspect a profile, or `--include` and `--exclude` to filter names. `agentsync skills show <name>` displays a skill's description, source path, and declared `license` and `compatibility` when present. `agentsync skills check` reports missing or malformed required metadata without changing what `sync` accepts.
+
+The [Agent Skills specification](https://agentskills.io/specification) defines `name`, `description`, `compatibility`, and an optional string-valued `metadata` map. For project-owned skills, use that map when a concise card needs extra human context:
+
+```yaml
+metadata:
+  agentsync-use-when: Review a selected diff before merging
+  agentsync-not-for: Writing or fixing the code under review
+  agentsync-requirements: A selected diff and access to the repository
+```
+
+`skills show` labels these entries as **unverified annotations**; it does not probe tools, authorize actions, or select a skill automatically. The built-in check covers the required fields and common scalar forms. Use the [reference validator](https://agentskills.io/specification#validation) (`skills-ref validate <skill-dir>`) for full format validation. [OASF](https://github.com/agntcy/oasf) provides a separate capability taxonomy; AgentSync does not infer OASF mappings from a skill description.
 
 ### Sync options
 

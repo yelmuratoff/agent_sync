@@ -1,0 +1,199 @@
+use crate::config::yaml_subset;
+
+#[derive(Debug)]
+pub struct SkillMetadata {
+    pub name: String,
+    pub description: String,
+    pub license: Option<String>,
+    pub compatibility: Option<String>,
+    pub use_when: Option<String>,
+    pub not_for: Option<String>,
+    pub requirements: Option<String>,
+}
+
+pub fn read(bytes: &[u8], directory: &str) -> Result<SkillMetadata, String> {
+    let text = std::str::from_utf8(bytes).map_err(|_| "SKILL.md is not UTF-8".to_string())?;
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return Err("missing YAML frontmatter".to_string());
+    }
+    let mut frontmatter = Vec::new();
+    let mut closed = false;
+    for line in lines {
+        if line.trim() == "---" {
+            closed = true;
+            break;
+        }
+        frontmatter.push(line);
+    }
+    if !closed {
+        return Err("unclosed YAML frontmatter".to_string());
+    }
+    for key in ["name", "description", "compatibility"] {
+        if frontmatter
+            .iter()
+            .filter(|line| line.starts_with(&format!("{key}:")))
+            .count()
+            > 1
+        {
+            return Err(format!("duplicate {key}"));
+        }
+    }
+    let name = field(&frontmatter, "name")?.filter(|value| !value.is_empty());
+    let Some(name) = name else {
+        return Err("missing name".to_string());
+    };
+    if name != directory {
+        return Err(format!(
+            "name '{name}' does not match directory '{directory}'"
+        ));
+    }
+    if !valid_name(&name) {
+        return Err("name must be 1–64 lowercase letters, digits, or single hyphens".to_string());
+    }
+    let description = field(&frontmatter, "description")?.unwrap_or_default();
+    if description.trim().is_empty() || description.chars().count() > 1024 {
+        return Err("description must be 1–1024 characters".to_string());
+    }
+    let compatibility = field(&frontmatter, "compatibility")?;
+    if compatibility
+        .as_ref()
+        .is_some_and(|value| value.is_empty() || value.chars().count() > 500)
+    {
+        return Err("compatibility must be 1–500 characters when provided".to_string());
+    }
+    Ok(SkillMetadata {
+        name,
+        description,
+        license: field(&frontmatter, "license")?.filter(|value| !value.is_empty()),
+        compatibility,
+        use_when: field(&frontmatter, "metadata.agentsync-use-when")?
+            .filter(|value| !value.is_empty()),
+        not_for: field(&frontmatter, "metadata.agentsync-not-for")?
+            .filter(|value| !value.is_empty()),
+        requirements: field(&frontmatter, "metadata.agentsync-requirements")?
+            .filter(|value| !value.is_empty()),
+    })
+}
+
+pub fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+}
+
+fn field(frontmatter: &[&str], key: &str) -> Result<Option<String>, String> {
+    let text = frontmatter.join("\n");
+    let Some(raw) = yaml_subset::found(&text, key) else {
+        return Ok(None);
+    };
+    if matches!(raw.as_str(), ">" | ">-" | ">+" | "|" | "|-" | "|+") {
+        let leaf = key.rsplit('.').next().unwrap_or(key);
+        let parent = key.split_once('.').map(|(parent, _)| parent);
+        let mut in_parent = parent.is_none();
+        let Some((index, field_indent)) =
+            frontmatter.iter().enumerate().find_map(|(index, line)| {
+                let indent = line.len() - line.trim_start().len();
+                if let Some(parent) = parent {
+                    if indent == 0 && *line == format!("{parent}:") {
+                        in_parent = true;
+                        return None;
+                    }
+                    if indent == 0 {
+                        in_parent = false;
+                    }
+                }
+                if in_parent
+                    && (parent.is_some() || indent == 0)
+                    && line.trim_start().starts_with(&format!("{leaf}:"))
+                {
+                    Some((index, indent))
+                } else {
+                    None
+                }
+            })
+        else {
+            return Err(format!("unsupported {key} block style"));
+        };
+        let value = frontmatter[index + 1..]
+            .iter()
+            .take_while(|line| {
+                line.is_empty() || line.len() - line.trim_start().len() > field_indent
+            })
+            .map(|line| line.trim())
+            .collect::<Vec<_>>();
+        return Ok(Some(value.join(" ").trim().to_string()));
+    }
+    if raw.starts_with(['>', '|']) {
+        return Err(format!("unsupported {key} block style"));
+    }
+    if raw.starts_with(['"', '\'']) && !raw.ends_with(raw.chars().next().unwrap_or(' ')) {
+        return Err(format!("unclosed {key} quote"));
+    }
+    Ok(Some(raw))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_standard_fields_and_annotations() {
+        let skill = b"---\nname: review\ndescription: >-\n  Review a diff\n  before merging\nlicense: MIT\ncompatibility: Requires git\nmetadata:\n  agentsync-use-when: Changes need review\n  agentsync-not-for: Writing code\n  agentsync-requirements: A selected diff\n---\n# Review\n";
+        let card = read(skill, "review").unwrap();
+        assert_eq!(card.name, "review");
+        assert_eq!(card.description, "Review a diff before merging");
+        assert_eq!(card.license.as_deref(), Some("MIT"));
+        assert_eq!(card.compatibility.as_deref(), Some("Requires git"));
+        assert_eq!(card.use_when.as_deref(), Some("Changes need review"));
+        assert_eq!(card.not_for.as_deref(), Some("Writing code"));
+        assert_eq!(card.requirements.as_deref(), Some("A selected diff"));
+    }
+
+    #[test]
+    fn rejects_consecutive_hyphens_and_oversize_compatibility() {
+        assert!(
+            read(
+                b"---\nname: bad--name\ndescription: Use it\n---\n",
+                "bad--name"
+            )
+            .unwrap_err()
+            .contains("single hyphens")
+        );
+        let skill = format!(
+            "---\nname: review\ndescription: Review\ncompatibility: {}\n---\n",
+            "x".repeat(501)
+        );
+        assert!(
+            read(skill.as_bytes(), "review")
+                .unwrap_err()
+                .contains("compatibility must")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_fields_and_unclosed_quotes() {
+        let duplicate = b"---\nname: review\nname: review\ndescription: Review\n---\n";
+        assert_eq!(read(duplicate, "review").unwrap_err(), "duplicate name");
+        let unclosed = b"---\nname: review\ndescription: \"Review\n---\n";
+        assert_eq!(
+            read(unclosed, "review").unwrap_err(),
+            "unclosed description quote"
+        );
+    }
+
+    #[test]
+    fn block_description_uses_the_root_field() {
+        let skill =
+            b"---\nname: review\nmetadata:\n  description: ignored\ndescription: >-\n  Review this diff\n---\n";
+        assert_eq!(
+            read(skill, "review").unwrap().description,
+            "Review this diff"
+        );
+    }
+}

@@ -202,6 +202,17 @@ pub fn add(
         put(err, refusal.as_bytes())?;
         return Ok(1);
     }
+    if kind == "skill" && !crate::config::skill_metadata::valid_name(&name) {
+        put(
+            err,
+            format!(
+                "{}: Skill name must be 1–64 lowercase letters, digits, or single hyphens and cannot end with a hyphen: {name}\n",
+                style.red("Error")
+            )
+            .as_bytes(),
+        )?;
+        return Ok(1);
+    }
     let Some(template) = catalog::content_template(&kind) else {
         put(
             err,
