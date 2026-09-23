@@ -92,7 +92,29 @@ fn field(frontmatter: &[&str], key: &str) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let raw = scalar(source);
-    if source.trim_start().starts_with(['>', '|'])
+    let source = source.trim_start();
+    let numeric = raw.chars().next().is_some_and(|character| {
+        character.is_ascii_digit() || matches!(character, '+' | '-' | '.')
+    }) && raw.parse::<f64>().is_ok();
+    if !source.starts_with(['"', '\''])
+        && (source.starts_with(['[', '{', '*', '&', '!'])
+            || matches!(
+                raw.as_str(),
+                "~" | "null"
+                    | "Null"
+                    | "NULL"
+                    | "true"
+                    | "True"
+                    | "TRUE"
+                    | "false"
+                    | "False"
+                    | "FALSE"
+            )
+            || numeric)
+    {
+        return Err(format!("{key} must be a string"));
+    }
+    if source.starts_with(['>', '|'])
         && matches!(raw.as_str(), ">" | ">-" | ">+" | "|" | "|-" | "|+")
     {
         let value = frontmatter[index + 1..]
@@ -104,10 +126,9 @@ fn field(frontmatter: &[&str], key: &str) -> Result<Option<String>, String> {
             .collect::<Vec<_>>();
         return Ok(Some(value.join(" ").trim().to_string()));
     }
-    if source.trim_start().starts_with(['>', '|']) && raw.starts_with(['>', '|']) {
+    if source.starts_with(['>', '|']) && raw.starts_with(['>', '|']) {
         return Err(format!("unsupported {key} block style"));
     }
-    let source = source.trim_start();
     if let Some(quote) = source
         .chars()
         .next()
@@ -235,5 +256,18 @@ mod tests {
     fn plain_scalar_keeps_hash_without_comment_spacing() {
         let skill = b"---\nname: review\ndescription: Use C# tools # note\n---\n";
         assert_eq!(read(skill, "review").unwrap().description, "Use C# tools");
+    }
+
+    #[test]
+    fn rejects_non_string_required_fields() {
+        for description in ["[one, two]", "{what: review}", "true", "42", "null"] {
+            let skill = format!("---\nname: review\ndescription: {description}\n---\n");
+            assert_eq!(
+                read(skill.as_bytes(), "review").unwrap_err(),
+                "description must be a string"
+            );
+        }
+        let skill = b"---\nname: review\ndescription: inf\n---\n";
+        assert_eq!(read(skill, "review").unwrap().description, "inf");
     }
 }
