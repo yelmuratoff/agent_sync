@@ -1,0 +1,12 @@
+name: "MiniMax Code"
+enabled: false
+
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  rules:
+    inline_into_agents: true
+
+  mcp:
+    dest: ".mcp.json"

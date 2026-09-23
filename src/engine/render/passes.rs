@@ -7,7 +7,8 @@ use super::tools::load_tool;
 use super::{Run, Step, Stop, TARGET_KEYS, checkpoint, io};
 use crate::config::tool::Tool;
 use crate::engine::session::Session;
-use crate::{config::profiles, engine::file_ops, engine::overlay};
+use crate::{config::payload, config::profiles, engine::file_ops, engine::overlay};
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub(super) struct Dests {
@@ -24,6 +25,7 @@ pub(super) struct Dests {
 
 /// `_run_personal_pass` and `_run_profile_passes`.
 pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
+    check_shared_mcp_dests(s, run)?;
     let slugs = run.tools.clone();
     for slug in &slugs {
         if run.profile_tools.contains(slug) {
@@ -64,6 +66,41 @@ pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
             }
         }
         overlay::cleanup_profile(&mut s.ws).map_err(|e| io(s, e))?;
+    }
+    Ok(())
+}
+
+fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
+    let mut owners: BTreeMap<String, (String, String, Vec<u8>)> = BTreeMap::new();
+    for slug in &run.tools {
+        if !run.enabled.contains(slug) || run.profile_tools.contains(slug) {
+            continue;
+        }
+        let tool = load_tool(s, slug);
+        let dest = resolve_one_dest(s, &tool, "mcp", &tool.display_name());
+        if dest.is_empty() {
+            continue;
+        }
+        let Some(source) = payload::resolve_source(s, &tool, "mcp") else {
+            continue;
+        };
+        if !s.ws.is_file(&source) {
+            continue;
+        }
+        let bytes = s.ws.read(&source).map_err(|e| io(s, e))?;
+        if let Some((other_slug, other_source, other_bytes)) = owners.get(&dest) {
+            if other_bytes != &bytes {
+                s.log.error(&format!(
+                    "MCP destination {} is shared by {other_slug} ({}) and {slug} ({}), but their sources differ",
+                    s.display(&dest),
+                    s.display(other_source),
+                    s.display(&source)
+                ));
+                return Err(Stop(1));
+            }
+        } else {
+            owners.insert(dest, (slug.clone(), source, bytes));
+        }
     }
     Ok(())
 }

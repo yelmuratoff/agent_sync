@@ -39,7 +39,7 @@ fn list_works_without_a_project_config() {
         .success()
         .stdout(predicate::str::contains("  AgentSync Tools\n"))
         .stdout(predicate::str::contains("Claude Code"))
-        .stdout(predicate::str::contains("  0 of 13 enabled\n"))
+        .stdout(predicate::str::contains("  0 of 14 enabled\n"))
         .stdout(predicate::str::contains("Enable a tool:"));
 }
 
@@ -84,7 +84,7 @@ fn list_counts_configured_tools_and_honours_the_repo_root_variable() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("  1 of 13 enabled\n"))
+        .stdout(predicate::str::contains("  1 of 14 enabled\n"))
         .stdout(predicate::str::contains("Customize a tool:"))
         .stdout(predicate::str::contains("Enable a tool:").not());
 }
@@ -155,7 +155,7 @@ fn sync_writes_outputs_then_refuses_to_overwrite_a_manual_edit_unless_forced() {
         .success()
         .stderr(predicate::str::contains("[INFO] Syncing Claude Code\n"))
         .stderr(predicate::str::contains(
-            "[DONE] Synced 1/13 tools (12 skipped)\n",
+            "[DONE] Synced 1/14 tools (13 skipped)\n",
         ));
     assert_eq!(
         std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),

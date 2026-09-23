@@ -7,22 +7,20 @@ unresolved output differences and ambiguous auto-detection, and its version
 bump belongs to a separate release.
 
 The [MiniMax Code source README](https://github.com/MiniMax-AI/minimax-code/blob/main/README.md)
-documents a current terminal CLI and `AGENTS.md` project guidance. It also
-states that the desktop application's source is not included there. This is
-enough to keep the integration idea, but not enough to assert that the CLI or
-desktop consumes OpenCode's `opencode.json`, `.opencode/`, or plugin files.
+documents a current terminal CLI and `AGENTS.md` project guidance. The
+[project MCP contract](https://github.com/MiniMax-AI/minimax-code/blob/main/packages/local-runtime-v2/docs/project-mcp.md)
+also confirms that Desktop, TUI, `mcode exec`, and `mcode acp` read the primary
+workspace's `.mcp.json` with a top-level `mcpServers` map. The shipped
+`minimax.yaml` therefore covers these two confirmed project surfaces. It does
+not claim that MiniMax consumes OpenCode's `opencode.json`, `.opencode/`, or
+plugin files.
 
-Before adding a `minimax` tool, choose the product and version to support and
-verify its project-level instruction, skill, command, subagent, settings, MCP,
-and hook surfaces against current first-party documentation or a reproducible
-installed-client check. Map only confirmed surfaces in
-`lib/templates/tools/minimax.yaml`; keep credentials and user-global state out
-of AgentSync. Test `sync`, `check`, `doctor`, `adopt`, rollback, and coexistence
-with OpenCode, especially any destination shared by both tools. Add a base MCP
-payload only if the client needs one and the clean-project output remains
-correct. Release versioning follows the normal release workflow.
+Future expansion needs first-party evidence or an installed-client check for
+project-level skills, commands, subagents, settings, and hooks. Keep credentials
+and user-global state out of AgentSync. The `.mcp.json` destination is shared
+with Claude Code; differing effective MCP sources must fail before either
+client's configuration can overwrite the other. Release versioning follows
+the normal release workflow.
 
-Revisit when there is a concrete MiniMax Code user need and enough client
-evidence to make the generated files testable. Until then, AgentSync's existing
-root `AGENTS.md` output covers the only project file confirmed by the source
-README.
+Revisit additional surfaces when client evidence makes their generated files
+testable. The current target intentionally remains smaller than PR #7.
