@@ -13,6 +13,7 @@ agentsync mcp validate example --library catalog/mcp
 agentsync mcp render example@default --library catalog/mcp
 agentsync mcp use example --tool claude --library catalog/mcp
 agentsync mcp use example --tool claude --library catalog/mcp --apply
+agentsync mcp use another --tool claude --library catalog/mcp --merge --apply
 ```
 
 An explicit path may be absolute or relative to the selected project root. Or
@@ -62,10 +63,23 @@ the path of the per-tool MCP source it would create.
 The tool must be enabled and have an MCP destination. `--apply` writes the
 source under the configured `source.tools` directory (by default
 `.ai/src/tools/<slug>/mcp.json`) and records a backup that `agentsync rollback`
-can restore. It refuses an existing per-tool, declared, legacy, or shared MCP
-source; use `mcp render` and edit that source yourself if it is occupied. The
-preview and errors never print existing source values. `agentsync sync` is a
-separate step to update generated client files.
+can restore. Without `--merge`, it refuses an existing per-tool, declared,
+legacy, or shared MCP source. `--merge` is limited to an existing regular
+per-tool `mcp.json`. It adds the selected ID under `mcpServers` while preserving
+other JSON members and server entries. Duplicate JSON keys and unsupported
+structures are refused. If that ID has different content, pass
+`--replace <id>` with the exact selected ID to replace it. Repeating an
+unchanged selection does not write or create another backup. Merging can
+normalize JSON formatting, so review the preview and source diff. The preview
+and errors never print existing source values. `agentsync sync` is a separate
+step to update generated client files.
+
+An apply operation holds a per-tool lock, snapshots the source, checks it has
+not changed while preparing the write, and replaces it atomically. A stopped
+process may leave `.agentsync-mcp-use.lock`; inspect the source and remove that
+lock before retrying. Writes by other programs in the narrow interval after
+the final check cannot be detected, so do not edit the same source concurrently
+outside AgentSync.
 For Kimi, `use` writes its native `mcp.json` form: HTTP connections have a
 `url` without the canonical `type: "http"` field. Claude keeps the canonical
 form in `.mcp.json`; OpenCode composes it into `opencode.json` during `sync`.
@@ -145,8 +159,6 @@ keys at any depth, including keys that become equal after escape decoding.
 `show` preserves source spelling; it does not normalize valid JSON. These
 limits define the catalog format, not general JSON Schema support.
 
-Catalog inspection, rendering, and guarded creation of a per-tool source are
-the first stages of the MCP library work. Extending an occupied source, editing
-client configuration, and connecting to a server are outside these commands.
-The remaining work is tracked in the
-[MCP roadmap](mcp-roadmap.md).
+Catalog inspection, rendering, and guarded creation or extension of a per-tool
+source do not connect to a server. The delivery history and boundaries are in
+the [MCP roadmap](mcp-roadmap.md).

@@ -675,6 +675,34 @@ fn use_codex_composes_selected_http_source_with_settings() {
     );
     project.agentsync().arg("check").assert().success();
     project.agentsync().arg("doctor").assert().success();
+    project.write("catalog/extra/manifest.json", &manifest("extra", "Extra"));
+    project
+        .agentsync()
+        .args([
+            "mcp",
+            "use",
+            "extra",
+            "--tool",
+            "codex",
+            "--library",
+            "catalog",
+            "--merge",
+            "--apply",
+        ])
+        .assert()
+        .success();
+    project.agentsync().arg("sync").assert().success();
+    assert!(
+        project
+            .read(".codex/config.toml")
+            .contains("[mcp_servers.docs]")
+    );
+    assert!(
+        project
+            .read(".codex/config.toml")
+            .contains("[mcp_servers.extra]")
+    );
+    project.agentsync().arg("check").assert().success();
     project.append(".codex/config.toml", "\n");
     project
         .agentsync()

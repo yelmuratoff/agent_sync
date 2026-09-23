@@ -15,18 +15,19 @@ attributed guidance. Rendering makes no configuration changes and does not
 execute commands, probe URLs, install packages, or read secrets. The
 [catalog contract](mcp-library.md) defines both read-only commands.
 
-`mcp use <id>[@variant] --tool <slug>` previews a per-tool source and creates it
-only with `--apply`. It refuses occupied sources and leaves `agentsync sync` as
-a separate action. The source creation can be undone with `agentsync rollback`.
+`mcp use <id>[@variant] --tool <slug>` previews a per-tool source and writes it
+only with `--apply`. It leaves `agentsync sync` as a separate action. Source
+changes can be undone with `agentsync rollback`.
 
-## Next slices
+## Delivered slices
 
-1. **Support guarded extension of an existing source.** If users need to add a
-   selection to an occupied per-tool source, design `--merge` as its own change.
-   Preserve unrelated JSON members, reject duplicate or unsupported structures,
-   and require an explicit selected ID for replacement. Cover unchanged replay,
-   conflict, backup, interruption, and concurrent-writer cases before enabling
-   writes. Do not silently migrate shared, legacy, or alternate sources.
+1. **Guarded extension of an existing source.** `--merge` adds one selection to
+   an occupied regular per-tool source. It preserves unrelated JSON members,
+   rejects duplicate or unsupported structures, and requires an explicit ID
+   for replacement. Replays, conflicts, backups, and lock contention have
+   command-level coverage. Shared, legacy, and alternate sources are not
+   migrated. A stale lock after interruption blocks later writes until the
+   source is inspected and the lock removed.
 
 2. **Client adapters.** Claude, OpenCode, and Kimi catalog selections have
    command-level coverage through their normal `sync`, `check`, `doctor`, and
