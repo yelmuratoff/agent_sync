@@ -228,6 +228,55 @@ fn list_filters_names_without_affecting_check() {
         .assert()
         .success()
         .stdout("Checked 3 skills: 0 issue(s)\n");
+    project
+        .agentsync()
+        .args([
+            "skills",
+            "list",
+            "--include",
+            "review",
+            "--include",
+            "deploy",
+            "--exclude",
+            "release",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("review\tUse review\t"))
+        .stdout(predicate::str::contains("deploy\tUse deploy\t"))
+        .stdout(predicate::str::contains("release\t").not());
+}
+
+#[test]
+fn profile_reports_the_source_used_by_its_overlay() {
+    let project = project();
+    project.write(
+        ".ai/agent_sync.yaml",
+        "base_skills: false\nsource:\n  skills: custom/skills\nprofiles:\n  work:\n    tools: [claude-work]\n",
+    );
+    project.write(
+        "custom/skills/review/SKILL.md",
+        "---\nname: review\ndescription: Custom source\n---\n",
+    );
+    project.write(
+        ".ai/src/skills/review/SKILL.md",
+        "---\nname: review\ndescription: Profile base source\n---\n",
+    );
+    project.write(
+        ".ai/profiles/work/src/skills/other/SKILL.md",
+        "---\nname: other\ndescription: Profile skill\n---\n",
+    );
+    project
+        .agentsync()
+        .args(["skills", "show", "review", "--profile", "work"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Description: Profile base source\n",
+        ))
+        .stdout(predicate::str::contains(
+            "Path: .ai/src/skills/review/SKILL.md\n",
+        ));
 }
 
 #[test]

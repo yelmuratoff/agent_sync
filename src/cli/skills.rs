@@ -256,7 +256,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
 
 fn append_globs(slot: &mut String, value: &str) {
     if !slot.is_empty() {
-        slot.push(',');
+        slot.push(' ');
     }
     slot.push_str(value);
 }

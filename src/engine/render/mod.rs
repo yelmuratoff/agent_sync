@@ -70,9 +70,16 @@ pub fn skill_source(
         }
         let overlay_dir = profiles::overlay_dir(config, name);
         let profile_root = s.paths.absolute(&overlay_dir);
-        origins.push(format!("{profile_root}/src/skills"));
+        let prior_skills_source = run.sources.skills.clone();
         overlay::setup_profile(s, config, name, &run.profile_base_src, &mut run.sources)
             .map_err(|e| io(s, e))?;
+        let profile_skills_overlay = run.sources.skills != prior_skills_source;
+        if profile_skills_overlay {
+            origins.push(format!("{profile_root}/src/skills"));
+            if run.profile_base_src == format!("{}/.ai/src", s.paths.root) {
+                origins.push(format!("{}/.ai/src/skills", s.paths.root));
+            }
+        }
     }
     origins.push(configured);
     if let Some(config) = run.config.as_deref() {
