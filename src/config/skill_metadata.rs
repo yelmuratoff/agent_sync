@@ -88,38 +88,13 @@ pub fn valid_name(name: &str) -> bool {
 }
 
 fn field(frontmatter: &[&str], key: &str) -> Result<Option<String>, String> {
-    let text = frontmatter.join("\n");
-    let Some(raw) = yaml_subset::found(&text, key) else {
+    let Some((index, field_indent, source)) = field_line(frontmatter, key) else {
         return Ok(None);
     };
-    if matches!(raw.as_str(), ">" | ">-" | ">+" | "|" | "|-" | "|+") {
-        let leaf = key.rsplit('.').next().unwrap_or(key);
-        let parent = key.split_once('.').map(|(parent, _)| parent);
-        let mut in_parent = parent.is_none();
-        let Some((index, field_indent)) =
-            frontmatter.iter().enumerate().find_map(|(index, line)| {
-                let indent = line.len() - line.trim_start().len();
-                if let Some(parent) = parent {
-                    if indent == 0 && *line == format!("{parent}:") {
-                        in_parent = true;
-                        return None;
-                    }
-                    if indent == 0 {
-                        in_parent = false;
-                    }
-                }
-                if in_parent
-                    && (parent.is_some() || indent == 0)
-                    && line.trim_start().starts_with(&format!("{leaf}:"))
-                {
-                    Some((index, indent))
-                } else {
-                    None
-                }
-            })
-        else {
-            return Err(format!("unsupported {key} block style"));
-        };
+    let raw = scalar(source);
+    if source.trim_start().starts_with(['>', '|'])
+        && matches!(raw.as_str(), ">" | ">-" | ">+" | "|" | "|-" | "|+")
+    {
         let value = frontmatter[index + 1..]
             .iter()
             .take_while(|line| {
@@ -129,13 +104,64 @@ fn field(frontmatter: &[&str], key: &str) -> Result<Option<String>, String> {
             .collect::<Vec<_>>();
         return Ok(Some(value.join(" ").trim().to_string()));
     }
-    if raw.starts_with(['>', '|']) {
+    if source.trim_start().starts_with(['>', '|']) && raw.starts_with(['>', '|']) {
         return Err(format!("unsupported {key} block style"));
     }
-    if raw.starts_with(['"', '\'']) && !raw.ends_with(raw.chars().next().unwrap_or(' ')) {
-        return Err(format!("unclosed {key} quote"));
+    let source = source.trim_start();
+    if let Some(quote) = source
+        .chars()
+        .next()
+        .filter(|quote| matches!(quote, '"' | '\''))
+    {
+        let closed = source[1..].rmatch_indices(quote).any(|(index, _)| {
+            let tail = source[index + 2..].trim_start();
+            tail.is_empty() || tail.starts_with('#')
+        });
+        if !closed {
+            return Err(format!("unclosed {key} quote"));
+        }
     }
     Ok(Some(raw))
+}
+
+fn scalar(source: &str) -> String {
+    let source = source.trim();
+    if source.starts_with(['"', '\'']) {
+        return yaml_subset::normalize_scalar(source);
+    }
+    let comment = source.char_indices().find_map(|(index, character)| {
+        (character == '#' && (index == 0 || source[..index].ends_with(char::is_whitespace)))
+            .then_some(index)
+    });
+    source[..comment.unwrap_or(source.len())]
+        .trim_end()
+        .to_string()
+}
+
+fn field_line<'a>(frontmatter: &[&'a str], key: &str) -> Option<(usize, usize, &'a str)> {
+    let (parent, leaf) = key
+        .split_once('.')
+        .map_or((None, key), |(parent, leaf)| (Some(parent), leaf));
+    let mut in_parent = parent.is_none();
+    for (index, line) in frontmatter.iter().enumerate() {
+        let indent = line.len() - line.trim_start().len();
+        let Some((candidate, source)) = line.trim_start().split_once(':') else {
+            continue;
+        };
+        if indent == 0 {
+            if parent == Some(candidate) {
+                in_parent = true;
+                continue;
+            }
+            if parent.is_some() && in_parent {
+                break;
+            }
+        }
+        if in_parent && (parent.is_some() || indent == 0) && candidate == leaf {
+            return Some((index, indent, source));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -195,5 +221,19 @@ mod tests {
             read(skill, "review").unwrap().description,
             "Review this diff"
         );
+    }
+
+    #[test]
+    fn quoted_block_marker_is_a_scalar() {
+        let skill = b"---\nname: review\ndescription: \">\"\n---\n";
+        assert_eq!(read(skill, "review").unwrap().description, ">");
+        let skill = b"---\nname: review\ndescription: \"Review\" # context\n---\n";
+        assert_eq!(read(skill, "review").unwrap().description, "Review");
+    }
+
+    #[test]
+    fn plain_scalar_keeps_hash_without_comment_spacing() {
+        let skill = b"---\nname: review\ndescription: Use C# tools # note\n---\n";
+        assert_eq!(read(skill, "review").unwrap().description, "Use C# tools");
     }
 }
