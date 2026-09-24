@@ -780,7 +780,7 @@ fn adopt_one(
     copy_into_source(&found)?;
     let mut done = format!("\n{} Wrote {}\n", style.green("✓"), found.source_rel);
     if manifest.is_some() {
-        manifest::update_entry(run.root, &found.dest_rel, &current)?;
+        manifest::update_entry(run.root, &found.dest_rel, &current, None)?;
         done.push_str(&format!(
             "{} Updated .ai/.sync-manifest\n",
             style.green("✓")
@@ -907,7 +907,7 @@ fn adopt_all(
     put(run.out, b"\n")?;
     for ((found, current), _) in planned.iter().zip(&ok).filter(|(_, fine)| **fine) {
         copy_into_source(found)?;
-        manifest::update_entry(run.root, &found.dest_rel, current)?;
+        manifest::update_entry(run.root, &found.dest_rel, current, None)?;
         put(
             run.out,
             format!(

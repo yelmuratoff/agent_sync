@@ -1,19 +1,88 @@
 //! `.ai/.sync-manifest` as `lib/helpers/manifest.sh` reads and writes it: one
-//! `<rel>\t<sha256>` line per output, `LC_ALL=C sort -u`, no header.
+//! `<rel>\t<sha256>` line per output, `LC_ALL=C sort -u`, no header. A file
+//! sync owns only some keys of adds a third column, the owned-key record, and
+//! its hash covers those keys alone.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use crate::engine::toml_keys::{self, KeyPath, Owned};
 use crate::output::log::Log;
 use crate::{Error, engine::staging};
 
 pub const REL: &str = ".ai/.sync-manifest";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub rel: String,
+    pub hash: String,
+    pub owned: Option<Owned>,
+}
+
+impl Entry {
+    fn from_line(rel: String, rest: String) -> Self {
+        if let Some((hash, column)) = rest.split_once('\t')
+            && let Some(owned) = Owned::decode(column)
+        {
+            return Self {
+                rel,
+                hash: hash.to_string(),
+                owned: Some(owned),
+            };
+        }
+        Self {
+            rel,
+            hash: rest,
+            owned: None,
+        }
+    }
+
+    fn line(&self) -> String {
+        match &self.owned {
+            Some(owned) => format!("{}\t{}\t{}", self.rel, self.hash, owned.encode()),
+            None => format!("{}\t{}", self.rel, self.hash),
+        }
+    }
+
+    /// The hash the file has now, measured the way this entry was recorded;
+    /// `None` when the file is gone. An owned-key file that no longer parses
+    /// hashes as empty, which never matches.
+    pub fn current_hash(&self, root: &str) -> Option<String> {
+        let path = Path::new(root).join(&self.rel);
+        match &self.owned {
+            None => hash_file(&path),
+            Some(owned) => {
+                if !path.is_file() {
+                    return None;
+                }
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                Some(
+                    toml_keys::owned_in(&text, owned)
+                        .map(|now| now.digest())
+                        .unwrap_or_default(),
+                )
+            }
+        }
+    }
+
+    /// The owned keys whose value changed since the record; empty for a
+    /// whole-file entry or a file that no longer parses.
+    pub fn changed_keys(&self, root: &str) -> Vec<KeyPath> {
+        let Some(owned) = &self.owned else {
+            return Vec::new();
+        };
+        let text = std::fs::read_to_string(Path::new(root).join(&self.rel)).unwrap_or_default();
+        toml_keys::owned_in(&text, owned)
+            .map(|now| owned.changed(&now))
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Manifest {
-    entries: Vec<(String, String)>,
+    entries: Vec<Entry>,
 }
 
 impl Manifest {
@@ -31,17 +100,32 @@ impl Manifest {
     /// The manifest's `hashed_lines`.
     pub fn parse(bytes: &[u8]) -> Self {
         Self {
-            entries: hashed_lines(bytes),
+            entries: hashed_lines(bytes)
+                .into_iter()
+                .map(|(rel, rest)| Entry::from_line(rel, rest))
+                .collect(),
         }
     }
 
     pub fn paths(&self) -> BTreeSet<String> {
-        self.entries.iter().map(|(rel, _)| rel.clone()).collect()
+        self.entries.iter().map(|entry| entry.rel.clone()).collect()
     }
 
     /// `MANIFEST_KEYS` and `MANIFEST_VALUES`, in file order.
-    pub fn entries(&self) -> &[(String, String)] {
+    pub fn entries(&self) -> &[Entry] {
         &self.entries
+    }
+
+    pub fn entry(&self, rel: &str) -> Option<&Entry> {
+        self.entries.iter().find(|entry| entry.rel == rel)
+    }
+
+    /// The owned-key record of every entry that has one.
+    pub fn owned_records(&self) -> BTreeMap<String, Owned> {
+        self.entries
+            .iter()
+            .filter_map(|entry| Some((entry.rel.clone(), entry.owned.clone()?)))
+            .collect()
     }
 
     /// `manifest_check_drift`: entries whose file exists with another hash, in
@@ -49,17 +133,20 @@ impl Manifest {
     pub fn drift(&self, root: &str) -> Vec<String> {
         self.entries
             .iter()
-            .filter(|(rel, old)| {
-                hash_file(&Path::new(root).join(rel)).is_some_and(|current| current != *old)
+            .filter(|entry| {
+                entry
+                    .current_hash(root)
+                    .is_some_and(|current| current != entry.hash)
             })
-            .map(|(rel, _)| rel.clone())
+            .map(|entry| entry.rel.clone())
             .collect()
     }
 }
 
 /// `manifest_update_entry`: the manifest rewritten with `<rel>\t<hash>` in place
 /// of any line for `rel`, every other line kept as `read` split it, `sort -u`.
-pub fn update_entry(root: &str, rel: &str, hash: &str) -> Result<(), Error> {
+/// An owned-key record rides along as the third column.
+pub fn update_entry(root: &str, rel: &str, hash: &str, owned: Option<&Owned>) -> Result<(), Error> {
     if rel.is_empty() || hash.is_empty() {
         return Ok(());
     }
@@ -81,7 +168,12 @@ pub fn update_entry(root: &str, rel: &str, hash: &str) -> Result<(), Error> {
             lines.insert(format!("{existing}\t{existing_hash}"));
         }
     }
-    lines.insert(format!("{rel}\t{hash}"));
+    let entry = Entry {
+        rel: rel.to_string(),
+        hash: hash.to_string(),
+        owned: owned.cloned(),
+    };
+    lines.insert(entry.line());
     let mut text = lines.into_iter().collect::<Vec<_>>().join("\n");
     text.push('\n');
     staging::write_beside(&path, text.as_bytes())
@@ -122,24 +214,32 @@ fn hash_file(path: &Path) -> Option<String> {
 }
 
 /// `manifest_write`: previous entries whose file still exists and this run did
-/// not touch, plus fresh hashes of every touched file that exists. An empty
-/// result removes the manifest.
+/// not touch, plus fresh hashes of every touched file that exists, measured
+/// over the owned keys alone where `owned` records them. An empty result
+/// removes the manifest.
 pub fn write(
     root: &str,
     previous: Option<&Manifest>,
     touched: &BTreeSet<String>,
+    owned: &BTreeMap<String, Owned>,
     log: &mut Log,
 ) -> Result<(), Error> {
     let exists = |rel: &str| Path::new(root).join(rel).is_file();
     let mut lines: BTreeSet<String> = BTreeSet::new();
-    for (rel, hash) in previous.map(|m| m.entries.as_slice()).unwrap_or_default() {
-        if exists(rel) && !touched.contains(rel) {
-            lines.insert(format!("{rel}\t{hash}"));
+    for entry in previous.map(|m| m.entries.as_slice()).unwrap_or_default() {
+        if exists(&entry.rel) && !touched.contains(&entry.rel) {
+            lines.insert(entry.line());
         }
     }
     for rel in touched {
-        if let Some(hash) = hash_file(&Path::new(root).join(rel)) {
-            lines.insert(format!("{rel}\t{hash}"));
+        let mut entry = Entry {
+            rel: rel.clone(),
+            hash: String::new(),
+            owned: owned.get(rel).cloned(),
+        };
+        if let Some(hash) = entry.current_hash(root) {
+            entry.hash = hash;
+            lines.insert(entry.line());
         }
     }
 
@@ -191,15 +291,64 @@ mod tests {
     fn lines_are_read_the_way_bash_read_splits_them_on_tabs() {
         let manifest =
             Manifest::parse(b"a.md\th1\n\tb.md\th2\t\n#c\th\nd.md\n\ne.md\th\te\nlast\th9");
+        let pairs: Vec<(&str, &str, bool)> = manifest
+            .entries
+            .iter()
+            .map(|e| (e.rel.as_str(), e.hash.as_str(), e.owned.is_some()))
+            .collect();
         assert_eq!(
-            manifest.entries,
+            pairs,
             [
-                ("a.md".to_string(), "h1".to_string()),
-                ("b.md".to_string(), "h2".to_string()),
-                ("e.md".to_string(), "h\te".to_string()),
-                ("last".to_string(), "h9".to_string()),
+                ("a.md", "h1", false),
+                ("b.md", "h2", false),
+                ("e.md", "h\te", false),
+                ("last", "h9", false),
             ]
         );
+    }
+
+    fn owned_record(settings: &str) -> Owned {
+        let declared = toml_keys::Declared::from_toml(settings).unwrap();
+        toml_keys::merge("", &declared, None).unwrap().owned
+    }
+
+    #[test]
+    fn an_owned_key_record_rides_as_a_third_column() {
+        let owned = owned_record("model = \"a\"\n");
+        let line = format!("cfg.toml\tdigest\t{}\n", owned.encode());
+        let manifest = Manifest::parse(line.as_bytes());
+        assert_eq!(manifest.entries[0].hash, "digest");
+        assert_eq!(manifest.entries[0].owned.as_ref(), Some(&owned));
+        assert_eq!(manifest.entries[0].line() + "\n", line);
+    }
+
+    #[test]
+    fn owned_key_drift_ignores_other_keys_and_names_a_changed_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().disk_text();
+        std::fs::write(dir.path().join("cfg.toml"), "model = \"a\"\n").unwrap();
+        let owned = owned_record("model = \"a\"\n");
+        let touched = BTreeSet::from(["cfg.toml".to_string()]);
+        let records = BTreeMap::from([("cfg.toml".to_string(), owned)]);
+        write(&root, None, &touched, &records, &mut Log::capturing(false)).unwrap();
+        let load = || Manifest::load(&root).unwrap().unwrap();
+
+        std::fs::write(
+            dir.path().join("cfg.toml"),
+            "model = 'a'\n[projects.p]\ntrust = 1\n",
+        )
+        .unwrap();
+        assert!(load().drift(&root).is_empty());
+
+        std::fs::write(dir.path().join("cfg.toml"), "model = \"b\"\n").unwrap();
+        assert_eq!(load().drift(&root), ["cfg.toml"]);
+        assert_eq!(
+            load().entry("cfg.toml").unwrap().changed_keys(&root),
+            [vec!["model".to_string()]]
+        );
+
+        std::fs::write(dir.path().join("cfg.toml"), "model = \n").unwrap();
+        assert_eq!(load().drift(&root), ["cfg.toml"]);
     }
 
     #[cfg(unix)]
@@ -213,13 +362,13 @@ mod tests {
             "z.md\tzz\n# note\t\nb.md\told\n\ta.md\t\taa\t\nnohash\nb.md\tdup\n",
         )
         .unwrap();
-        update_entry(&root, "b.md", "new").unwrap();
+        update_entry(&root, "b.md", "new", None).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join(REL)).unwrap(),
             "# note\t\na.md\taa\nb.md\tnew\nnohash\t\nz.md\tzz\n"
         );
-        update_entry(&root, "", "x").unwrap();
-        update_entry(&root, "c.md", "").unwrap();
+        update_entry(&root, "", "x", None).unwrap();
+        update_entry(&root, "c.md", "", None).unwrap();
         assert!(
             std::fs::read_to_string(dir.path().join(REL))
                 .unwrap()
@@ -258,7 +407,7 @@ mod tests {
         let touched = BTreeSet::from(["CLAUDE.md".to_string(), ".claude/x.md".to_string()]);
 
         let mut log = Log::default();
-        write(&root, Some(&previous), &touched, &mut log).unwrap();
+        write(&root, Some(&previous), &touched, &BTreeMap::new(), &mut log).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join(REL)).unwrap(),
             format!(
@@ -269,7 +418,7 @@ mod tests {
         );
         assert!(log.lines().is_empty());
 
-        write(&root, None, &touched, &mut log).unwrap();
+        write(&root, None, &touched, &BTreeMap::new(), &mut log).unwrap();
         assert_eq!(
             log.tail(1),
             [
@@ -279,9 +428,23 @@ mod tests {
 
         std::fs::remove_file(dir.path().join("CLAUDE.md")).unwrap();
         std::fs::remove_file(dir.path().join(".claude/x.md")).unwrap();
-        write(&root, Some(&previous), &BTreeSet::new(), &mut log).unwrap();
+        write(
+            &root,
+            Some(&previous),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &mut log,
+        )
+        .unwrap();
         std::fs::remove_file(dir.path().join("skipped.md")).unwrap();
-        write(&root, Some(&previous), &BTreeSet::new(), &mut log).unwrap();
+        write(
+            &root,
+            Some(&previous),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &mut log,
+        )
+        .unwrap();
         assert!(!dir.path().join(REL).exists());
         assert_eq!(
             log.tail(1),

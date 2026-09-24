@@ -46,18 +46,19 @@ impl Doctor<'_> {
             return self.info(".sync-manifest is empty");
         }
         let (mut edited, mut missing, mut clean) = (0, 0, 0);
-        for (rel, old_hash) in manifest.entries() {
+        for entry in manifest.entries() {
+            let rel = &entry.rel;
             let dest = Path::new(&self.root).join(rel);
             if !dest.is_file() {
                 self.warn(&format!("{rel} — missing (deleted manually)"))?;
                 missing += 1;
                 continue;
             }
-            let Some(current) = template_manifest::hash(&dest) else {
+            let Some(current) = entry.current_hash(&self.root) else {
                 self.warn(&format!("{rel} — could not hash"))?;
                 continue;
             };
-            if &current != old_hash {
+            if current != entry.hash {
                 self.warn(&format!("{rel} — edited since last sync"))?;
                 edited += 1;
             } else {

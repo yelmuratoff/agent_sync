@@ -275,6 +275,12 @@ fn sync(s: &mut Session, args: &Args, env: &Env, tx: &mut Transaction) -> Result
     let root = s.paths.root.clone();
     let previous = Manifest::load(&root).map_err(|e| io(s, e))?;
     s.activate_manifest(previous.as_ref().map(Manifest::paths).unwrap_or_default());
+    s.set_owned_before(
+        previous
+            .as_ref()
+            .map(Manifest::owned_records)
+            .unwrap_or_default(),
+    );
     warn_baseline_replacements(s, &run, previous.is_none());
     check_drift(s, previous.as_ref())?;
     start_transaction(s, &run, env, tx)?;
@@ -548,7 +554,8 @@ fn finalize(
     render::checkpoint(s)?;
     if !s.dry_run {
         let touched = s.touched().clone();
-        manifest::write(&root, previous, &touched, &mut s.log).map_err(|e| io(s, e))?;
+        let owned = s.owned_after().clone();
+        manifest::write(&root, previous, &touched, &owned, &mut s.log).map_err(|e| io(s, e))?;
     }
 
     if s.preserved() > 0 {

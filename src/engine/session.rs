@@ -2,8 +2,9 @@
 //! log, the run's `--dry-run` and `--force`, and the manifest's record of what
 //! this run wrote (`manifest.sh`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::engine::toml_keys::Owned;
 use crate::engine::workspace::Workspace;
 use crate::output::log::Log;
 use crate::paths::Paths;
@@ -21,6 +22,8 @@ pub struct Session {
     manifest: Option<BTreeSet<String>>,
     preserved: usize,
     touched: BTreeSet<String>,
+    owned_before: BTreeMap<String, Owned>,
+    owned_after: BTreeMap<String, Owned>,
     legacy_payload_warned: bool,
 }
 
@@ -37,6 +40,8 @@ impl Session {
             manifest: None,
             preserved: 0,
             touched: BTreeSet::new(),
+            owned_before: BTreeMap::new(),
+            owned_after: BTreeMap::new(),
             legacy_payload_warned: false,
         }
     }
@@ -96,6 +101,26 @@ impl Session {
 
     pub fn preserved(&self) -> usize {
         self.preserved
+    }
+
+    /// The owned-key records the previous sync left, by repo-relative path.
+    pub fn set_owned_before(&mut self, records: BTreeMap<String, Owned>) {
+        self.owned_before = records;
+    }
+
+    pub fn owned_before(&self, abs: &str) -> Option<&Owned> {
+        self.owned_before.get(&self.paths.to_repo_relative(abs)?)
+    }
+
+    /// The keys this run owns in `abs`, for the manifest's third column.
+    pub fn record_owned(&mut self, abs: &str, owned: Owned) {
+        if let Some(rel) = self.paths.to_repo_relative(abs) {
+            self.owned_after.insert(rel, owned);
+        }
+    }
+
+    pub fn owned_after(&self) -> &BTreeMap<String, Owned> {
+        &self.owned_after
     }
 
     /// `manifest_record_write`: paths outside the root are ignored silently.
