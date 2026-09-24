@@ -22,7 +22,9 @@ pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merg
     };
     let mut changed = false;
     for path in previous.into_iter().flat_map(Owned::keys) {
-        if !declared.iter().any(|(declared, _)| declared == path)
+        if !declared
+            .iter()
+            .any(|(declared, _)| path.starts_with(declared))
             && remove(doc.as_table_mut(), path)
         {
             changed = true;
@@ -386,6 +388,22 @@ mod tests {
         assert_eq!(second.text, "tui = { theme = \"light\" }\n");
         let third = merge(&second.text, parent, Some(&second.owned)).unwrap();
         assert_eq!(third.text, second.text);
+    }
+
+    #[test]
+    fn a_leaf_record_from_0_41_keeps_a_server_now_owned_whole_in_place() {
+        let live = "model = \"a\"\n\n# app server\n[mcp_servers.repl]\ncommand = \"app\"\n\n[mcp_servers.repl.env]\nA = \"1\"\n\n[desktop]\nmode = \"q\"\n";
+        let paths = [
+            "model",
+            "mcp_servers.repl.command",
+            "mcp_servers.repl.env.A",
+        ];
+        let record = Owned::from_pairs(paths.iter().map(|path| (key(path), String::new())));
+        let leaves = owned_in(live, &record).unwrap();
+        let desired = "model = \"a\"\n\n[mcp_servers.repl]\ncommand = \"app\"\n\n[mcp_servers.repl.env]\nA = \"1\"\n";
+        let merged = merge(live, desired, Some(&leaves)).unwrap();
+        assert_eq!(merged.text, live);
+        assert!(merged.drifted.is_empty());
     }
 
     #[test]

@@ -20,7 +20,11 @@ pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merg
     };
     let mut changed = false;
     for path in previous.into_iter().flat_map(Owned::keys) {
-        if !declared.iter().any(|(declared, _)| declared == path) && remove(&mut doc, path) {
+        if !declared
+            .iter()
+            .any(|(declared, _)| path.starts_with(declared))
+            && remove(&mut doc, path)
+        {
             changed = true;
         }
     }
