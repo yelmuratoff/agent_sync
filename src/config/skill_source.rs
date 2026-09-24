@@ -583,13 +583,17 @@ mod tests {
                 format!(
                     "metadata:\n  source: {style}\n    A source note\n    with another line\n  version: '1.0'\n"
                 ),
+                format!("metadata:\n  version: '1.0'\n  source: {style}\n    A source note\n"),
             ] {
-                let info = parse(&format!(
-                    "---\n{extra}name: pdf\ndescription: PDF text\n---\n"
-                ));
-                assert_eq!(info.frontmatter, "parsed", "{extra}");
-                assert_eq!(info.name, "pdf");
-                assert_eq!(info.description, "PDF text");
+                for text in [
+                    format!("---\n{extra}name: pdf\ndescription: PDF text\n---\n"),
+                    format!("---\nname: pdf\ndescription: PDF text\n{extra}---\n"),
+                ] {
+                    let info = parse(&text);
+                    assert_eq!(info.frontmatter, "parsed", "{text}");
+                    assert_eq!(info.name, "pdf");
+                    assert_eq!(info.description, "PDF text");
+                }
             }
         }
     }
