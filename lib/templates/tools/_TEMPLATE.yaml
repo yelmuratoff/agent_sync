@@ -127,6 +127,11 @@ targets:
   # settings:
   #   source: ".ai/src/settings/tool.json"
   #   dest: ".tool/settings.json"
+  #   # For a codex_toml tool: `keys` owns only the keys the settings and MCP
+  #   # sources declare and keeps every key the tool itself wrote; `file` owns
+  #   # the whole file; `auto` picks `keys` when the project root is $HOME or
+  #   # the tool is a profile variant, else `file`.
+  #   # ownership: auto
 
   # MCP server configs (optional, file copy)
   # mcp:

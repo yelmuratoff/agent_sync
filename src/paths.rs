@@ -518,6 +518,15 @@ impl Paths {
             .map(str::to_string)
     }
 
+    /// Whether the project root is the home directory, where tool dests are
+    /// the tools' own config homes.
+    pub fn root_is_home(&self) -> bool {
+        self.home
+            .as_deref()
+            .and_then(canonical_dir)
+            .is_some_and(|home| home == self.root_canonical)
+    }
+
     /// `display_path_r`: root-relative, else `~/`-folded, else unchanged. A
     /// virtual path is named by what it holds, never by its engine root: an
     /// overlay entry by its category (`rules/`, `AGENTS.md`), a shipped file

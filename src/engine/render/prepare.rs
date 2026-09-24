@@ -128,6 +128,7 @@ fn load_run_config(s: &mut Session, env: &Env, selection: Selection) -> Result<R
         profile_tools: BTreeSet::new(),
         protected: Vec::new(),
         backup_targets: Vec::new(),
+        keyed_dests: BTreeSet::new(),
         gitignore_generated: Vec::new(),
         gitignore_profile: Vec::new(),
         tools: Vec::new(),

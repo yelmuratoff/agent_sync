@@ -64,6 +64,8 @@ pub struct Run {
     pub(super) profile_tools: BTreeSet<String>,
     pub(super) protected: Vec<String>,
     pub backup_targets: Vec<String>,
+    /// Repo-relative dests whose settings are merged by owned key.
+    pub keyed_dests: BTreeSet<String>,
     pub gitignore_generated: Vec<String>,
     pub gitignore_profile: Vec<String>,
     pub(super) tools: Vec<String>,

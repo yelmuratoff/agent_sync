@@ -25,6 +25,7 @@ targets:
   settings:
     source: ".ai/src/settings/codex.toml"
     dest: ".codex/config.toml"
+    ownership: auto
 
   mcp:
     dest: ".codex/config.toml"

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::engine::render::{self, Run, Selection, Stop};
 use crate::engine::session::Session;
+use crate::engine::toml_keys;
 use crate::engine::workspace::Workspace;
 use crate::output::help::{Help, Section};
 use crate::output::log::{Log, Sink};
@@ -282,7 +283,7 @@ fn sync(s: &mut Session, args: &Args, env: &Env, tx: &mut Transaction) -> Result
             .unwrap_or_default(),
     );
     warn_baseline_replacements(s, &run, previous.is_none());
-    check_drift(s, previous.as_ref())?;
+    check_drift(s, &run, previous.as_ref())?;
     start_transaction(s, &run, env, tx)?;
     render::run_passes(s, &mut run)?;
     finalize(s, &run, previous.as_ref(), tx)?;
@@ -456,12 +457,32 @@ fn has_regular_file(path: &Path) -> bool {
         })
 }
 
-/// `_check_drift_or_exit`.
-fn check_drift(s: &mut Session, previous: Option<&Manifest>) -> Result<(), Stop> {
+/// `_check_drift_or_exit`. A key-owned dest without an owned-key record yet
+/// is left to its merge step, which compares the declared keys instead.
+fn check_drift(s: &mut Session, run: &Run, previous: Option<&Manifest>) -> Result<(), Stop> {
     if s.dry_run {
         return Ok(());
     }
-    let drift = previous.map(|m| m.drift(&s.paths.root)).unwrap_or_default();
+    let Some(previous) = previous else {
+        return Ok(());
+    };
+    let root = s.paths.root.clone();
+    let drift: Vec<String> = previous
+        .drift(&root)
+        .into_iter()
+        .filter_map(|rel| {
+            let entry = previous.entry(&rel)?;
+            if entry.owned.is_none() && run.keyed_dests.contains(&rel) {
+                return None;
+            }
+            let keys = entry.changed_keys(&root);
+            if keys.is_empty() {
+                return Some(rel);
+            }
+            let keys: Vec<String> = keys.iter().map(toml_keys::display).collect();
+            Some(format!("{rel} ({})", keys.join(", ")))
+        })
+        .collect();
     if drift.is_empty() {
         return Ok(());
     }

@@ -12,6 +12,7 @@ use crate::engine::workspace::Workspace;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::paths::Paths;
+use crate::transaction::manifest::Manifest;
 use crate::{
     Error, config::project_config, config::version, config::yaml_subset, engine::overlay,
     engine_version, paths,
@@ -125,6 +126,12 @@ pub fn check(root: &str, env: &Env) -> Result<Report, Error> {
     };
 
     let mut session = Session::new(ws, Paths::for_disk_root(root));
+    session.force = true;
+    session.set_owned_before(
+        Manifest::load(root)?
+            .map(|m| m.owned_records())
+            .unwrap_or_default(),
+    );
     merge_shared_parent(&mut session.ws, root, config.as_deref())?;
     if render::render(&mut session, env).is_err() {
         report.out("✗ Sync script failed during check");

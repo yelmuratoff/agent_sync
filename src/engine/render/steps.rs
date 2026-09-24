@@ -1,10 +1,11 @@
 //! The per-target steps of one tool: rules, skills, commands, subagents, payloads, and the OpenCode composition.
 
 use super::passes::{Dests, source_path, tool_source};
-use super::{Run, Step, Stop, io};
+use super::{Run, Step, Stop, io, tools};
 use crate::config::tool::Tool;
 use crate::engine::rules::{self, Conversion, RuleOptions};
 use crate::engine::session::Session;
+use crate::engine::toml_keys;
 use crate::{config::payload, engine::codex_toml, engine::file_ops, engine::opencode_json, paths};
 
 pub(super) fn sync_rules_step(
@@ -370,7 +371,19 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
     }
     .filter(|path| s.ws.is_file(path));
 
-    if tool.value("targets.mcp.format") == "codex_toml" {
+    if tools::settings_keyed(s, tool) && !dests.settings.is_empty() {
+        if src_mcp.is_some() && dests.settings != dests.mcp {
+            s.log
+                .error("Codex settings and MCP destinations must match");
+            return Err(Stop(1));
+        }
+        merge_codex(
+            s,
+            src_settings.as_deref(),
+            src_mcp.as_deref(),
+            &dests.settings,
+        )?;
+    } else if tool.value("targets.mcp.format") == "codex_toml" {
         if let Some(mcp) = &src_mcp {
             if !dests.settings.is_empty() && dests.settings != dests.mcp {
                 s.log
@@ -414,16 +427,90 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
     Ok(())
 }
 
-fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str) -> Step {
-    let settings_bytes = match settings {
+fn read_text(s: &mut Session, path: Option<&str>, what: &str) -> Result<String, Stop> {
+    let bytes = match path {
         Some(path) => s.ws.read(path).map_err(|e| io(s, e))?,
         None => Vec::new(),
     };
-    let settings_text = String::from_utf8(settings_bytes).map_err(|_| {
+    String::from_utf8(bytes).map_err(|_| {
         s.log
-            .error("Cannot compose Codex config: settings are not UTF-8");
+            .error(&format!("Cannot compose Codex config: {what} is not UTF-8"));
+        Stop(1)
+    })
+}
+
+/// The owned keys of the settings and MCP sources merged into the live
+/// `config.toml`; every key the Codex app wrote stays as it is.
+fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest: &str) -> Step {
+    let settings_text = read_text(s, settings, "settings")?;
+    let mcp_bytes = match mcp {
+        Some(path) => Some(s.ws.read(path).map_err(|e| io(s, e))?),
+        None => None,
+    };
+    let declared = codex_toml::declared(&settings_text, mcp_bytes.as_deref()).map_err(|reason| {
+        s.log
+            .error(&format!("Cannot compose Codex config: {reason}"));
+        if codex_toml::settings_claim_mcp(&settings_text) {
+            s.log.err(
+                "  • Move the [mcp_servers] tables into the MCP source as JSON, then re-run sync"
+                    .into(),
+            );
+            s.log.err(
+                "  • Servers the Codex app manages need no source: delete them from settings and they stay in the live config"
+                    .into(),
+            );
+        }
         Stop(1)
     })?;
+    let shown = s.display(dest);
+    let live = if s.ws.is_file(dest) {
+        read_text(s, Some(dest), &shown)?
+    } else {
+        String::new()
+    };
+    let previous = s.owned_before(dest).cloned();
+    let merged = toml_keys::merge(&live, &declared, previous.as_ref()).map_err(|reason| {
+        s.log.error(&format!("Cannot merge into {shown}: {reason}"));
+        s.log
+            .err("  • Fix the TOML in that file, then re-run sync".into());
+        Stop(1)
+    })?;
+    if previous.is_none() && !merged.drifted.is_empty() && !s.force && !s.dry_run {
+        s.log.error(&format!(
+            "{shown} differs from .ai/src in {} key(s) sync has not owned before:",
+            merged.drifted.len()
+        ));
+        for key in &merged.drifted {
+            s.log.err(format!("      {}", toml_keys::display(key)));
+        }
+        s.log.err(
+            "  • Copy the live values into the settings source, or re-run with --force to apply .ai/src"
+                .into(),
+        );
+        return Err(Stop(1));
+    }
+    if s.dry_run {
+        s.log.step(&format!(
+            "Would merge owned Codex settings and MCP keys → {shown} (dry-run)"
+        ));
+        return Ok(());
+    }
+    if merged.text != live {
+        s.ws.create_dir_all(&paths::parent(dest))
+            .map_err(|e| io(s, e))?;
+        s.ws.replace_atomically(dest, merged.text.into_bytes())
+            .map_err(|e| io(s, e))?;
+    }
+    s.record_write(dest);
+    s.record_owned(dest, merged.owned);
+    s.log.step(&format!(
+        "Codex settings and MCP → {shown} (owned keys only)"
+    ));
+    Ok(())
+}
+
+fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str) -> Step {
+    let settings_text = read_text(s, settings, "settings")?;
     let mcp_bytes = s.ws.read(mcp).map_err(|e| io(s, e))?;
     let composed = codex_toml::compose(&settings_text, &mcp_bytes).map_err(|reason| {
         s.log
