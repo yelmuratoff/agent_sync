@@ -327,6 +327,16 @@ fn cleanup_tool(s: &mut Session, run: &mut Run, slug: &str) {
         let Some(abs) = s.paths.clone().resolve_dest(&raw, &label, &mut s.log) else {
             continue;
         };
+        if matches!(key, "settings" | "mcp") && tool.settings_keyed(s.paths.root_is_home()) {
+            if s.ws.is_file(&abs) && !run.protected.contains(&abs) {
+                run.protected.push(abs.clone());
+                s.log.step(&format!(
+                    "Kept {} (the app writes to it too)",
+                    s.display(&abs)
+                ));
+            }
+            continue;
+        }
         if !run.protected.contains(&abs) && file_ops::cleanup_path(s, &abs) {
             cleaned = true;
         }

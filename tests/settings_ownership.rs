@@ -105,10 +105,16 @@ fn a_first_keyed_sync_stops_on_a_value_it_never_owned() {
     sync(&project)
         .failure()
         .stderr(predicate::str::contains(
-            "differs from .ai/src in 1 key(s) sync has not owned before",
+            "differs from .ai/src in 1 key sync has not owned before",
         ))
         .stderr(predicate::str::contains("      model\n"));
     assert_eq!(project.read(CONFIG), "model = \"ui-pick\"\n");
+    project
+        .agentsync()
+        .args(["sync", "--only", "codex", "--dry-run"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("A real sync would stop"));
 
     project
         .agentsync()
@@ -152,6 +158,80 @@ fn auto_owns_the_whole_file_in_a_repository() {
     sync(&project)
         .failure()
         .stderr(predicate::str::contains("Manual edits detected"));
+}
+
+#[test]
+fn a_disabled_settings_target_still_merges_mcp_keys_only() {
+    let project = codex_project(Some("keys"));
+    sync(&project).success();
+    project.append(CONFIG, APP_STATE);
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  settings:\n    ownership: keys\n    enabled: false\n",
+    );
+    sync(&project).success();
+    assert_eq!(
+        project.read(CONFIG),
+        "[mcp_servers.dart]\ncommand = \"dart\"\nargs = [\"mcp-server\"]\n\n[projects.\"/tmp/p\"]\ntrust_level = \"trusted\"\n\n[mcp_servers.repl]\ncommand = \"node_repl\"\nstartup_timeout_sec = 120\n"
+    );
+    project.append(CONFIG, "\n[notice]\nhide = true\n");
+    sync(&project).success();
+    assert!(project.read(CONFIG).contains("[notice]"));
+}
+
+#[test]
+fn switching_from_keys_to_file_needs_force() {
+    let project = codex_project(Some("keys"));
+    sync(&project).success();
+    project.append(CONFIG, APP_STATE);
+    let with_app_state = project.read(CONFIG);
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  settings:\n    ownership: file\n",
+    );
+    sync(&project)
+        .failure()
+        .stderr(predicate::str::contains(
+            ".codex/config.toml is owned by key; owning the whole file drops what the Codex app wrote there",
+        ))
+        .stderr(predicate::str::contains("agentsync sync --force"));
+    assert_eq!(project.read(CONFIG), with_app_state);
+    project
+        .agentsync()
+        .args(["sync", "--only", "codex", "--force"])
+        .assert()
+        .success();
+    assert!(!project.read(CONFIG).contains("[projects."));
+}
+
+#[test]
+fn an_unknown_ownership_value_stops_sync() {
+    let project = codex_project(Some("key"));
+    sync(&project).failure().stderr(predicate::str::contains(
+        "Unknown targets.settings.ownership for OpenAI Codex: key (expected auto, keys, or file)",
+    ));
+}
+
+#[test]
+fn disabling_codex_leaves_a_key_owned_config_in_place() {
+    let project = codex_project(Some("keys"));
+    sync(&project).success();
+    project.append(CONFIG, APP_STATE);
+    let before = project.read(CONFIG);
+    project
+        .agentsync()
+        .args(["disable", "codex"])
+        .assert()
+        .success();
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Kept .codex/config.toml (the app writes to it too)",
+        ));
+    assert_eq!(project.read(CONFIG), before);
 }
 
 #[test]

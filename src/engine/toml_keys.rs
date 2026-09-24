@@ -4,9 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
-
-use crate::transaction::manifest::sha256_hex;
+use sha2::{Digest, Sha256};
+use toml_edit::{DocumentMut, Item, Key, Table, TableLike, Value};
 
 pub type KeyPath = Vec<String>;
 
@@ -127,6 +126,11 @@ pub fn merge(live: &str, declared: &Declared, previous: Option<&Owned>) -> Resul
             .collect(),
     };
     let mut changed = false;
+    for path in previous.into_iter().flat_map(Owned::keys) {
+        if !declared.contains(path) && remove(doc.as_table_mut(), path) {
+            changed = true;
+        }
+    }
     for (path, item) in &declared.0 {
         let current = lookup(doc.as_table(), path);
         if current.is_some_and(|live| canonical(live) == canonical(item)) {
@@ -135,17 +139,15 @@ pub fn merge(live: &str, declared: &Declared, previous: Option<&Owned>) -> Resul
         set(doc.as_table_mut(), path, item.clone());
         changed = true;
     }
-    for path in previous.into_iter().flat_map(Owned::keys) {
-        if !declared.contains(path) && remove(doc.as_table_mut(), path) {
-            changed = true;
-        }
-    }
+    let text = if !changed {
+        live.to_string()
+    } else if live.starts_with('\n') {
+        doc.to_string()
+    } else {
+        doc.to_string().trim_start_matches('\n').to_string()
+    };
     Ok(Merged {
-        text: if changed {
-            doc.to_string()
-        } else {
-            live.to_string()
-        },
+        text,
         owned: declared.owned(),
         drifted,
     })
@@ -175,13 +177,37 @@ pub fn put_in(text: &str, path: &KeyPath, value: Option<Item>) -> Result<String,
     Ok(doc.to_string())
 }
 
+/// A key path as TOML writes it, segments quoted where they must be.
 pub fn display(path: &KeyPath) -> String {
-    path.join(".")
+    path.iter()
+        .map(|segment| Key::new(segment.as_str()).display_repr().into_owned())
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
+/// toml_edit's report is a location line, a source excerpt, then the message;
+/// one log line keeps the location and the message.
 fn parse(text: &str) -> Result<DocumentMut, String> {
-    text.parse::<DocumentMut>()
-        .map_err(|e| e.to_string().trim_end().replace('\n', " "))
+    text.parse::<DocumentMut>().map_err(|e| {
+        let report = e.to_string();
+        let mut lines = report.lines().filter(|line| !line.trim().is_empty());
+        let location = lines
+            .next()
+            .unwrap_or_default()
+            .trim_start_matches("TOML parse error at ")
+            .to_string();
+        match lines.next_back() {
+            Some(message) => format!("{location}: {}", message.trim()),
+            None => location,
+        }
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn owned_now<'a>(doc: &DocumentMut, keys: impl Iterator<Item = &'a KeyPath>) -> Owned {
@@ -438,8 +464,19 @@ mod tests {
     }
 
     #[test]
-    fn refuses_live_toml_that_does_not_parse() {
-        assert!(merge("model = \n", &declared("model = \"a\"\n"), None).is_err());
+    fn refuses_live_toml_that_does_not_parse_in_one_line() {
+        let reason = merge("model = \n", &declared("model = \"a\"\n"), None).unwrap_err();
+        assert!(reason.starts_with("line 1, column "), "{reason}");
+        assert!(!reason.contains('\n') && !reason.contains('|'), "{reason}");
+    }
+
+    #[test]
+    fn displays_key_paths_as_toml_writes_them() {
+        assert_eq!(display(&key("tui.theme")), "tui.theme");
+        assert_eq!(
+            display(&vec!["projects".into(), "/tmp/x".into()]),
+            "projects.\"/tmp/x\""
+        );
     }
 
     #[test]
@@ -459,6 +496,30 @@ mod tests {
         );
         let second = merge(&first.text, &Declared::default(), Some(&first.owned)).unwrap();
         assert_eq!(second.text, "[mcp_servers.repl]\ncommand = \"app\"\n");
+    }
+
+    #[test]
+    fn ownership_moving_from_a_subtree_to_its_leaves_keeps_the_leaves() {
+        let mut subtree = Declared::default();
+        subtree
+            .add_subtrees("[mcp_servers.dart]\ncommand = \"dart\"\n", "mcp_servers")
+            .unwrap();
+        let first = merge("", &subtree, None).unwrap();
+        let leaves = declared("[mcp_servers.dart]\ncommand = \"dart2\"\n");
+        let second = merge(&first.text, &leaves, Some(&first.owned)).unwrap();
+        assert_eq!(second.text, "[mcp_servers.dart]\ncommand = \"dart2\"\n");
+        let third = merge(&second.text, &leaves, Some(&second.owned)).unwrap();
+        assert_eq!(third.text, second.text);
+    }
+
+    #[test]
+    fn ownership_moving_from_leaves_to_their_inline_parent_keeps_the_parent() {
+        let first = merge("", &declared("[tui]\ntheme = \"dark\"\n"), None).unwrap();
+        let parent = declared("tui = { theme = \"light\" }\n");
+        let second = merge(&first.text, &parent, Some(&first.owned)).unwrap();
+        assert_eq!(second.text, "tui = { theme = \"light\" }\n");
+        let third = merge(&second.text, &parent, Some(&second.owned)).unwrap();
+        assert_eq!(third.text, second.text);
     }
 
     #[test]

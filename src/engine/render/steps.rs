@@ -371,19 +371,43 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
     }
     .filter(|path| s.ws.is_file(path));
 
-    if tools::settings_keyed(s, tool) && !dests.settings.is_empty() {
-        if src_mcp.is_some() && dests.settings != dests.mcp {
+    let codex_dest = if dests.settings.is_empty() {
+        &dests.mcp
+    } else {
+        &dests.settings
+    };
+    if tool.value("targets.mcp.format") == "codex_toml" {
+        let ownership = tool.value("targets.settings.ownership");
+        if !matches!(ownership.as_str(), "" | "auto" | "keys" | "file") {
+            s.log.error(&format!(
+                "Unknown targets.settings.ownership for {}: {ownership} (expected auto, keys, or file)",
+                tool.display_name()
+            ));
+            return Err(Stop(1));
+        }
+    }
+    if tools::settings_keyed(s, tool) {
+        if !dests.settings.is_empty() && !dests.mcp.is_empty() && dests.settings != dests.mcp {
             s.log
                 .error("Codex settings and MCP destinations must match");
             return Err(Stop(1));
         }
-        merge_codex(
-            s,
-            src_settings.as_deref(),
-            src_mcp.as_deref(),
-            &dests.settings,
-        )?;
+        if !codex_dest.is_empty() {
+            merge_codex(s, src_settings.as_deref(), src_mcp.as_deref(), codex_dest)?;
+        }
     } else if tool.value("targets.mcp.format") == "codex_toml" {
+        if !codex_dest.is_empty() && s.owned_before(codex_dest).is_some() && !s.force && !s.dry_run
+        {
+            let shown = s.display(codex_dest);
+            s.log.error(&format!(
+                "{shown} is owned by key; owning the whole file drops what the Codex app wrote there"
+            ));
+            let force = s.log.command("agentsync sync --force");
+            s.log.err(format!(
+                "  • Set targets.settings.ownership: keys in .ai/src/tools/codex.yaml, or run {force} to own the whole file"
+            ));
+            return Err(Stop(1));
+        }
         if let Some(mcp) = &src_mcp {
             if !dests.settings.is_empty() && dests.settings != dests.mcp {
                 s.log
@@ -475,19 +499,27 @@ fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest:
             .err("  • Fix the TOML in that file, then re-run sync".into());
         Stop(1)
     })?;
-    if previous.is_none() && !merged.drifted.is_empty() && !s.force && !s.dry_run {
-        s.log.error(&format!(
-            "{shown} differs from .ai/src in {} key(s) sync has not owned before:",
-            merged.drifted.len()
-        ));
+    if previous.is_none() && !merged.drifted.is_empty() && !s.force {
+        let count = merged.drifted.len();
+        let noun = if count == 1 { "key" } else { "keys" };
+        let headline =
+            format!("{shown} differs from .ai/src in {count} {noun} sync has not owned before:");
+        if s.dry_run {
+            s.log
+                .warning(&format!("A real sync would stop: {headline}"));
+        } else {
+            s.log.error(&headline);
+        }
         for key in &merged.drifted {
             s.log.err(format!("      {}", toml_keys::display(key)));
         }
-        s.log.err(
-            "  • Copy the live values into the settings source, or re-run with --force to apply .ai/src"
-                .into(),
-        );
-        return Err(Stop(1));
+        let force = s.log.command("agentsync sync --force");
+        s.log.err(format!(
+            "  • Copy the live values into the settings source, or run {force} to apply .ai/src"
+        ));
+        if !s.dry_run {
+            return Err(Stop(1));
+        }
     }
     if s.dry_run {
         s.log.step(&format!(

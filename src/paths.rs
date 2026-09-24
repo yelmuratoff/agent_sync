@@ -323,7 +323,13 @@ impl Paths {
             .unwrap_or_else(|_| root.to_string());
         let home = std::env::var("HOME")
             .ok()
-            .map(|home| from_msys(&home, std::env::var("MSYSTEM").ok().as_deref()));
+            .map(|home| from_msys(&home, std::env::var("MSYSTEM").ok().as_deref()))
+            .or_else(|| {
+                cfg!(windows)
+                    .then(|| std::env::var("USERPROFILE").ok())
+                    .flatten()
+                    .map(|profile| from_disk(Path::new(&profile)))
+            });
         Self::new(root, &canonical, home.as_deref())
     }
 

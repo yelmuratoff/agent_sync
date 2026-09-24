@@ -128,7 +128,10 @@ fn collect_tool_dests(s: &mut Session, run: &mut Run, tool: &Tool, profile: bool
                 .error(&format!("Path is outside repository root: {abs}"));
             continue;
         };
-        if key == "settings" && settings_keyed(s, tool) {
+        if matches!(key, "settings" | "mcp")
+            && tool.flag(&format!("targets.{key}.enabled")) != Some(false)
+            && settings_keyed(s, tool)
+        {
             run.keyed_dests.insert(rel.clone());
         }
         if matches!(key, "rules" | "skills" | "commands" | "subagents") {

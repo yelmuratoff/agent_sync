@@ -8,7 +8,8 @@
   - A declared key the app changed stops the sync and is named: `.codex/config.toml (model)`. `agentsync adopt .codex/config.toml` copies only those keys into the settings source and keeps its comments; a changed `mcp_servers` entry is refused, because the MCP source owns it. `--force` rewrites the declared keys and nothing else.
   - The first sync in this mode removes nothing. It stops when a declared value differs from the live file, so a model you picked in the app is not replaced silently; `--force` applies the source.
   - `check` and `doctor` measure only the declared keys, and `rollback` restores the whole file.
-  - `targets.settings.ownership` in `.ai/src/tools/codex.yaml` picks the mode: `auto` (the default: keys in `$HOME` and profiles, the whole file in a repository), `keys`, or `file`.
+  - `targets.settings.ownership` in `.ai/src/tools/codex.yaml` picks the mode: `auto` (the default: keys in `$HOME` and profiles, the whole file in a repository), `keys`, or `file`. Any other value stops the sync. On Windows without `HOME`, `%USERPROFILE%` counts as the home directory.
+  - Nothing drops the app's keys behind your back: disabling Codex keeps the file (`Kept .codex/config.toml (the app writes to it too)`), `targets.settings.enabled: false` merges only the MCP servers, and switching a key-owned file back to `ownership: file` stops until you run `agentsync sync --force`. `adopt` refuses a whole-file copy of a key-owned file, and it will not create a missing settings source from a few changed keys; run `agentsync customize codex settings` first.
 
 ### Changed
 

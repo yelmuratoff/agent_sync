@@ -154,6 +154,23 @@ fn read_filter(text: &str, key_path: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn codex_settings_are_keyed_in_a_config_home_or_when_asked() {
+        let codex = Tool::new("codex", None);
+        assert!(codex.settings_keyed(true));
+        assert!(!codex.settings_keyed(false));
+        let variant = Tool::new(
+            "codex-hub",
+            Some("base: codex\nprofile_home: \"/home/me\"\n".into()),
+        );
+        assert!(variant.settings_keyed(false));
+        let keys = "targets:\n  settings:\n    ownership: keys\n";
+        assert!(Tool::new("codex", Some(keys.into())).settings_keyed(false));
+        let file = "targets:\n  settings:\n    ownership: file\n";
+        assert!(!Tool::new("codex", Some(file.into())).settings_keyed(true));
+        assert!(!Tool::new("cursor", Some(keys.into())).settings_keyed(true));
+    }
+
     fn claude_with(user: &str) -> Tool {
         Tool::from_parts(
             "claude",

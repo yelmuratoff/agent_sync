@@ -628,6 +628,16 @@ pub(crate) struct KeyedAdoption {
     owned: Owned,
 }
 
+/// Why a whole-file adoption of `found` would copy another program's keys into
+/// the source: the manifest recorded the file as owned by key.
+fn whole_file_refusal(found: &Adoption, manifest: Option<&Manifest>) -> Option<String> {
+    manifest?.entry(&found.dest_rel)?.owned.as_ref()?;
+    Some(format!(
+        "{} is recorded as owned by key, and a whole-file copy would pull the app's keys into the source; set targets.settings.ownership: keys, or run agentsync sync --force to own the whole file",
+        found.dest_rel
+    ))
+}
+
 /// The adoption of the owned keys `found` changed since the manifest recorded
 /// them; `Err` explains why none can be adopted.
 fn keyed_adoption(
@@ -653,21 +663,29 @@ fn keyed_adoption(
         }
     };
     let keys = recorded.changed(&now);
-    if let Some(key) = keys
-        .iter()
-        .find(|key| key.first().is_some_and(|first| first == "mcp_servers"))
-    {
+    if keys.is_empty() {
+        return Ok(Ok(KeyedAdoption {
+            source_text: String::new(),
+            keys,
+            owned: now.present(),
+        }));
+    }
+    let from_mcp_source =
+        |key: &KeyPath| key.len() == 2 && key.first().is_some_and(|first| first == "mcp_servers");
+    if let Some(key) = keys.iter().find(|key| from_mcp_source(key)) {
         return Ok(Err(format!(
             "{} comes from the MCP source; edit that source instead",
             toml_keys::display(key)
         )));
     }
     let source = Path::new(&found.source_abs);
-    let mut source_text = if source.is_file() {
-        std::fs::read_to_string(source).map_err(|e| Error::io(source, e))?
-    } else {
-        String::new()
-    };
+    if !source.is_file() {
+        return Ok(Err(format!(
+            "{} does not exist, and a file of only the changed keys would drop the rest; run agentsync customize {} settings first",
+            found.source_rel, found.tool
+        )));
+    }
+    let mut source_text = std::fs::read_to_string(source).map_err(|e| Error::io(source, e))?;
     for key in &keys {
         let adopted = toml_keys::value_at(&live, key)
             .and_then(|value| toml_keys::put_in(&source_text, key, value));
@@ -799,6 +817,13 @@ fn adopt_one(
     }
     if found.keyed {
         return adopt_keys(run, &found, manifest, dry_run, assume_yes);
+    }
+    if let Some(reason) = whole_file_refusal(&found, manifest) {
+        put(
+            run.err,
+            format!("{}: {reason}\n", style.red("Cannot adopt")).as_bytes(),
+        )?;
+        return Ok(1);
     }
     let Some(current) = hash(&found.dest_abs) else {
         put(
@@ -976,6 +1001,12 @@ fn adopt_all(
     for rel in manifest.drift(run.root) {
         match resolver.resolve(&format!("{}/{rel}", run.root), run.err)? {
             Err(reason) => skipped.push((rel, reason)),
+            Ok(found) if !found.keyed && whole_file_refusal(&found, Some(manifest)).is_some() => {
+                skipped.push((
+                    rel,
+                    whole_file_refusal(&found, Some(manifest)).unwrap_or_default(),
+                ));
+            }
             Ok(found) if found.keyed => match keyed_adoption(&found, Some(manifest))? {
                 Err(reason) => skipped.push((rel, reason)),
                 Ok(adoption) => {
