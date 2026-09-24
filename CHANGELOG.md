@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The Codex app and AgentSync share `~/.codex/config.toml`.** The Codex app writes project trust, hook trust hashes, plugins, marketplaces, desktop preferences, and its own MCP servers (`node_repl`, `computer-use`) into the same file AgentSync generated, so every app update stopped the next global sync with `Manual edits detected`, and adopting the file copied that state into `.ai/src`. Synced from `$HOME` or into a profile, AgentSync now owns only the keys it declares: the leaves of the settings source and one `mcp_servers.<id>` per server in the MCP source. It keeps every other key, comments included, and removes a key only after it declared the key and then stopped. `.ai/src/mcp.json` becomes the one place for MCP servers, and the settings source holds only your own configuration.
+  - A declared key the app changed stops the sync and is named: `.codex/config.toml (model)`. `agentsync adopt .codex/config.toml` copies only those keys into the settings source and keeps its comments; a changed `mcp_servers` entry is refused, because the MCP source owns it. `--force` rewrites the declared keys and nothing else.
+  - The first sync in this mode removes nothing. It stops when a declared value differs from the live file, so a model you picked in the app is not replaced silently; `--force` applies the source.
+  - `check` and `doctor` measure only the declared keys, and `rollback` restores the whole file.
+  - `targets.settings.ownership` in `.ai/src/tools/codex.yaml` picks the mode: `auto` (the default: keys in `$HOME` and profiles, the whole file in a repository), `keys`, or `file`.
+
+### Changed
+
+- **`.ai/.sync-manifest` gains a third column** on the line of a file AgentSync owns by key: the declared keys with a short hash of each value, and the line's hash covers only those keys. A two-column line reads as before. An older `agentsync` reading the new line sees a hash mismatch and stops with `Manual edits detected` instead of overwriting.
+
 ## 0.40.1
 
 ### Added

@@ -100,8 +100,20 @@ Settings that already define or may encode `mcp_servers` conflict with a
 separate MCP source and leave the generated config unchanged. Either move the
 servers into the MCP source, or set `targets.mcp.enabled: false` in
 `.ai/src/tools/codex.yaml` to keep them in the settings file, which `sync` then
-copies unchanged. Edit the two sources separately; `adopt` cannot split a
-composed config back into them.
+copies unchanged.
+
+In a config home (the project rooted at `$HOME`, or a profile variant), the
+Codex app writes into the same `config.toml`: project trust, hook state,
+plugins, and its own MCP servers. There `targets.settings.ownership: auto`
+switches to owning keys: `sync` sets only the keys the settings source declares
+and one `mcp_servers.<id>` per server in the MCP source, removes the ones it
+declared before and no longer does, and keeps everything the app wrote. A key
+the app changed that sync owns stops the run and is named; `adopt
+.codex/config.toml` copies such keys back into the settings source, and a
+changed `mcp_servers` entry is edited in the MCP source. Servers the app
+manages need no source at all. In a repository `auto` owns the whole file, so
+`adopt` cannot split a composed config back into its two sources; set
+`ownership: keys` or `file` to choose explicitly.
 
 ## Manifest format
 

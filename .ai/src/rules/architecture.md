@@ -34,7 +34,7 @@ src/engine/                    → the render:
   overlay.rs / workspace.rs                        source overlays, the virtual file tree.
   file_ops.rs / staging.rs                         safe copying, directory sync, cleanup, write-then-rename.
   rules.rs / convert.rs / opencode_json.rs         rule headers and merges, target format conversion and composition.
-  codex_toml.rs                                    MCP servers composed into Codex's `config.toml`.
+  codex_toml.rs / toml_keys.rs                     MCP servers composed into Codex's `config.toml`; owned-key merges into a TOML file another program writes.
   filters.rs / gitignore.rs                        include/exclude matching, the managed `.gitignore` block.
 src/transaction/               → what makes a mutating run restorable:
   backup.rs / witness.rs / manifest.rs             transactions, post-operation witnesses, ownership, and drift.
