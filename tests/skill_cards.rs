@@ -363,3 +363,115 @@ fn malformed_extra_source_field_does_not_appear_as_parsed_frontmatter() {
     assert!(stdout.contains("Name: unknown\n"));
     assert!(stdout.contains("Description: unknown\n"));
 }
+
+#[test]
+fn optional_frontmatter_blocks_preserve_pinned_source_metadata() {
+    let project = Project::empty();
+    let source = Project::empty();
+    source.write(
+        "block-scalars/SKILL.md",
+        "---\nname: block-scalars\ndescription: Pinned description\ncompatibility: >-\n  Requires a local Git\n  repository.\nlicense: MIT\nx-curator-note: |-\n  This is an arbitrary\n  extension field.\nallowed-tools: Bash(git:*) Read\nmetadata:\n  source: |-\n    https://example.invalid/source\n    pinned only\n  version: '1.0'\n  when_to_use: >-\n    Inspect a pinned\n    skill card.\n  maintainer: example-org\n---\n",
+    );
+    source.git(&["add", "."]);
+    source.git(&["commit", "--quiet", "-m", "block scalar metadata"]);
+    let commit = revision(&source);
+    write_catalog(
+        &project,
+        "catalog.tsv",
+        &[row("block-scalars", &commit, "block-scalars")],
+    );
+
+    let output = project
+        .agentsync()
+        .args([
+            "skills",
+            "catalog",
+            "show",
+            "block-scalars",
+            "--catalog",
+            "catalog.tsv",
+            "--source",
+            &source_arg(&source),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Frontmatter: parsed"));
+    assert!(stdout.contains("Name: block-scalars"));
+    assert!(stdout.contains("Description: Pinned description"));
+}
+
+#[test]
+fn unsupported_optional_block_forms_leave_pinned_metadata_unknown() {
+    let project = Project::empty();
+    let source = Project::empty();
+    let cases = [
+        ("tag", "compatibility: !untrusted value\nlicense: MIT"),
+        ("list", "compatibility: [git, curl]\nlicense: MIT"),
+        ("flow", "compatibility: [unterminated\nlicense: MIT"),
+        (
+            "root-after-block",
+            "compatibility: >-\n  Requires git.\nx-note: [unterminated",
+        ),
+        (
+            "metadata-after-block",
+            "metadata:\n  source: |-\n    A source note.\n  owner: [unterminated",
+        ),
+        (
+            "indent",
+            "compatibility: >-\n   Three spaces are not a block line.\nlicense: MIT",
+        ),
+        (
+            "deeper",
+            "metadata:\n  source: |-\n      Too deeply indented.\n  owner: example-org",
+        ),
+        (
+            "blank",
+            "metadata:\n  when_to_use: >-\n    First line.\n\n    Last line.\n  owner: example-org",
+        ),
+        (
+            "allowed-tools-list",
+            "allowed-tools:\n  - Bash(git:*)\nlicense: MIT",
+        ),
+    ];
+
+    for (id, extra) in cases {
+        source.write(
+            &format!("{id}/SKILL.md"),
+            &format!("---\nname: {id}\ndescription: Pinned description\n{extra}\n---\n"),
+        );
+    }
+    source.git(&["add", "."]);
+    source.git(&["commit", "--quiet", "-m", "unsupported block metadata"]);
+    let commit = revision(&source);
+    let rows: Vec<_> = cases.iter().map(|(id, _)| row(id, &commit, id)).collect();
+    write_catalog(&project, "catalog.tsv", &rows);
+
+    for (id, _) in cases {
+        let output = project
+            .agentsync()
+            .args([
+                "skills",
+                "catalog",
+                "show",
+                id,
+                "--catalog",
+                "catalog.tsv",
+                "--source",
+                &source_arg(&source),
+            ])
+            .output()
+            .unwrap();
+
+        assert!(output.status.success(), "{id}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("Frontmatter: unsupported ("),
+            "{id}: {stdout}"
+        );
+        assert!(stdout.contains("Name: unknown\n"), "{id}: {stdout}");
+        assert!(stdout.contains("Description: unknown\n"), "{id}: {stdout}");
+    }
+}

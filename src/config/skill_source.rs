@@ -297,11 +297,16 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
                 let (field, raw) = entry
                     .split_once(':')
                     .ok_or("unsupported metadata mapping")?;
-                if !simple_key(field) || !raw.starts_with(' ') || scalar(raw).is_none() {
+                if !simple_key(field) || !raw.starts_with(' ') {
                     return Err("unsupported metadata mapping");
                 }
+                if block_style(raw.trim()) {
+                    block(&lines, &mut i, end, raw.trim(), 2)?;
+                } else {
+                    scalar(raw).ok_or("unsupported metadata mapping")?;
+                    i += 1;
+                }
                 entries += 1;
-                i += 1;
             }
             if entries == 0 {
                 return Err("empty metadata mapping");
@@ -309,8 +314,12 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
             continue;
         }
         if !matches!(key, "name" | "description") {
-            scalar(value).ok_or("unsupported top-level field")?;
-            i += 1;
+            if block_style(value) {
+                block(&lines, &mut i, end, value, 0)?;
+            } else {
+                scalar(value).ok_or("unsupported top-level field")?;
+                i += 1;
+            }
             continue;
         }
         let slot = if key == "name" {
@@ -321,31 +330,8 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
         if slot.is_some() {
             return Err("duplicate field");
         }
-        if key == "description" && matches!(value, ">" | ">-" | ">+" | "|" | "|-" | "|+") {
-            let mut block = Vec::new();
-            i += 1;
-            while i < end {
-                let line = lines[i];
-                if line.is_empty() || line.starts_with(char::is_whitespace) {
-                    let body = line.strip_prefix("  ").ok_or("complex description block")?;
-                    if body.is_empty() || body.starts_with(char::is_whitespace) {
-                        return Err("complex description block");
-                    }
-                    block.push(body);
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            if block.is_empty() {
-                return Err("empty description block");
-            }
-            let separator = if value.starts_with('>') { " " } else { "\n" };
-            let mut joined = block.join(separator);
-            if !value.ends_with('-') {
-                joined.push('\n');
-            }
-            *slot = Some(joined);
+        if key == "description" && block_style(value) {
+            *slot = Some(block(&lines, &mut i, end, value, 0)?);
             continue;
         }
         *slot = Some(scalar(value).ok_or("unsupported or empty scalar")?);
@@ -356,6 +342,44 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
         .filter(|s| !s.is_empty())
         .ok_or("missing description")?;
     Ok((name, description))
+}
+
+fn block_style(value: &str) -> bool {
+    matches!(value, ">" | ">-" | ">+" | "|" | "|-" | "|+")
+}
+
+fn block(
+    lines: &[&str],
+    index: &mut usize,
+    end: usize,
+    style: &str,
+    parent_indent: usize,
+) -> Result<String, &'static str> {
+    let prefix = " ".repeat(parent_indent + 2);
+    let mut parts = Vec::new();
+    *index += 1;
+    while *index < end {
+        let line = lines[*index];
+        let indent = line.len() - line.trim_start().len();
+        if !line.is_empty() && indent <= parent_indent {
+            break;
+        }
+        let body = line.strip_prefix(&prefix).ok_or("complex scalar block")?;
+        if body.is_empty() || body.starts_with(char::is_whitespace) {
+            return Err("complex scalar block");
+        }
+        parts.push(body);
+        *index += 1;
+    }
+    if parts.is_empty() {
+        return Err("empty scalar block");
+    }
+    let separator = if style.starts_with('>') { " " } else { "\n" };
+    let mut joined = parts.join(separator);
+    if !style.ends_with('-') {
+        joined.push('\n');
+    }
+    Ok(joined)
 }
 
 #[cfg(test)]
@@ -548,6 +572,25 @@ mod tests {
             assert!(info.frontmatter.starts_with("unsupported"), "{extra}");
             assert_eq!(info.name, "unknown", "{extra}");
             assert_eq!(info.description, "unknown", "{extra}");
+        }
+    }
+
+    #[test]
+    fn optional_block_strings_preserve_required_fields() {
+        for style in [">", ">-", ">+", "|", "|-", "|+"] {
+            for extra in [
+                format!("compatibility: {style}\n  Requires git\n  and a shell\n"),
+                format!(
+                    "metadata:\n  source: {style}\n    A source note\n    with another line\n  version: '1.0'\n"
+                ),
+            ] {
+                let info = parse(&format!(
+                    "---\n{extra}name: pdf\ndescription: PDF text\n---\n"
+                ));
+                assert_eq!(info.frontmatter, "parsed", "{extra}");
+                assert_eq!(info.name, "pdf");
+                assert_eq!(info.description, "PDF text");
+            }
         }
     }
 

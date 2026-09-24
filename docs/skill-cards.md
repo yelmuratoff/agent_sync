@@ -62,16 +62,21 @@ or that a name or description was available. The command never invents a
 canonical name.
 
 The frontmatter reader is intentionally a conservative subset, not a full YAML
-validator. It reads ordinary scalar `name` and `description` fields and the
-supported description-block form (`>` or `|`, with an optional `+` or `-`,
-exactly two-space indentation, and no blank block lines). Other top-level
-fields may use simple scalars under unquoted ASCII keys; `metadata` may be a
-one-level mapping of simple scalar values under the same keys, with two-space
-indentation. Escaped double-quoted strings, plain multiline scalars, deeper
-blocks, YAML indicators/tags, malformed quotes,
-duplicate or missing required fields, and other unsupported YAML anywhere in
-the frontmatter leave name and description `unknown`; they are not silently
-interpreted.
+validator. It reads ordinary scalar `name` and `description` fields and a
+small block-string form (`>` or `|`, with an optional `+` or `-`). That form
+also works for optional top-level fields, including arbitrary extension
+fields, and for values in the one-level `metadata` mapping. Top-level block
+content must use exactly two spaces; metadata block content exactly four; block
+lines cannot be blank or more deeply indented. This lets common fields such as
+`compatibility`, `metadata.source`, and `metadata.when_to_use` be folded or
+literal strings without making the reader a full YAML parser. Other top-level
+fields may use simple scalars under unquoted ASCII keys; `metadata` entries may
+use the same simple scalar form. `allowed-tools` remains a string as defined
+by Agent Skills: YAML lists are unsupported. Escaped double-quoted strings,
+plain multiline scalars, deeper mappings or block content, YAML indicators/tags,
+collections, malformed quotes, duplicate or missing required fields, and other
+unsupported YAML anywhere in the frontmatter leave name and description
+`unknown`; they are not silently interpreted.
 
 ## Curator notes are not runtime facts
 
