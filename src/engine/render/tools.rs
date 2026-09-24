@@ -104,18 +104,8 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
     }
 }
 
-/// Whether sync owns only the declared keys of the tool's TOML settings file:
-/// `targets.settings.ownership` `keys`, or `auto` in a config home, the project
-/// rooted at `$HOME` or a profile variant.
 pub(super) fn settings_keyed(s: &Session, tool: &Tool) -> bool {
-    if tool.value("targets.mcp.format") != "codex_toml" {
-        return false;
-    }
-    match tool.value("targets.settings.ownership").as_str() {
-        "keys" => true,
-        "auto" => s.paths.root_is_home() || !tool.value("profile_home").is_empty(),
-        _ => false,
-    }
+    tool.settings_keyed(s.paths.root_is_home())
 }
 
 /// `_collect_tool_dests`: the tool's resolved dests, also recorded for cleanup

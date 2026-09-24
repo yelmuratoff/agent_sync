@@ -9,6 +9,7 @@ use std::process::Command;
 use super::put;
 use crate::config::payload::{self, Source};
 use crate::config::tool::Tool;
+use crate::engine::toml_keys::{self, KeyPath, Owned};
 use crate::output::help::{Help, Section};
 use crate::output::log::Log;
 use crate::output::style::Style;
@@ -107,6 +108,8 @@ pub struct Adoption {
     pub dest_abs: String,
     pub source_abs: String,
     pub source_rel: String,
+    /// The destination is a settings file sync owns by key, not whole.
+    pub keyed: bool,
 }
 
 /// What `_adopt_resolve_dest` needs besides the destination.
@@ -218,6 +221,7 @@ impl<'a> Resolver<'a> {
             dest_rel: dest.1.to_string(),
             source_abs: String::new(),
             source_rel: String::new(),
+            keyed: false,
         }
     }
 
@@ -242,6 +246,13 @@ impl<'a> Resolver<'a> {
             ));
         }
         if self.dest_for(tool, "settings").as_deref() == Some(abs) {
+            if tool.settings_keyed(self.paths.root_is_home()) {
+                let found = self.payload_target(tool, self.adoption(tool, "settings", dest))?;
+                return Ok(Some(found.map(|found| Adoption {
+                    keyed: true,
+                    ..found
+                })));
+            }
             if tool.value("targets.mcp.format") == "codex_toml"
                 && let Some(mcp) = self.payload_source(tool, "mcp", err)?
             {
@@ -605,11 +616,83 @@ fn hash(path: &str) -> Option<String> {
 /// `cp <dest> <source>` after `ensure_dir`: an existing source keeps its mode,
 /// a new one takes the destination's mode under the umask.
 pub(crate) fn copy_into_source(found: &Adoption) -> Result<(), Error> {
+    let bytes = std::fs::read(&found.dest_abs).map_err(|e| Error::io(&found.dest_abs, e))?;
+    write_into_source(found, &bytes)
+}
+
+/// What adopting a key-owned file writes: the settings source with the owned
+/// keys the live file changed, those keys, and the owned-key record after.
+pub(crate) struct KeyedAdoption {
+    source_text: String,
+    keys: Vec<KeyPath>,
+    owned: Owned,
+}
+
+/// The adoption of the owned keys `found` changed since the manifest recorded
+/// them; `Err` explains why none can be adopted.
+fn keyed_adoption(
+    found: &Adoption,
+    manifest: Option<&Manifest>,
+) -> Result<Result<KeyedAdoption, String>, Error> {
+    let entry = manifest.and_then(|m| m.entry(&found.dest_rel));
+    let Some(recorded) = entry.and_then(|entry| entry.owned.as_ref()) else {
+        return Ok(Err(format!(
+            "{} is owned by key and has no owned-key record yet; run agentsync sync first",
+            found.dest_rel
+        )));
+    };
+    let live =
+        std::fs::read_to_string(&found.dest_abs).map_err(|e| Error::io(&found.dest_abs, e))?;
+    let now = match toml_keys::owned_in(&live, recorded) {
+        Ok(now) => now,
+        Err(reason) => {
+            return Ok(Err(format!(
+                "{} is not valid TOML: {reason}",
+                found.dest_rel
+            )));
+        }
+    };
+    let keys = recorded.changed(&now);
+    if let Some(key) = keys
+        .iter()
+        .find(|key| key.first().is_some_and(|first| first == "mcp_servers"))
+    {
+        return Ok(Err(format!(
+            "{} comes from the MCP source; edit that source instead",
+            toml_keys::display(key)
+        )));
+    }
+    let source = Path::new(&found.source_abs);
+    let mut source_text = if source.is_file() {
+        std::fs::read_to_string(source).map_err(|e| Error::io(source, e))?
+    } else {
+        String::new()
+    };
+    for key in &keys {
+        let adopted = toml_keys::value_at(&live, key)
+            .and_then(|value| toml_keys::put_in(&source_text, key, value));
+        match adopted {
+            Ok(text) => source_text = text,
+            Err(reason) => {
+                return Ok(Err(format!(
+                    "{} is not valid TOML: {reason}",
+                    found.source_rel
+                )));
+            }
+        }
+    }
+    Ok(Ok(KeyedAdoption {
+        source_text,
+        keys,
+        owned: now.present(),
+    }))
+}
+
+fn write_into_source(found: &Adoption, bytes: &[u8]) -> Result<(), Error> {
     let source = Path::new(&found.source_abs);
     if let Some(parent) = source.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
     }
-    let bytes = std::fs::read(&found.dest_abs).map_err(|e| Error::io(&found.dest_abs, e))?;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -623,7 +706,7 @@ pub(crate) fn copy_into_source(found: &Adoption) -> Result<(), Error> {
     }
     options
         .open(source)
-        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|mut file| file.write_all(bytes))
         .map_err(|e| Error::io(source, e))
 }
 
@@ -714,6 +797,9 @@ fn adopt_one(
         )?;
         return Ok(1);
     }
+    if found.keyed {
+        return adopt_keys(run, &found, manifest, dry_run, assume_yes);
+    }
     let Some(current) = hash(&found.dest_abs) else {
         put(
             run.err,
@@ -792,6 +878,90 @@ fn adopt_one(
     Ok(0)
 }
 
+/// `adopt_one` for a key-owned settings file: only the owned keys the live
+/// file changed move into the settings source.
+fn adopt_keys(
+    run: &mut Run,
+    found: &Adoption,
+    manifest: Option<&Manifest>,
+    dry_run: bool,
+    assume_yes: bool,
+) -> Result<u8, Error> {
+    let style = run.style;
+    let adoption = match keyed_adoption(found, manifest)? {
+        Ok(adoption) => adoption,
+        Err(reason) => {
+            put(
+                run.err,
+                format!("{}: {reason}\n", style.red("Cannot adopt")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
+    if adoption.keys.is_empty() {
+        put(
+            run.out,
+            format!(
+                "{}\n",
+                style.dim(&format!(
+                    "Nothing to adopt: the keys sync owns in {} already match the source.",
+                    found.dest_rel
+                ))
+            )
+            .as_bytes(),
+        )?;
+        return Ok(0);
+    }
+    let keys: Vec<String> = adoption.keys.iter().map(toml_keys::display).collect();
+    let plan = format!(
+        "\n{}\n    {}     {}\n    {} {}\n    {}     {} {}\n    {}       {} {}\n    {}     {}\n\n",
+        style.bold("  Adopt plan"),
+        style.dim("tool:"),
+        style.cyan(&found.tool),
+        style.dim("resource:"),
+        found.resource,
+        style.dim("from:"),
+        style.yellow(&found.dest_rel),
+        style.dim("(owned keys only)"),
+        style.dim("to:"),
+        style.green(&found.source_rel),
+        style.dim("(source)"),
+        style.dim("keys:"),
+        keys.join(", ")
+    );
+    put(run.out, plan.as_bytes())?;
+    if dry_run {
+        put(
+            run.out,
+            format!("{}\n", style.dim("Dry-run — nothing written.")).as_bytes(),
+        )?;
+        return Ok(0);
+    }
+    if let Some(status) = confirmed(run, assume_yes, "Apply this adoption?")? {
+        return Ok(status);
+    }
+    apply_keyed(run.root, found, &adoption)?;
+    let done = format!(
+        "\n{} Wrote {}\n{} Updated .ai/.sync-manifest\n\n{}",
+        style.green("✓"),
+        found.source_rel,
+        style.green("✓"),
+        verify_hint(style)
+    );
+    put(run.out, done.as_bytes())?;
+    Ok(0)
+}
+
+fn apply_keyed(root: &str, found: &Adoption, adoption: &KeyedAdoption) -> Result<(), Error> {
+    write_into_source(found, adoption.source_text.as_bytes())?;
+    manifest::update_entry(
+        root,
+        &found.dest_rel,
+        &adoption.owned.digest(),
+        Some(&adoption.owned),
+    )
+}
+
 fn adopt_all(
     run: &mut Run,
     resolver: &mut Resolver,
@@ -801,10 +971,19 @@ fn adopt_all(
 ) -> Result<u8, Error> {
     let style = run.style;
     let mut planned: Vec<(Adoption, String)> = Vec::new();
+    let mut keyed: Vec<(String, KeyedAdoption)> = Vec::new();
     let mut skipped: Vec<(String, String)> = Vec::new();
     for rel in manifest.drift(run.root) {
         match resolver.resolve(&format!("{}/{rel}", run.root), run.err)? {
             Err(reason) => skipped.push((rel, reason)),
+            Ok(found) if found.keyed => match keyed_adoption(&found, Some(manifest))? {
+                Err(reason) => skipped.push((rel, reason)),
+                Ok(adoption) => {
+                    let digest = adoption.owned.digest();
+                    keyed.push((rel, adoption));
+                    planned.push((found, digest));
+                }
+            },
             Ok(found) => match hash(&found.dest_abs) {
                 Some(current) => planned.push((found, current)),
                 None => skipped.push((rel, "cannot hash destination".to_string())),
@@ -906,8 +1085,13 @@ fn adopt_all(
 
     put(run.out, b"\n")?;
     for ((found, current), _) in planned.iter().zip(&ok).filter(|(_, fine)| **fine) {
-        copy_into_source(found)?;
-        manifest::update_entry(run.root, &found.dest_rel, current, None)?;
+        match keyed.iter().find(|(rel, _)| *rel == found.dest_rel) {
+            Some((_, adoption)) => apply_keyed(run.root, found, adoption)?,
+            None => {
+                copy_into_source(found)?;
+                manifest::update_entry(run.root, &found.dest_rel, current, None)?;
+            }
+        }
         put(
             run.out,
             format!(

@@ -34,6 +34,16 @@ impl Owned {
         sha256_hex(self.encode().as_bytes())
     }
 
+    /// This record without the keys that hash as absent.
+    pub fn present(self) -> Self {
+        Self(
+            self.0
+                .into_iter()
+                .filter(|(_, hash)| !hash.is_empty())
+                .collect(),
+        )
+    }
+
     /// Keys whose value in `now` no longer matches this record.
     pub fn changed(&self, now: &Owned) -> Vec<KeyPath> {
         self.0
@@ -152,10 +162,16 @@ pub fn value_at(live: &str, path: &KeyPath) -> Result<Option<Item>, String> {
     Ok(lookup(parse(live)?.as_table(), path).cloned())
 }
 
-/// `text` with `path` set to `item`, every other line kept.
-pub fn set_in(text: &str, path: &KeyPath, item: Item) -> Result<String, String> {
+/// `text` with `path` set to `value`, or removed when `value` is `None`; every
+/// other line kept.
+pub fn put_in(text: &str, path: &KeyPath, value: Option<Item>) -> Result<String, String> {
     let mut doc = parse(text)?;
-    set(doc.as_table_mut(), path, item);
+    match value {
+        Some(item) => set(doc.as_table_mut(), path, item),
+        None => {
+            remove(doc.as_table_mut(), path);
+        }
+    }
     Ok(doc.to_string())
 }
 
@@ -225,10 +241,11 @@ fn set(root: &mut Table, path: &[String], item: Item) {
         };
         table = next;
     }
-    let replacement = match (table.get(last), item) {
+    let replacement = match (table.get_mut(last), item) {
         (Some(Item::Value(old)), Item::Value(mut new)) => {
             *new.decor_mut() = old.decor().clone();
-            Item::Value(new)
+            *old = new;
+            return;
         }
         (None, Item::Table(new)) => {
             let mut new = Item::Table(new);
@@ -350,6 +367,13 @@ mod tests {
             merged.text,
             "model = \"new\"\n\n[projects.\"/tmp/x\"]\ntrust_level = \"trusted\" # app\n"
         );
+    }
+
+    #[test]
+    fn a_rewritten_key_keeps_its_comments() {
+        let live = "# chosen in the app\nmodel = \"old\" # note\n";
+        let merged = merge(live, &declared("model = \"new\"\n"), None).unwrap();
+        assert_eq!(merged.text, "# chosen in the app\nmodel = \"new\" # note\n");
     }
 
     #[test]

@@ -105,6 +105,20 @@ impl Tool {
         }
     }
 
+    /// Whether sync owns only the declared keys of this tool's TOML settings:
+    /// `targets.settings.ownership` `keys`, or `auto` in a config home, the
+    /// project rooted at `$HOME` or a profile variant.
+    pub fn settings_keyed(&self, root_is_home: bool) -> bool {
+        if self.value("targets.mcp.format") != "codex_toml" {
+            return false;
+        }
+        match self.value("targets.settings.ownership").as_str() {
+            "keys" => true,
+            "auto" => root_is_home || !self.value("profile_home").is_empty(),
+            _ => false,
+        }
+    }
+
     pub fn display_name(&self) -> String {
         let name = self.value("name");
         if name.is_empty() {

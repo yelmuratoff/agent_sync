@@ -543,3 +543,90 @@ fn adopt_the_plans_diff_names_source_and_destination_by_project_path() {
             "    --- .ai/src/rules/core.md\n    +++ .claude/rules/core.md\n",
         ));
 }
+
+const CODEX_CONFIG: &str = ".codex/config.toml";
+const CODEX_SETTINGS: &str = ".ai/src/tools/codex/settings.toml";
+
+/// A Codex project whose `config.toml` sync owns by key, synced once, with
+/// state the Codex app wrote appended since.
+fn keyed_codex_project() -> Project {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["codex"]);
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  settings:\n    ownership: keys\n",
+    );
+    project.write(
+        CODEX_SETTINGS,
+        "# mine\nmodel = \"gpt\"\neffort = \"low\"\n",
+    );
+    project.write(
+        ".ai/src/mcp.json",
+        r#"{"mcpServers":{"dart":{"command":"dart"}}}"#,
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.append(CODEX_CONFIG, "\n[projects.p]\ntrust_level = \"trusted\"\n");
+    project
+}
+
+#[test]
+fn adopt_moves_changed_owned_keys_into_codex_settings() {
+    let project = keyed_codex_project();
+    let edited = project
+        .read(CODEX_CONFIG)
+        .replace("model = \"gpt\"", "model = \"ui-pick\"")
+        .replace("effort = \"low\"\n", "");
+    project.write(CODEX_CONFIG, &edited);
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", CODEX_CONFIG])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("effort, model"));
+    assert_eq!(
+        project.read(CODEX_SETTINGS),
+        "# mine\nmodel = \"ui-pick\"\n"
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.read(CODEX_CONFIG).contains("[projects.p]"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn adopt_ignores_keys_the_codex_app_owns() {
+    let project = keyed_codex_project();
+    project
+        .agentsync()
+        .args(["adopt", "--yes", CODEX_CONFIG])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Nothing to adopt"));
+    assert!(!project.read(CODEX_SETTINGS).contains("projects"));
+}
+
+#[test]
+fn adopt_refuses_an_owned_mcp_server() {
+    let project = keyed_codex_project();
+    let edited = project
+        .read(CODEX_CONFIG)
+        .replace("command = \"dart\"", "command = \"dart2\"");
+    project.write(CODEX_CONFIG, &edited);
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", CODEX_CONFIG])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "mcp_servers.dart comes from the MCP source",
+        ));
+    project
+        .agentsync()
+        .args(["adopt", "--all", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "mcp_servers.dart comes from the MCP source",
+        ));
+}
