@@ -1,7 +1,6 @@
 use serde_json::{Map, Value};
 
 use crate::config::mcp_catalog;
-use crate::engine::toml_keys::Declared;
 
 pub fn settings_claim_mcp(settings: &str) -> bool {
     settings.lines().any(|line| {
@@ -23,20 +22,6 @@ const SHARED_LISTS: &[&str] = &["enabled_tools", "disabled_tools"];
 
 const OWNERSHIP_CONFLICT: &str =
     "settings already contain or may encode mcp_servers; keep MCP ownership in one source";
-
-/// The keys a key-owned `config.toml` takes from the settings source, plus one
-/// `mcp_servers.<id>` subtree per server in the MCP source.
-pub fn declared(settings: &str, canonical: Option<&[u8]>) -> Result<Declared, String> {
-    let mut declared =
-        Declared::from_toml(settings).map_err(|e| format!("settings are not valid TOML: {e}"))?;
-    if let Some(canonical) = canonical {
-        if declared.contains_top_level("mcp_servers") {
-            return Err(OWNERSHIP_CONFLICT.into());
-        }
-        declared.add_subtrees(&compose("", canonical)?, "mcp_servers")?;
-    }
-    Ok(declared)
-}
 
 pub fn compose(settings: &str, canonical: &[u8]) -> Result<String, String> {
     if settings_claim_mcp(settings) {
@@ -249,28 +234,6 @@ mod tests {
              enabled_tools = [\"run\"]\ndisabled_tools = [\"kill\"]\nenabled = false\nrequired = true\n\
              startup_timeout_sec = 120\ntool_timeout_sec = 1.5\n\n[mcp_servers.repl.env]\n\"A\" = \"1\"\n"
         );
-    }
-
-    #[test]
-    fn declares_settings_leaves_and_one_subtree_per_server() {
-        let source = br#"{"mcpServers":{"dart":{"command":"dart","args":["mcp-server"]}}}"#;
-        let declared =
-            declared("model = \"gpt\"\n[tui]\ntheme = \"dark\"\n", Some(source)).unwrap();
-        let merged = crate::engine::toml_keys::merge("", &declared, None).unwrap();
-        assert_eq!(
-            merged.text,
-            "model = \"gpt\"\n\n[tui]\ntheme = \"dark\"\n\n[mcp_servers.dart]\ncommand = \"dart\"\nargs = [\"mcp-server\"]\n"
-        );
-    }
-
-    #[test]
-    fn declared_refuses_servers_in_settings_beside_an_mcp_source() {
-        let source = br#"{"mcpServers":{}}"#;
-        assert_eq!(
-            declared("[mcp_servers.x]\ncommand = \"x\"\n", Some(source)).unwrap_err(),
-            OWNERSHIP_CONFLICT
-        );
-        assert!(declared("[mcp_servers.x]\ncommand = \"x\"\n", None).is_ok());
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::engine::toml_keys::{self, KeyPath, Owned};
+use crate::engine::keyed::{self, Format, KeyPath, Owned};
 use crate::output::log::Log;
 use crate::{Error, engine::staging};
 
@@ -57,14 +57,19 @@ impl Entry {
                 if !path.is_file() {
                     return None;
                 }
-                let text = std::fs::read_to_string(&path).unwrap_or_default();
                 Some(
-                    toml_keys::owned_in(&text, owned)
+                    self.owned_now(root, owned)
                         .map(|now| now.digest())
                         .unwrap_or_default(),
                 )
             }
         }
+    }
+
+    fn owned_now(&self, root: &str, owned: &Owned) -> Result<Owned, String> {
+        let format = Format::of(&self.rel).ok_or("not a TOML or JSON file")?;
+        let text = std::fs::read_to_string(Path::new(root).join(&self.rel)).unwrap_or_default();
+        keyed::owned_in(format, &text, owned)
     }
 
     /// The owned keys whose value changed since the record; empty for a
@@ -73,8 +78,7 @@ impl Entry {
         let Some(owned) = &self.owned else {
             return Vec::new();
         };
-        let text = std::fs::read_to_string(Path::new(root).join(&self.rel)).unwrap_or_default();
-        toml_keys::owned_in(&text, owned)
+        self.owned_now(root, owned)
             .map(|now| owned.changed(&now))
             .unwrap_or_default()
     }
@@ -307,8 +311,9 @@ mod tests {
     }
 
     fn owned_record(settings: &str) -> Owned {
-        let declared = toml_keys::Declared::from_toml(settings).unwrap();
-        toml_keys::merge("", &declared, None).unwrap().owned
+        keyed::merge(Format::Toml, "", settings, None)
+            .unwrap()
+            .owned
     }
 
     #[test]

@@ -14,3 +14,5 @@ targets:
   settings:
     source: ".ai/src/settings/zed.json"
     dest: ".zed/settings.json"
+    # Zed settings are JSON with comments, which key ownership cannot keep.
+    ownership: file

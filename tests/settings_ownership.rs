@@ -192,7 +192,7 @@ fn switching_from_keys_to_file_needs_force() {
     sync(&project)
         .failure()
         .stderr(predicate::str::contains(
-            ".codex/config.toml is owned by key; owning the whole file drops what the Codex app wrote there",
+            ".codex/config.toml is owned by key; owning the whole file drops what OpenAI Codex wrote there",
         ))
         .stderr(predicate::str::contains("agentsync sync --force"));
     assert_eq!(project.read(CONFIG), with_app_state);
@@ -266,4 +266,114 @@ fn live_toml_that_does_not_parse_stops_sync_before_writing() {
             "Cannot merge into .codex/config.toml",
         ));
     assert_eq!(project.read(CONFIG), "model = \n");
+}
+
+/// A project synced as a config home: every command runs with `HOME` at
+/// the project root, as a global `~/.ai` does.
+struct Home(Project);
+
+impl Home {
+    fn new(tools: &[&str]) -> Self {
+        let home = Self(Project::seeded(&[]));
+        home.0.enable_tools(tools);
+        home
+    }
+
+    fn run(&self, args: &[&str]) -> assert_cmd::assert::Assert {
+        let home = self.0.path().to_str().unwrap().to_string();
+        self.0.agentsync().env("HOME", home).args(args).assert()
+    }
+}
+
+const CLAUDE_SETTINGS: &str = ".claude/settings.json";
+
+#[test]
+fn claude_settings_in_a_home_keep_what_claude_code_writes() {
+    let home = Home::new(&["claude"]);
+    home.0.write(
+        ".ai/src/tools/claude/settings.json",
+        "{\n  \"theme\": \"dark\",\n  \"enabledPlugins\": {\"a@m\": true}\n}\n",
+    );
+    home.run(&["sync", "--only", "claude"]).success();
+    assert_eq!(
+        home.0.read(CLAUDE_SETTINGS),
+        "{\n  \"theme\": \"dark\",\n  \"enabledPlugins\": {\"a@m\": true}\n}\n"
+    );
+    home.0.write(
+        CLAUDE_SETTINGS,
+        "{\n  \"enabledPlugins\": {\"a@m\": true, \"b@m\": true},\n  \"feedbackSurveyState\": {\"last\": 1},\n  \"theme\": \"dark\"\n}\n",
+    );
+    let with_app_state = home.0.read(CLAUDE_SETTINGS);
+
+    home.run(&["check"]).success();
+    home.run(&["sync", "--only", "claude"]).success();
+    assert_eq!(home.0.read(CLAUDE_SETTINGS), with_app_state);
+
+    home.0.write(
+        CLAUDE_SETTINGS,
+        &with_app_state.replace("\"dark\"", "\"light\""),
+    );
+    home.run(&["sync", "--only", "claude"])
+        .failure()
+        .stderr(predicate::str::contains(".claude/settings.json (theme)"));
+    home.run(&["adopt", "--yes", CLAUDE_SETTINGS]).success();
+    assert_eq!(
+        home.0.read(".ai/src/tools/claude/settings.json"),
+        "{\n  \"enabledPlugins\": {\n    \"a@m\": true\n  },\n  \"theme\": \"light\"\n}\n"
+    );
+    home.run(&["sync", "--only", "claude"]).success();
+    assert!(home.0.read(CLAUDE_SETTINGS).contains("feedbackSurveyState"));
+}
+
+#[test]
+fn a_server_added_in_the_editor_survives_a_home_sync() {
+    let home = Home::new(&["cursor"]);
+    home.0.write(
+        ".ai/src/mcp.json",
+        r#"{"mcpServers": {"dart": {"command": "dart"}}}"#,
+    );
+    home.run(&["sync", "--only", "cursor"]).success();
+    home.0.write(
+        ".cursor/mcp.json",
+        r#"{"mcpServers": {"dart": {"command": "dart"}, "ui-added": {"url": "https://x.test"}}}"#,
+    );
+    home.run(&["sync", "--only", "cursor"]).success();
+    assert!(home.0.read(".cursor/mcp.json").contains("ui-added"));
+
+    home.0.write(".ai/src/mcp.json", r#"{"mcpServers": {}}"#);
+    home.run(&["sync", "--only", "cursor"]).success();
+    assert_eq!(
+        home.0.read(".cursor/mcp.json"),
+        "{\n  \"mcpServers\": {\n    \"ui-added\": {\n      \"url\": \"https://x.test\"\n    }\n  }\n}\n"
+    );
+}
+
+#[test]
+fn a_composed_opencode_config_keeps_keys_opencode_writes() {
+    let home = Home::new(&["opencode"]);
+    home.0.write(
+        ".ai/src/tools/opencode/settings.json",
+        r#"{"$schema": "https://opencode.ai/config.json", "theme": "dark"}"#,
+    );
+    home.0.write(
+        ".ai/src/mcp.json",
+        r#"{"mcpServers": {"dart": {"command": "dart"}}}"#,
+    );
+    home.run(&["sync", "--only", "opencode"]).success();
+    let composed = home.0.read("opencode.json");
+    assert!(composed.contains("\"dart\""), "{composed}");
+    let with_app_key = composed.replacen('{', "{\n  \"autoupdate\": false,", 1);
+    home.0.write("opencode.json", &with_app_key);
+    home.run(&["sync", "--only", "opencode"]).success();
+    assert_eq!(home.0.read("opencode.json"), with_app_key);
+}
+
+#[test]
+fn zed_settings_stay_owned_whole_in_a_home() {
+    let home = Home::new(&["zed"]);
+    home.run(&["sync", "--only", "zed"]).success();
+    home.0.append(".zed/settings.json", "// app note\n");
+    home.run(&["sync", "--only", "zed"])
+        .failure()
+        .stderr(predicate::str::contains("Manual edits detected"));
 }

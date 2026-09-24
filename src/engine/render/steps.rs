@@ -3,9 +3,9 @@
 use super::passes::{Dests, source_path, tool_source};
 use super::{Run, Step, Stop, io, tools};
 use crate::config::tool::Tool;
+use crate::engine::keyed;
 use crate::engine::rules::{self, Conversion, RuleOptions};
 use crate::engine::session::Session;
-use crate::engine::toml_keys;
 use crate::{config::payload, engine::codex_toml, engine::file_ops, engine::opencode_json, paths};
 
 pub(super) fn sync_rules_step(
@@ -371,69 +371,87 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
     }
     .filter(|path| s.ws.is_file(path));
 
-    let codex_dest = if dests.settings.is_empty() {
-        &dests.mcp
-    } else {
-        &dests.settings
-    };
-    if tool.value("targets.mcp.format") == "codex_toml" {
-        let ownership = tool.value("targets.settings.ownership");
+    for resource in ["settings", "mcp"] {
+        let ownership = tool.value(&format!("targets.{resource}.ownership"));
         if !matches!(ownership.as_str(), "" | "auto" | "keys" | "file") {
             s.log.error(&format!(
-                "Unknown targets.settings.ownership for {}: {ownership} (expected auto, keys, or file)",
+                "Unknown targets.{resource}.ownership for {}: {ownership} (expected auto, keys, or file)",
                 tool.display_name()
             ));
             return Err(Stop(1));
         }
     }
-    if tools::settings_keyed(s, tool) {
+    let keyed_settings = !dests.settings.is_empty() && tools::keyed(s, tool, "settings");
+    let keyed_mcp = !dests.mcp.is_empty() && tools::keyed(s, tool, "mcp");
+    let format = tool.value("targets.mcp.format");
+
+    if format == "codex_toml" {
         if !dests.settings.is_empty() && !dests.mcp.is_empty() && dests.settings != dests.mcp {
             s.log
                 .error("Codex settings and MCP destinations must match");
             return Err(Stop(1));
         }
-        if !codex_dest.is_empty() {
-            merge_codex(s, src_settings.as_deref(), src_mcp.as_deref(), codex_dest)?;
-        }
-    } else if tool.value("targets.mcp.format") == "codex_toml" {
-        if !codex_dest.is_empty() && s.owned_before(codex_dest).is_some() && !s.force && !s.dry_run
-        {
-            let shown = s.display(codex_dest);
-            s.log.error(&format!(
-                "{shown} is owned by key; owning the whole file drops what the Codex app wrote there"
-            ));
-            let force = s.log.command("agentsync sync --force");
-            s.log.err(format!(
-                "  • Set targets.settings.ownership: keys in .ai/src/tools/codex.yaml, or run {force} to own the whole file"
-            ));
-            return Err(Stop(1));
-        }
-        if let Some(mcp) = &src_mcp {
-            if !dests.settings.is_empty() && dests.settings != dests.mcp {
-                s.log
-                    .error("Codex settings and MCP destinations must match");
-                return Err(Stop(1));
+        let dest = if dests.settings.is_empty() {
+            &dests.mcp
+        } else {
+            &dests.settings
+        };
+        if keyed_settings || keyed_mcp {
+            let desired = codex_text(s, src_settings.as_deref(), src_mcp.as_deref(), true)?;
+            merge_keyed(s, dest, &desired, "Codex settings and MCP")?;
+        } else if !dest.is_empty() && (src_settings.is_some() || src_mcp.is_some()) {
+            guard_whole_file(s, tool, "settings", dest)?;
+            match &src_mcp {
+                Some(mcp) => compose_codex(s, src_settings.as_deref(), mcp, dest)?,
+                None => {
+                    let settings = src_settings.as_deref().unwrap_or_default();
+                    file_ops::copy_file(s, settings, dest).map_err(|e| io(s, e))?;
+                }
             }
-            compose_codex(s, src_settings.as_deref(), mcp, &dests.mcp)?;
-        } else if let Some(settings) = &src_settings {
-            file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
         }
-    } else if tool.value("targets.mcp.format") == "opencode_json" {
+    } else if format == "opencode_json" {
         if let Some(settings) = &src_settings {
-            if let Some(mcp) = &src_mcp {
-                let label = payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp");
-                compose_opencode(s, settings, mcp, &dests.settings, label)?;
+            let label = src_mcp
+                .as_deref()
+                .map(|mcp| payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp"))
+                .unwrap_or_default();
+            if keyed_settings {
+                let desired = match &src_mcp {
+                    Some(mcp) => opencode_text(s, settings, mcp)?,
+                    None => read_text(s, Some(settings), "settings")?,
+                };
+                merge_keyed(s, &dests.settings, &desired, "OpenCode settings and MCP")?;
             } else {
-                file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
+                guard_whole_file(s, tool, "settings", &dests.settings)?;
+                match &src_mcp {
+                    Some(mcp) => compose_opencode(s, settings, mcp, &dests.settings, label)?,
+                    None => {
+                        file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?
+                    }
+                }
             }
         }
     } else {
         if let Some(settings) = &src_settings {
-            file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
+            if keyed_settings {
+                let desired = read_text(s, Some(settings), "settings")?;
+                let what = s.display(settings);
+                merge_keyed(s, &dests.settings, &desired, &what)?;
+            } else {
+                guard_whole_file(s, tool, "settings", &dests.settings)?;
+                file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
+            }
         }
         if let Some(mcp) = &src_mcp {
             let label = payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp");
-            file_ops::copy_file_noted(s, mcp, &dests.mcp, label).map_err(|e| io(s, e))?;
+            if keyed_mcp {
+                let desired = read_text(s, Some(mcp), "MCP source")?;
+                let what = s.display(mcp);
+                merge_keyed(s, &dests.mcp, &desired, &what)?;
+            } else {
+                guard_whole_file(s, tool, "mcp", &dests.mcp)?;
+                file_ops::copy_file_noted(s, mcp, &dests.mcp, label).map_err(|e| io(s, e))?;
+            }
         }
     }
 
@@ -463,15 +481,20 @@ fn read_text(s: &mut Session, path: Option<&str>, what: &str) -> Result<String, 
     })
 }
 
-/// The owned keys of the settings and MCP sources merged into the live
-/// `config.toml`; every key the Codex app wrote stays as it is.
-fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest: &str) -> Step {
+/// The settings text with the MCP source composed in, as `config.toml` takes
+/// it; `keyed` picks the hint for settings that still hold `mcp_servers`.
+fn codex_text(
+    s: &mut Session,
+    settings: Option<&str>,
+    mcp: Option<&str>,
+    keyed: bool,
+) -> Result<String, Stop> {
     let settings_text = read_text(s, settings, "settings")?;
-    let mcp_bytes = match mcp {
-        Some(path) => Some(s.ws.read(path).map_err(|e| io(s, e))?),
-        None => None,
+    let Some(mcp) = mcp else {
+        return Ok(settings_text);
     };
-    let declared = codex_toml::declared(&settings_text, mcp_bytes.as_deref()).map_err(|reason| {
+    let mcp_bytes = s.ws.read(mcp).map_err(|e| io(s, e))?;
+    codex_toml::compose(&settings_text, &mcp_bytes).map_err(|reason| {
         s.log
             .error(&format!("Cannot compose Codex config: {reason}"));
         if codex_toml::settings_claim_mcp(&settings_text) {
@@ -479,24 +502,55 @@ fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest:
                 "  • Move the [mcp_servers] tables into the MCP source as JSON, then re-run sync"
                     .into(),
             );
-            s.log.err(
-                "  • Servers the Codex app manages need no source: delete them from settings and they stay in the live config"
-                    .into(),
-            );
+            s.log.err(if keyed {
+                "  • Servers the Codex app manages need no source: delete them from settings and they stay in the live config".into()
+            } else {
+                "  • Or keep them in settings: set targets.mcp.enabled: false in .ai/src/tools/codex.yaml".into()
+            });
         }
         Stop(1)
-    })?;
+    })
+}
+
+/// A whole-file write over a file the previous sync owned by key would drop
+/// what the tool itself wrote there; it takes `--force`.
+fn guard_whole_file(s: &mut Session, tool: &Tool, resource: &str, dest: &str) -> Step {
+    if dest.is_empty() || s.owned_before(dest).is_none() || s.force || s.dry_run {
+        return Ok(());
+    }
     let shown = s.display(dest);
+    s.log.error(&format!(
+        "{shown} is owned by key; owning the whole file drops what {} wrote there",
+        tool.display_name()
+    ));
+    let force = s.log.command("agentsync sync --force");
+    s.log.err(format!(
+        "  • Set targets.{resource}.ownership: keys in .ai/src/tools/{}.yaml, or run {force} to own the whole file",
+        tool.slug
+    ));
+    Err(Stop(1))
+}
+
+/// `desired`, the document the file would otherwise get whole, merged into
+/// the live `dest` by key; every key the tool itself wrote stays as it is.
+fn merge_keyed(s: &mut Session, dest: &str, desired: &str, what: &str) -> Step {
+    let shown = s.display(dest);
+    let Some(format) = keyed::Format::of(dest) else {
+        s.log.error(&format!(
+            "Cannot own {shown} by key: only TOML and JSON files can be"
+        ));
+        return Err(Stop(1));
+    };
     let live = if s.ws.is_file(dest) {
         read_text(s, Some(dest), &shown)?
     } else {
         String::new()
     };
     let previous = s.owned_before(dest).cloned();
-    let merged = toml_keys::merge(&live, &declared, previous.as_ref()).map_err(|reason| {
+    let merged = keyed::merge(format, &live, desired, previous.as_ref()).map_err(|reason| {
         s.log.error(&format!("Cannot merge into {shown}: {reason}"));
         s.log
-            .err("  • Fix the TOML in that file, then re-run sync".into());
+            .err("  • Fix that file or its source, then re-run sync".into());
         Stop(1)
     })?;
     if previous.is_none() && !merged.drifted.is_empty() && !s.force {
@@ -511,7 +565,7 @@ fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest:
             s.log.error(&headline);
         }
         for key in &merged.drifted {
-            s.log.err(format!("      {}", toml_keys::display(key)));
+            s.log.err(format!("      {}", keyed::display(key)));
         }
         let force = s.log.command("agentsync sync --force");
         s.log.err(format!(
@@ -523,42 +577,29 @@ fn merge_codex(s: &mut Session, settings: Option<&str>, mcp: Option<&str>, dest:
     }
     if s.dry_run {
         s.log.step(&format!(
-            "Would merge owned Codex settings and MCP keys → {shown} (dry-run)"
+            "Would merge the owned keys of {what} → {shown} (dry-run)"
         ));
         return Ok(());
     }
-    if merged.text != live {
+    let text = if s.ws.is_file(dest) {
+        merged.text
+    } else {
+        desired.to_string()
+    };
+    if !s.ws.is_file(dest) || text != live {
         s.ws.create_dir_all(&paths::parent(dest))
             .map_err(|e| io(s, e))?;
-        s.ws.replace_atomically(dest, merged.text.into_bytes())
+        s.ws.replace_atomically(dest, text.into_bytes())
             .map_err(|e| io(s, e))?;
     }
     s.record_write(dest);
     s.record_owned(dest, merged.owned);
-    s.log.step(&format!(
-        "Codex settings and MCP → {shown} (owned keys only)"
-    ));
+    s.log.step(&format!("{what} → {shown} (owned keys only)"));
     Ok(())
 }
 
 fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str) -> Step {
-    let settings_text = read_text(s, settings, "settings")?;
-    let mcp_bytes = s.ws.read(mcp).map_err(|e| io(s, e))?;
-    let composed = codex_toml::compose(&settings_text, &mcp_bytes).map_err(|reason| {
-        s.log
-            .error(&format!("Cannot compose Codex config: {reason}"));
-        if codex_toml::settings_claim_mcp(&settings_text) {
-            s.log.err(
-                "  • Move the [mcp_servers] tables into the MCP source as JSON, then re-run sync"
-                    .into(),
-            );
-            s.log.err(
-                "  • Or keep them in settings: set targets.mcp.enabled: false in .ai/src/tools/codex.yaml"
-                    .into(),
-            );
-        }
-        Stop(1)
-    })?;
+    let composed = codex_text(s, settings, Some(mcp), false)?;
     if s.dry_run {
         s.log.step(&format!(
             "Would compose Codex settings and MCP → {} (dry-run)",
@@ -576,6 +617,21 @@ fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str)
     Ok(())
 }
 
+/// The OpenCode settings with the MCP source composed in.
+fn opencode_text(s: &mut Session, settings: &str, mcp: &str) -> Result<String, Stop> {
+    let settings_text =
+        String::from_utf8_lossy(&s.ws.read(settings).map_err(|e| io(s, e))?).into_owned();
+    let mcp_text = String::from_utf8_lossy(&s.ws.read(mcp).map_err(|e| io(s, e))?).into_owned();
+    opencode_json::compose(&settings_text, &mcp_text).map_err(|failure| {
+        let (settings_disp, mcp_disp) = (s.display(settings), s.display(mcp));
+        s.log.error(&format!(
+            "Cannot compose OpenCode config from {settings_disp} and {mcp_disp}: {}",
+            failure.message
+        ));
+        Stop(failure.code)
+    })
+}
+
 /// `sync_opencode_config`; `mcp_label` is `describe_source`'s word for where
 /// the MCP half came from, shown on the written line.
 fn compose_opencode(
@@ -585,23 +641,13 @@ fn compose_opencode(
     dest: &str,
     mcp_label: &str,
 ) -> Step {
-    let settings_text =
-        String::from_utf8_lossy(&s.ws.read(settings).map_err(|e| io(s, e))?).into_owned();
-    let mcp_text = String::from_utf8_lossy(&s.ws.read(mcp).map_err(|e| io(s, e))?).into_owned();
     let note = if mcp_label.is_empty() {
         String::new()
     } else {
         format!(" (mcp: {mcp_label})")
     };
-    match opencode_json::compose(&settings_text, &mcp_text) {
-        Err(failure) => {
-            let (settings_disp, mcp_disp) = (s.display(settings), s.display(mcp));
-            s.log.error(&format!(
-                "Cannot compose OpenCode config from {settings_disp} and {mcp_disp}: {}",
-                failure.message
-            ));
-            Err(Stop(failure.code))
-        }
+    match opencode_text(s, settings, mcp) {
+        Err(stop) => Err(stop),
         Ok(_) if s.dry_run => {
             s.log.step(&format!(
                 "Would compose OpenCode settings and MCP → {}{note} (dry-run)",

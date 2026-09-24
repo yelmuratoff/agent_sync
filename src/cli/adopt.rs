@@ -9,7 +9,7 @@ use std::process::Command;
 use super::put;
 use crate::config::payload::{self, Source};
 use crate::config::tool::Tool;
-use crate::engine::toml_keys::{self, KeyPath, Owned};
+use crate::engine::keyed::{self, Format, KeyPath, Owned};
 use crate::output::help::{Help, Section};
 use crate::output::log::Log;
 use crate::output::style::Style;
@@ -110,6 +110,8 @@ pub struct Adoption {
     pub source_rel: String,
     /// The destination is a settings file sync owns by key, not whole.
     pub keyed: bool,
+    /// Server entries in the file come from an MCP source in another format.
+    pub units_from_mcp: bool,
 }
 
 /// What `_adopt_resolve_dest` needs besides the destination.
@@ -222,6 +224,7 @@ impl<'a> Resolver<'a> {
             source_abs: String::new(),
             source_rel: String::new(),
             keyed: false,
+            units_from_mcp: false,
         }
     }
 
@@ -246,10 +249,16 @@ impl<'a> Resolver<'a> {
             ));
         }
         if self.dest_for(tool, "settings").as_deref() == Some(abs) {
-            if tool.settings_keyed(self.paths.root_is_home()) {
+            if tool.keyed("settings", self.paths.root_is_home()) {
+                let composed = matches!(
+                    tool.value("targets.mcp.format").as_str(),
+                    "codex_toml" | "opencode_json"
+                );
+                let units_from_mcp = composed && self.payload_source(tool, "mcp", err)?.is_some();
                 let found = self.payload_target(tool, self.adoption(tool, "settings", dest))?;
                 return Ok(Some(found.map(|found| Adoption {
                     keyed: true,
+                    units_from_mcp,
                     ..found
                 })));
             }
@@ -283,9 +292,17 @@ impl<'a> Resolver<'a> {
         }
         for resource in ["mcp", "hooks"] {
             if self.dest_for(tool, resource).as_deref() == Some(abs) {
-                return Ok(Some(
-                    self.payload_target(tool, self.adoption(tool, resource, dest))?,
-                ));
+                let found = self.payload_target(tool, self.adoption(tool, resource, dest))?;
+                let keyed = resource == "mcp" && tool.keyed("mcp", self.paths.root_is_home());
+                let composed = matches!(
+                    tool.value("targets.mcp.format").as_str(),
+                    "codex_toml" | "opencode_json"
+                );
+                return Ok(Some(found.map(|found| Adoption {
+                    keyed,
+                    units_from_mcp: composed,
+                    ..found
+                })));
             }
         }
         let mut best: Option<(&'static str, String)> = None;
@@ -651,16 +668,17 @@ fn keyed_adoption(
             found.dest_rel
         )));
     };
+    let Some(format) = Format::of(&found.dest_rel) else {
+        return Ok(Err(format!(
+            "{} is not a TOML or JSON file",
+            found.dest_rel
+        )));
+    };
     let live =
         std::fs::read_to_string(&found.dest_abs).map_err(|e| Error::io(&found.dest_abs, e))?;
-    let now = match toml_keys::owned_in(&live, recorded) {
+    let now = match keyed::owned_in(format, &live, recorded) {
         Ok(now) => now,
-        Err(reason) => {
-            return Ok(Err(format!(
-                "{} is not valid TOML: {reason}",
-                found.dest_rel
-            )));
-        }
+        Err(reason) => return Ok(Err(format!("{} does not parse: {reason}", found.dest_rel))),
     };
     let keys = recorded.changed(&now);
     if keys.is_empty() {
@@ -670,35 +688,37 @@ fn keyed_adoption(
             owned: now.present(),
         }));
     }
-    let from_mcp_source =
-        |key: &KeyPath| key.len() == 2 && key.first().is_some_and(|first| first == "mcp_servers");
-    if let Some(key) = keys.iter().find(|key| from_mcp_source(key)) {
+    if found.units_from_mcp
+        && let Some(key) = keys.iter().find(|key| keyed::is_unit(key))
+    {
         return Ok(Err(format!(
             "{} comes from the MCP source; edit that source instead",
-            toml_keys::display(key)
+            keyed::display(key)
         )));
     }
     let source = Path::new(&found.source_abs);
     if !source.is_file() {
         return Ok(Err(format!(
-            "{} does not exist, and a file of only the changed keys would drop the rest; run agentsync customize {} settings first",
-            found.source_rel, found.tool
+            "{} does not exist, and a file of only the changed keys would drop the rest; run agentsync customize {} {} first",
+            found.source_rel, found.tool, found.resource
         )));
     }
-    let mut source_text = std::fs::read_to_string(source).map_err(|e| Error::io(source, e))?;
-    for key in &keys {
-        let adopted = toml_keys::value_at(&live, key)
-            .and_then(|value| toml_keys::put_in(&source_text, key, value));
-        match adopted {
-            Ok(text) => source_text = text,
-            Err(reason) => {
-                return Ok(Err(format!(
-                    "{} is not valid TOML: {reason}",
-                    found.source_rel
-                )));
-            }
-        }
+    if Format::of(&found.source_rel) != Some(format) {
+        return Ok(Err(format!(
+            "{} and {} are different formats; edit the source instead",
+            found.dest_rel, found.source_rel
+        )));
     }
+    let source_text = std::fs::read_to_string(source).map_err(|e| Error::io(source, e))?;
+    let source_text = match keyed::adopt(format, &live, &source_text, &keys) {
+        Ok(text) => text,
+        Err(reason) => {
+            return Ok(Err(format!(
+                "{} does not parse: {reason}",
+                found.source_rel
+            )));
+        }
+    };
     Ok(Ok(KeyedAdoption {
         source_text,
         keys,
@@ -937,7 +957,7 @@ fn adopt_keys(
         )?;
         return Ok(0);
     }
-    let keys: Vec<String> = adoption.keys.iter().map(toml_keys::display).collect();
+    let keys: Vec<String> = adoption.keys.iter().map(keyed::display).collect();
     let plan = format!(
         "\n{}\n    {}     {}\n    {} {}\n    {}     {} {}\n    {}       {} {}\n    {}     {}\n\n",
         style.bold("  Adopt plan"),

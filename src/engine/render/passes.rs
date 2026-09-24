@@ -327,7 +327,7 @@ fn cleanup_tool(s: &mut Session, run: &mut Run, slug: &str) {
         let Some(abs) = s.paths.clone().resolve_dest(&raw, &label, &mut s.log) else {
             continue;
         };
-        if matches!(key, "settings" | "mcp") && tool.settings_keyed(s.paths.root_is_home()) {
+        if matches!(key, "settings" | "mcp") && tool.keyed(key, s.paths.root_is_home()) {
             if s.ws.is_file(&abs) && !run.protected.contains(&abs) {
                 run.protected.push(abs.clone());
                 s.log.step(&format!(

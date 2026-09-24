@@ -104,8 +104,8 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
     }
 }
 
-pub(super) fn settings_keyed(s: &Session, tool: &Tool) -> bool {
-    tool.settings_keyed(s.paths.root_is_home())
+pub(super) fn keyed(s: &Session, tool: &Tool, resource: &str) -> bool {
+    tool.keyed(resource, s.paths.root_is_home())
 }
 
 /// `_collect_tool_dests`: the tool's resolved dests, also recorded for cleanup
@@ -130,7 +130,7 @@ fn collect_tool_dests(s: &mut Session, run: &mut Run, tool: &Tool, profile: bool
         };
         if matches!(key, "settings" | "mcp")
             && tool.flag(&format!("targets.{key}.enabled")) != Some(false)
-            && settings_keyed(s, tool)
+            && keyed(s, tool, key)
         {
             run.keyed_dests.insert(rel.clone());
         }

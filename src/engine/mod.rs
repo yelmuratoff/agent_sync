@@ -6,6 +6,8 @@ pub mod convert;
 pub mod file_ops;
 pub mod filters;
 pub mod gitignore;
+pub mod json_keys;
+pub mod keyed;
 pub mod opencode_json;
 pub mod overlay;
 pub mod render;

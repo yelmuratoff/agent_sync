@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::engine::toml_keys::Owned;
+use crate::engine::keyed::Owned;
 use crate::engine::workspace::Workspace;
 use crate::output::log::Log;
 use crate::paths::Paths;

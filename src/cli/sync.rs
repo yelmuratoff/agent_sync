@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
+use crate::engine::keyed;
 use crate::engine::render::{self, Run, Selection, Stop};
 use crate::engine::session::Session;
-use crate::engine::toml_keys;
 use crate::engine::workspace::Workspace;
 use crate::output::help::{Help, Section};
 use crate::output::log::{Log, Sink};
@@ -479,7 +479,7 @@ fn check_drift(s: &mut Session, run: &Run, previous: Option<&Manifest>) -> Resul
             if keys.is_empty() {
                 return Some(rel);
             }
-            let keys: Vec<String> = keys.iter().map(toml_keys::display).collect();
+            let keys: Vec<String> = keys.iter().map(keyed::display).collect();
             Some(format!("{rel} ({})", keys.join(", ")))
         })
         .collect();

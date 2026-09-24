@@ -1,123 +1,18 @@
-//! Key-level ownership of a TOML file another program also writes: a sync sets
-//! the keys its sources declare, removes the ones it declared before and no
-//! longer does, and leaves every other key as the other program wrote it.
+//! The TOML side of `keyed`: parses and edits through `toml_edit`, so comments,
+//! quoting, and layout the other program chose survive every merge.
 
 use std::collections::BTreeMap;
 
-use sha2::{Digest, Sha256};
-use toml_edit::{DocumentMut, Item, Key, Table, TableLike, Value};
+use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
-pub type KeyPath = Vec<String>;
+use crate::engine::keyed::{self, KeyPath, Merged, Owned, UNIT_ROOTS};
 
-/// The keys one file's sync owns, each with a short hash of its value.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Owned(BTreeMap<KeyPath, String>);
-
-impl Owned {
-    pub fn keys(&self) -> impl Iterator<Item = &KeyPath> {
-        self.0.keys()
-    }
-
-    /// The manifest column: a JSON array of `[path, hash]` pairs.
-    pub fn encode(&self) -> String {
-        let pairs: Vec<(&KeyPath, &String)> = self.0.iter().collect();
-        serde_json::to_string(&pairs).unwrap_or_default()
-    }
-
-    pub fn decode(text: &str) -> Option<Self> {
-        let pairs: Vec<(KeyPath, String)> = serde_json::from_str(text).ok()?;
-        Some(Self(pairs.into_iter().collect()))
-    }
-
-    pub fn digest(&self) -> String {
-        sha256_hex(self.encode().as_bytes())
-    }
-
-    /// This record without the keys that hash as absent.
-    pub fn present(self) -> Self {
-        Self(
-            self.0
-                .into_iter()
-                .filter(|(_, hash)| !hash.is_empty())
-                .collect(),
-        )
-    }
-
-    /// Keys whose value in `now` no longer matches this record.
-    pub fn changed(&self, now: &Owned) -> Vec<KeyPath> {
-        self.0
-            .iter()
-            .filter(|(key, hash)| now.0.get(*key) != Some(*hash))
-            .map(|(key, _)| key.clone())
-            .collect()
-    }
-}
-
-/// The values a sync declares, by key path, in source order.
-#[derive(Debug, Default)]
-pub struct Declared(Vec<(KeyPath, Item)>);
-
-impl Declared {
-    /// Every leaf of `text` becomes one owned key; an inline table, an array,
-    /// and an array of tables each count as one value.
-    pub fn from_toml(text: &str) -> Result<Self, String> {
-        let doc = parse(text)?;
-        let mut declared = Self::default();
-        collect_leaves(doc.as_table(), &mut Vec::new(), &mut declared.0);
-        Ok(declared)
-    }
-
-    /// Each entry of the table at `prefix` in `text` becomes one owned subtree.
-    pub fn add_subtrees(&mut self, text: &str, prefix: &str) -> Result<(), String> {
-        let doc = parse(text)?;
-        if let Some(table) = doc.get(prefix).and_then(Item::as_table_like) {
-            for (key, item) in table.iter() {
-                let path = vec![prefix.to_string(), key.to_string()];
-                self.0.retain(|(existing, _)| *existing != path);
-                self.0.push((path, item.clone()));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn contains_top_level(&self, key: &str) -> bool {
-        self.0
-            .iter()
-            .any(|(path, _)| path.first().is_some_and(|k| k == key))
-    }
-
-    fn contains(&self, path: &KeyPath) -> bool {
-        self.0.iter().any(|(existing, _)| existing == path)
-    }
-
-    fn owned(&self) -> Owned {
-        Owned(
-            self.0
-                .iter()
-                .map(|(path, item)| (path.clone(), hash_item(Some(item))))
-                .collect(),
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct Merged {
-    pub text: String,
-    pub owned: Owned,
-    /// Owned keys another program changed since `previous` was recorded, or,
-    /// without a record, declared keys whose live value differs.
-    pub drifted: Vec<KeyPath>,
-}
-
-/// `declared` applied over `live`. Keys `previous` owned and `declared` no
-/// longer names are removed; without a record nothing is removed. The text
-/// comes back byte for byte when every declared value already matches.
-pub fn merge(live: &str, declared: &Declared, previous: Option<&Owned>) -> Result<Merged, String> {
+pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merged, String> {
+    let declared = declared(desired)?;
     let mut doc = parse(live)?;
     let drifted = match previous {
         Some(previous) => previous.changed(&owned_now(&doc, previous.keys())),
         None => declared
-            .0
             .iter()
             .filter(|(path, item)| {
                 lookup(doc.as_table(), path).is_some_and(|live| canonical(live) != canonical(item))
@@ -127,11 +22,13 @@ pub fn merge(live: &str, declared: &Declared, previous: Option<&Owned>) -> Resul
     };
     let mut changed = false;
     for path in previous.into_iter().flat_map(Owned::keys) {
-        if !declared.contains(path) && remove(doc.as_table_mut(), path) {
+        if !declared.iter().any(|(declared, _)| declared == path)
+            && remove(doc.as_table_mut(), path)
+        {
             changed = true;
         }
     }
-    for (path, item) in &declared.0 {
+    for (path, item) in &declared {
         let current = lookup(doc.as_table(), path);
         if current.is_some_and(|live| canonical(live) == canonical(item)) {
             continue;
@@ -148,41 +45,40 @@ pub fn merge(live: &str, declared: &Declared, previous: Option<&Owned>) -> Resul
     };
     Ok(Merged {
         text,
-        owned: declared.owned(),
+        owned: Owned::from_pairs(
+            declared
+                .iter()
+                .map(|(path, item)| (path.clone(), hash_item(Some(item)))),
+        ),
         drifted,
     })
 }
 
-/// The current hashes in `live` of the keys `record` owns; an absent key
-/// hashes as empty.
 pub fn owned_in(live: &str, record: &Owned) -> Result<Owned, String> {
     Ok(owned_now(&parse(live)?, record.keys()))
 }
 
-/// The value `live` holds at `path`, as TOML text for a settings file.
-pub fn value_at(live: &str, path: &KeyPath) -> Result<Option<Item>, String> {
-    Ok(lookup(parse(live)?.as_table(), path).cloned())
-}
-
-/// `text` with `path` set to `value`, or removed when `value` is `None`; every
-/// other line kept.
-pub fn put_in(text: &str, path: &KeyPath, value: Option<Item>) -> Result<String, String> {
-    let mut doc = parse(text)?;
-    match value {
-        Some(item) => set(doc.as_table_mut(), path, item),
-        None => {
-            remove(doc.as_table_mut(), path);
+pub fn adopt(live: &str, source: &str, keys: &[KeyPath]) -> Result<String, String> {
+    let live = parse(live)?;
+    let mut doc = parse(source)?;
+    for key in keys {
+        match lookup(live.as_table(), key) {
+            Some(item) => set(doc.as_table_mut(), key, item.clone()),
+            None => {
+                remove(doc.as_table_mut(), key);
+            }
         }
     }
     Ok(doc.to_string())
 }
 
-/// A key path as TOML writes it, segments quoted where they must be.
-pub fn display(path: &KeyPath) -> String {
-    path.iter()
-        .map(|segment| Key::new(segment.as_str()).display_repr().into_owned())
-        .collect::<Vec<_>>()
-        .join(".")
+/// Every leaf of `desired` is one owned key; an inline table, an array, an
+/// array of tables, and each entry of a server map count as one value.
+fn declared(desired: &str) -> Result<Vec<(KeyPath, Item)>, String> {
+    let doc = parse(desired)?;
+    let mut out = Vec::new();
+    collect_leaves(doc.as_table(), &mut Vec::new(), &mut out);
+    Ok(out)
 }
 
 /// toml_edit's report is a location line, a source excerpt, then the message;
@@ -203,26 +99,22 @@ fn parse(text: &str) -> Result<DocumentMut, String> {
     })
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 fn owned_now<'a>(doc: &DocumentMut, keys: impl Iterator<Item = &'a KeyPath>) -> Owned {
-    Owned(
-        keys.map(|path| (path.clone(), hash_item(lookup(doc.as_table(), path))))
-            .collect(),
-    )
+    Owned::from_pairs(keys.map(|path| (path.clone(), hash_item(lookup(doc.as_table(), path)))))
 }
 
 fn collect_leaves(table: &dyn TableLike, path: &mut KeyPath, out: &mut Vec<(KeyPath, Item)>) {
     for (key, item) in table.iter() {
         path.push(key.to_string());
+        let unit_root = path.len() == 1 && UNIT_ROOTS.contains(&key);
         match item {
-            Item::Table(table) => collect_leaves(table, path, out),
             Item::None => {}
+            _ if unit_root && item.is_table_like() => {
+                for (entry, value) in item.as_table_like().into_iter().flat_map(|t| t.iter()) {
+                    out.push((vec![key.to_string(), entry.to_string()], value.clone()));
+                }
+            }
+            Item::Table(table) => collect_leaves(table, path, out),
             _ => out.push((path.clone(), item.clone())),
         }
         path.pop();
@@ -319,7 +211,7 @@ fn remove(root: &mut Table, path: &[String]) -> bool {
 
 fn hash_item(item: Option<&Item>) -> String {
     match item {
-        Some(item) => sha256_hex(canonical(item).as_bytes())[..16].to_string(),
+        Some(item) => keyed::short_hash(&canonical(item)),
         None => String::new(),
     }
 }
@@ -381,14 +273,10 @@ mod tests {
         path.split('.').map(str::to_string).collect()
     }
 
-    fn declared(settings: &str) -> Declared {
-        Declared::from_toml(settings).unwrap()
-    }
-
     #[test]
     fn keeps_keys_it_does_not_own() {
         let live = "model = \"old\"\n\n[projects.\"/tmp/x\"]\ntrust_level = \"trusted\" # app\n";
-        let merged = merge(live, &declared("model = \"new\"\n"), None).unwrap();
+        let merged = merge(live, "model = \"new\"\n", None).unwrap();
         assert_eq!(
             merged.text,
             "model = \"new\"\n\n[projects.\"/tmp/x\"]\ntrust_level = \"trusted\" # app\n"
@@ -398,35 +286,29 @@ mod tests {
     #[test]
     fn a_rewritten_key_keeps_its_comments() {
         let live = "# chosen in the app\nmodel = \"old\" # note\n";
-        let merged = merge(live, &declared("model = \"new\"\n"), None).unwrap();
+        let merged = merge(live, "model = \"new\"\n", None).unwrap();
         assert_eq!(merged.text, "# chosen in the app\nmodel = \"new\" # note\n");
     }
 
     #[test]
     fn sets_declared_keys_inside_existing_tables() {
-        let live = "[tui]\nnux = 1\n";
-        let merged = merge(live, &declared("[tui]\ntheme = \"dark\"\n"), None).unwrap();
+        let merged = merge("[tui]\nnux = 1\n", "[tui]\ntheme = \"dark\"\n", None).unwrap();
         assert_eq!(merged.text, "[tui]\nnux = 1\ntheme = \"dark\"\n");
     }
 
     #[test]
     fn leaves_bytes_unchanged_when_values_match() {
         let live = "model  =  'gpt'   # mine\n[tui]\ntheme = \"dark\"\nnux = 1\n";
-        let merged = merge(
-            live,
-            &declared("model = \"gpt\"\n[tui]\ntheme = 'dark'\n"),
-            None,
-        )
-        .unwrap();
+        let merged = merge(live, "model = \"gpt\"\n[tui]\ntheme = 'dark'\n", None).unwrap();
         assert_eq!(merged.text, live);
         assert!(merged.drifted.is_empty());
     }
 
     #[test]
     fn removes_keys_it_owned_before_and_no_longer_declares() {
-        let first = merge("", &declared("model = \"a\"\n[tui]\ntheme = \"x\"\n"), None).unwrap();
+        let first = merge("", "model = \"a\"\n[tui]\ntheme = \"x\"\n", None).unwrap();
         let live = format!("{}\n[projects.p]\ntrust_level = \"trusted\"\n", first.text);
-        let second = merge(&live, &declared("model = \"a\"\n"), Some(&first.owned)).unwrap();
+        let second = merge(&live, "model = \"a\"\n", Some(&first.owned)).unwrap();
         assert_eq!(
             second.text,
             "model = \"a\"\n\n[projects.p]\ntrust_level = \"trusted\"\n"
@@ -437,16 +319,15 @@ mod tests {
     #[test]
     fn removes_nothing_without_a_previous_record() {
         let live = "model = \"a\"\nsandbox = \"x\"\n";
-        let merged = merge(live, &declared("model = \"a\"\n"), None).unwrap();
-        assert_eq!(merged.text, live);
+        assert_eq!(merge(live, "model = \"a\"\n", None).unwrap().text, live);
     }
 
     #[test]
     fn reports_owned_keys_changed_since_the_record() {
         let settings = "model = \"a\"\neffort = \"low\"\n";
-        let first = merge("", &declared(settings), None).unwrap();
+        let first = merge("", settings, None).unwrap();
         let live = first.text.replace("\"a\"", "\"b\"") + "extra = 1\n";
-        let second = merge(&live, &declared(settings), Some(&first.owned)).unwrap();
+        let second = merge(&live, settings, Some(&first.owned)).unwrap();
         assert_eq!(second.drifted, [key("model")]);
         let now = owned_in(&live, &first.owned).unwrap();
         assert_eq!(first.owned.changed(&now), [key("model")]);
@@ -454,87 +335,65 @@ mod tests {
 
     #[test]
     fn reports_differing_declared_keys_on_the_first_run() {
-        let merged = merge(
-            "model = \"ui\"\nother = 1\n",
-            &declared("model = \"src\"\n"),
-            None,
-        )
-        .unwrap();
+        let merged = merge("model = \"ui\"\nother = 1\n", "model = \"src\"\n", None).unwrap();
         assert_eq!(merged.drifted, [key("model")]);
     }
 
     #[test]
     fn refuses_live_toml_that_does_not_parse_in_one_line() {
-        let reason = merge("model = \n", &declared("model = \"a\"\n"), None).unwrap_err();
+        let reason = merge("model = \n", "model = \"a\"\n", None).unwrap_err();
         assert!(reason.starts_with("line 1, column "), "{reason}");
         assert!(!reason.contains('\n') && !reason.contains('|'), "{reason}");
     }
 
     #[test]
-    fn displays_key_paths_as_toml_writes_them() {
-        assert_eq!(display(&key("tui.theme")), "tui.theme");
-        assert_eq!(
-            display(&vec!["projects".into(), "/tmp/x".into()]),
-            "projects.\"/tmp/x\""
-        );
-    }
-
-    #[test]
-    fn owns_a_table_entry_as_one_subtree() {
-        let mut declared = declared("");
-        declared
-            .add_subtrees("[mcp_servers.dart]\ncommand = \"dart\"\n", "mcp_servers")
-            .unwrap();
-        let first = merge("[mcp_servers.repl]\ncommand = \"app\"\n", &declared, None).unwrap();
+    fn owns_each_server_entry_as_one_value() {
+        let desired =
+            "[mcp_servers.dart]\ncommand = \"dart\"\n\n[mcp_servers.dart.env]\nA = \"1\"\n";
+        let first = merge("[mcp_servers.repl]\ncommand = \"app\"\n", desired, None).unwrap();
         assert_eq!(
             first.text,
-            "[mcp_servers.repl]\ncommand = \"app\"\n\n[mcp_servers.dart]\ncommand = \"dart\"\n"
+            "[mcp_servers.repl]\ncommand = \"app\"\n\n[mcp_servers.dart]\ncommand = \"dart\"\n\n[mcp_servers.dart.env]\nA = \"1\"\n"
         );
         assert_eq!(
             first.owned.keys().collect::<Vec<_>>(),
             [&key("mcp_servers.dart")]
         );
-        let second = merge(&first.text, &Declared::default(), Some(&first.owned)).unwrap();
+        let second = merge(&first.text, "", Some(&first.owned)).unwrap();
         assert_eq!(second.text, "[mcp_servers.repl]\ncommand = \"app\"\n");
     }
 
     #[test]
-    fn ownership_moving_from_a_subtree_to_its_leaves_keeps_the_leaves() {
-        let mut subtree = Declared::default();
-        subtree
-            .add_subtrees("[mcp_servers.dart]\ncommand = \"dart\"\n", "mcp_servers")
-            .unwrap();
-        let first = merge("", &subtree, None).unwrap();
-        let leaves = declared("[mcp_servers.dart]\ncommand = \"dart2\"\n");
-        let second = merge(&first.text, &leaves, Some(&first.owned)).unwrap();
-        assert_eq!(second.text, "[mcp_servers.dart]\ncommand = \"dart2\"\n");
-        let third = merge(&second.text, &leaves, Some(&second.owned)).unwrap();
+    fn ownership_moving_from_a_value_to_its_leaves_keeps_the_leaves() {
+        let first = merge("", "srv = { command = \"dart\" }\n", None).unwrap();
+        let leaves = "[srv]\ncommand = \"dart2\"\n";
+        let second = merge(&first.text, leaves, Some(&first.owned)).unwrap();
+        assert_eq!(second.text, "[srv]\ncommand = \"dart2\"\n");
+        let third = merge(&second.text, leaves, Some(&second.owned)).unwrap();
         assert_eq!(third.text, second.text);
     }
 
     #[test]
     fn ownership_moving_from_leaves_to_their_inline_parent_keeps_the_parent() {
-        let first = merge("", &declared("[tui]\ntheme = \"dark\"\n"), None).unwrap();
-        let parent = declared("tui = { theme = \"light\" }\n");
-        let second = merge(&first.text, &parent, Some(&first.owned)).unwrap();
+        let first = merge("", "[tui]\ntheme = \"dark\"\n", None).unwrap();
+        let parent = "tui = { theme = \"light\" }\n";
+        let second = merge(&first.text, parent, Some(&first.owned)).unwrap();
         assert_eq!(second.text, "tui = { theme = \"light\" }\n");
-        let third = merge(&second.text, &parent, Some(&second.owned)).unwrap();
+        let third = merge(&second.text, parent, Some(&second.owned)).unwrap();
         assert_eq!(third.text, second.text);
     }
 
     #[test]
     fn a_removed_key_takes_its_emptied_tables_with_it() {
-        let first = merge("", &declared("[a.b]\nc = 1\n"), None).unwrap();
-        let second = merge(&first.text, &Declared::default(), Some(&first.owned)).unwrap();
-        assert_eq!(second.text, "");
+        let first = merge("", "[a.b]\nc = 1\n", None).unwrap();
+        assert_eq!(merge(&first.text, "", Some(&first.owned)).unwrap().text, "");
     }
 
     #[test]
-    fn owned_records_round_trip_through_the_manifest_column() {
-        let settings = "model = \"a\"\n[\"odd\\tkey\"]\nx = 1\n";
-        let owned = merge("", &declared(settings), None).unwrap().owned;
-        assert!(!owned.encode().contains('\t'));
-        assert_eq!(Owned::decode(&owned.encode()), Some(owned));
-        assert_eq!(Owned::decode("not json"), None);
+    fn adopt_copies_live_values_and_keeps_source_comments() {
+        let live = "model = \"ui\"\n[tui]\nnux = 1\n";
+        let source = "# mine\nmodel = \"src\" # pick\neffort = \"low\"\n";
+        let adopted = adopt(live, source, &[key("model"), key("effort")]).unwrap();
+        assert_eq!(adopted, "# mine\nmodel = \"ui\" # pick\n");
     }
 }

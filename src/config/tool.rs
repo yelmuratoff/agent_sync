@@ -105,16 +105,24 @@ impl Tool {
         }
     }
 
-    /// Whether sync owns only the declared keys of this tool's TOML settings:
-    /// `targets.settings.ownership` `keys`, or `auto` in a config home, the
-    /// project rooted at `$HOME` or a profile variant.
-    pub fn settings_keyed(&self, root_is_home: bool) -> bool {
-        if self.value("targets.mcp.format") != "codex_toml" {
+    /// Whether sync owns only the declared keys of the TOML or JSON file the
+    /// `settings` or `mcp` target writes: `targets.<resource>.ownership` `keys`,
+    /// or `auto` (the default) in a config home, the project rooted at `$HOME`
+    /// or a profile variant. A file composed from both takes the settings
+    /// target's ownership.
+    pub fn keyed(&self, resource: &str, root_is_home: bool) -> bool {
+        let dest = self.value(&format!("targets.{resource}.dest"));
+        if !(dest.ends_with(".toml") || dest.ends_with(".json")) {
             return false;
         }
-        match self.value("targets.settings.ownership").as_str() {
+        let composed = matches!(
+            self.value("targets.mcp.format").as_str(),
+            "codex_toml" | "opencode_json"
+        );
+        let owner = if composed { "settings" } else { resource };
+        match self.value(&format!("targets.{owner}.ownership")).as_str() {
             "keys" => true,
-            "auto" => root_is_home || !self.value("profile_home").is_empty(),
+            "" | "auto" => root_is_home || !self.value("profile_home").is_empty(),
             _ => false,
         }
     }
@@ -155,20 +163,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codex_settings_are_keyed_in_a_config_home_or_when_asked() {
+    fn settings_and_mcp_files_are_keyed_in_a_config_home_or_when_asked() {
         let codex = Tool::new("codex", None);
-        assert!(codex.settings_keyed(true));
-        assert!(!codex.settings_keyed(false));
+        assert!(codex.keyed("settings", true));
+        assert!(codex.keyed("mcp", true));
+        assert!(!codex.keyed("settings", false));
         let variant = Tool::new(
-            "codex-hub",
-            Some("base: codex\nprofile_home: \"/home/me\"\n".into()),
+            "claude-hub",
+            Some("base: claude\nprofile_home: \"/home/me\"\n".into()),
         );
-        assert!(variant.settings_keyed(false));
+        assert!(variant.keyed("settings", false));
         let keys = "targets:\n  settings:\n    ownership: keys\n";
-        assert!(Tool::new("codex", Some(keys.into())).settings_keyed(false));
+        assert!(Tool::new("claude", Some(keys.into())).keyed("settings", false));
+        assert!(!Tool::new("claude", Some(keys.into())).keyed("mcp", false));
         let file = "targets:\n  settings:\n    ownership: file\n";
-        assert!(!Tool::new("codex", Some(file.into())).settings_keyed(true));
-        assert!(!Tool::new("cursor", Some(keys.into())).settings_keyed(true));
+        assert!(!Tool::new("codex", Some(file.into())).keyed("mcp", true));
+        assert!(Tool::new("cursor", None).keyed("mcp", true));
+        assert!(!Tool::new("cursor", None).keyed("rules", true));
     }
 
     fn claude_with(user: &str) -> Tool {
