@@ -272,7 +272,6 @@ pub fn write(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     use crate::paths::DiskText;
 
     #[test]
