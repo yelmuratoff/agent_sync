@@ -127,16 +127,18 @@ targets:
   # settings:
   #   source: ".ai/src/settings/tool.json"
   #   dest: ".tool/settings.json"
-  #   # For a codex_toml tool: `keys` owns only the keys the settings and MCP
-  #   # sources declare and keeps every key the tool itself wrote; `file` owns
-  #   # the whole file; `auto` picks `keys` when the project root is $HOME or
-  #   # the tool is a profile variant, else `file`.
+  #   # For a TOML or JSON dest: `keys` owns only the keys the source declares
+  #   # and keeps every key the tool itself wrote; `file` owns the whole file;
+  #   # `auto` (the default) picks `keys` when the project root is $HOME or the
+  #   # tool is a profile variant, else `file`. A file composed from settings
+  #   # and MCP (codex_toml, opencode_json) follows this option.
   #   # ownership: auto
 
   # MCP server configs (optional, file copy)
   # mcp:
   #   source: ".ai/src/mcp/tool.json"
   #   dest: ".tool/.mcp.json"
+  #   # ownership: auto           # As for settings; each server is owned whole
   #   # format: opencode_json     # Optional: compose into OpenCode settings
   #   # format: kimi_json         # Optional: mcp use writes Kimi-native HTTP JSON
   #   # format: codex_toml        # Optional: compose into Codex settings

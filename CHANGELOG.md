@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Key ownership covers every settings and MCP file in a config home, not only Codex.** Claude Code writes the model, theme, effort level, and plugin choices into `~/.claude/settings.json`, and editors add servers to their global `mcp.json`, so a global sync stopped on those edits the same way it did on Codex's. Synced from `$HOME` or into a profile, AgentSync now owns only the declared keys of each TOML or JSON `settings` and `mcp` file: Claude Code's `settings.json` and `.mcp.json`, Gemini CLI's `settings.json`, the MCP files of Cursor, Windsurf, Junie, Amazon Q, Kimi Code, and MiniMax Code, and OpenCode's composed `opencode.json`. A plugin Claude Code enabled or a server Cursor added stays where the tool put it; a declared key the tool changed stops the sync by name, and `agentsync adopt <file>` moves it into the source. Every server in `mcpServers`, `mcp`, `mcp_servers`, or `context_servers` is owned as one entry, and adopting a changed one from an MCP-only file moves it into that tool's own MCP source, `.ai/src/tools/<tool>/mcp.json`, once `agentsync customize <tool> mcp` created it.
+  - `targets.mcp.ownership` joins `targets.settings.ownership`; both default to `auto` for every tool, which in a repository keeps owning files whole, so project output does not change.
+  - A JSON file is left byte for byte while its declared values match. When a declared value changes, the file is rewritten pretty-printed with its keys sorted, and `adopt` writes a JSON source the same way. JSON with comments stops the merge with a hint to use `ownership: file`; Zed's settings allow comments, so Zed's shipped tool owns its settings whole.
+
 ## 0.41.0
 
 ### Added
