@@ -9,7 +9,7 @@ use crate::engine::keyed::{self, KeyPath, Merged, Owned, UNIT_ROOTS};
 
 pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merged, String> {
     let declared = declared(desired)?;
-    let mut doc = parse(live)?;
+    let mut doc = parse(live, LIVE)?;
     let drifted = match previous {
         Some(previous) => previous.changed(&owned_now(&doc, previous.keys())),
         None => declared
@@ -55,12 +55,12 @@ pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merg
 }
 
 pub fn owned_in(live: &str, record: &Owned) -> Result<Owned, String> {
-    Ok(owned_now(&parse(live)?, record.keys()))
+    Ok(owned_now(&parse(live, LIVE)?, record.keys()))
 }
 
 pub fn adopt(live: &str, source: &str, keys: &[KeyPath]) -> Result<String, String> {
-    let live = parse(live)?;
-    let mut doc = parse(source)?;
+    let live = parse(live, LIVE)?;
+    let mut doc = parse(source, SOURCE)?;
     for key in keys {
         match lookup(live.as_table(), key) {
             Some(item) => set(doc.as_table_mut(), key, item.clone()),
@@ -75,26 +75,28 @@ pub fn adopt(live: &str, source: &str, keys: &[KeyPath]) -> Result<String, Strin
 /// Every leaf of `desired` is one owned key; an inline table, an array, an
 /// array of tables, and each entry of a server map count as one value.
 fn declared(desired: &str) -> Result<Vec<(KeyPath, Item)>, String> {
-    let doc = parse(desired)?;
+    let doc = parse(desired, SOURCE)?;
     let mut out = Vec::new();
     collect_leaves(doc.as_table(), &mut Vec::new(), &mut out);
     Ok(out)
 }
 
+const LIVE: &str = "the live file";
+const SOURCE: &str = "the source";
+
 /// toml_edit's report is a location line, a source excerpt, then the message;
 /// one log line keeps the location and the message.
-fn parse(text: &str) -> Result<DocumentMut, String> {
+fn parse(text: &str, which: &str) -> Result<DocumentMut, String> {
     text.parse::<DocumentMut>().map_err(|e| {
         let report = e.to_string();
         let mut lines = report.lines().filter(|line| !line.trim().is_empty());
         let location = lines
             .next()
             .unwrap_or_default()
-            .trim_start_matches("TOML parse error at ")
-            .to_string();
+            .trim_start_matches("TOML parse error at ");
         match lines.next_back() {
-            Some(message) => format!("{location}: {}", message.trim()),
-            None => location,
+            Some(message) => format!("in {which}, {location}: {}", message.trim()),
+            None => format!("in {which}, {location}"),
         }
     })
 }
@@ -342,7 +344,10 @@ mod tests {
     #[test]
     fn refuses_live_toml_that_does_not_parse_in_one_line() {
         let reason = merge("model = \n", "model = \"a\"\n", None).unwrap_err();
-        assert!(reason.starts_with("line 1, column "), "{reason}");
+        assert!(
+            reason.starts_with("in the live file, line 1, column "),
+            "{reason}"
+        );
         assert!(!reason.contains('\n') && !reason.contains('|'), "{reason}");
     }
 

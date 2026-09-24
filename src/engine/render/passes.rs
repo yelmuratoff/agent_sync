@@ -141,7 +141,7 @@ fn check_shared_agents_dests(s: &mut Session, run: &Run) -> Step {
 }
 
 fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
-    let mut owners: BTreeMap<String, (String, String, Vec<u8>)> = BTreeMap::new();
+    let mut owners: BTreeMap<String, (String, String, Vec<u8>, bool)> = BTreeMap::new();
     for slug in &run.tools {
         if !run.enabled.contains(slug) || run.profile_tools.contains(slug) {
             continue;
@@ -158,7 +158,15 @@ fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
             continue;
         }
         let bytes = s.ws.read(&source).map_err(|e| io(s, e))?;
-        if let Some((other_slug, other_source, other_bytes)) = owners.get(&dest) {
+        let keyed = tool.keyed("mcp", s.paths.root_is_home());
+        if let Some((other_slug, other_source, other_bytes, other_keyed)) = owners.get(&dest) {
+            if *other_keyed != keyed {
+                s.log.error(&format!(
+                    "MCP destination {} is shared by {other_slug} and {slug}, but one owns it by key and the other whole; give both the same targets.mcp.ownership",
+                    s.display(&dest)
+                ));
+                return Err(Stop(1));
+            }
             if other_bytes != &bytes {
                 s.log.error(&format!(
                     "MCP destination {} is shared by {other_slug} ({}) and {slug} ({}), but their sources differ",
@@ -169,7 +177,7 @@ fn check_shared_mcp_dests(s: &mut Session, run: &Run) -> Step {
                 return Err(Stop(1));
             }
         } else {
-            owners.insert(dest, (slug.clone(), source, bytes));
+            owners.insert(dest, (slug.clone(), source, bytes, keyed));
         }
     }
     Ok(())
@@ -330,10 +338,12 @@ fn cleanup_tool(s: &mut Session, run: &mut Run, slug: &str) {
         if matches!(key, "settings" | "mcp") && tool.keyed(key, s.paths.root_is_home()) {
             if s.ws.is_file(&abs) && !run.protected.contains(&abs) {
                 run.protected.push(abs.clone());
-                s.log.step(&format!(
-                    "Kept {} (the app writes to it too)",
-                    s.display(&abs)
-                ));
+                if s.owned_before(&abs).is_some() {
+                    s.log.step(&format!(
+                        "Kept {} (the app writes to it too)",
+                        s.display(&abs)
+                    ));
+                }
             }
             continue;
         }

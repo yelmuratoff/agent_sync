@@ -8,12 +8,13 @@ use crate::engine::keyed::{self, KeyPath, Merged, Owned, UNIT_ROOTS};
 
 pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merged, String> {
     let declared = declared(desired)?;
-    let mut doc = parse(live)?;
+    let mut doc = parse(live, LIVE)?;
+    let same = |live: &Value, value: &Value| canonical(live) == canonical(value);
     let drifted = match previous {
         Some(previous) => previous.changed(&owned_now(&doc, previous.keys())),
         None => declared
             .iter()
-            .filter(|(path, value)| lookup(&doc, path).is_some_and(|live| live != value))
+            .filter(|(path, value)| lookup(&doc, path).is_some_and(|live| !same(live, value)))
             .map(|(path, _)| path.clone())
             .collect(),
     };
@@ -24,7 +25,7 @@ pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merg
         }
     }
     for (path, value) in &declared {
-        if lookup(&doc, path) == Some(value) {
+        if lookup(&doc, path).is_some_and(|live| same(live, value)) {
             continue;
         }
         set(&mut doc, path, value.clone());
@@ -46,12 +47,12 @@ pub fn merge(live: &str, desired: &str, previous: Option<&Owned>) -> Result<Merg
 }
 
 pub fn owned_in(live: &str, record: &Owned) -> Result<Owned, String> {
-    Ok(owned_now(&parse(live)?, record.keys()))
+    Ok(owned_now(&parse(live, LIVE)?, record.keys()))
 }
 
 pub fn adopt(live: &str, source: &str, keys: &[KeyPath]) -> Result<String, String> {
-    let live = parse(live)?;
-    let mut doc = parse(source)?;
+    let live = parse(live, LIVE)?;
+    let mut doc = parse(source, SOURCE)?;
     for key in keys {
         match lookup(&live, key) {
             Some(value) => set(&mut doc, key, value.clone()),
@@ -66,34 +67,70 @@ pub fn adopt(live: &str, source: &str, keys: &[KeyPath]) -> Result<String, Strin
 /// Every leaf of `desired` is one owned key; an array and each entry of a
 /// server map count as one value.
 fn declared(desired: &str) -> Result<Vec<(KeyPath, Value)>, String> {
-    let doc = parse(desired)?;
+    let doc = parse(desired, SOURCE)?;
     let mut out = Vec::new();
     collect_leaves(&doc, &mut Vec::new(), &mut out);
     Ok(out)
 }
 
-fn parse(text: &str) -> Result<Map<String, Value>, String> {
+const LIVE: &str = "the live file";
+const SOURCE: &str = "the source";
+
+fn parse(text: &str, which: &str) -> Result<Map<String, Value>, String> {
     if text.trim().is_empty() {
         return Ok(Map::new());
     }
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(map)) => Ok(map),
-        Ok(_) => Err("the top level is not a JSON object".into()),
+        Ok(_) => Err(format!("in {which}, the top level is not a JSON object")),
         Err(e) => {
             let message = e.to_string();
-            let message = message
-                .split(" at line ")
-                .next()
-                .unwrap_or_default()
-                .to_string();
-            let mut reason = format!("line {}, column {}: {message}", e.line(), e.column());
-            if text.contains("//") || text.contains("/*") {
+            let message = message.split(" at line ").next().unwrap_or_default();
+            let mut reason = format!(
+                "in {which}, line {}, column {}: {message}",
+                e.line(),
+                e.column()
+            );
+            let commented = text.lines().any(|line| {
+                let line = line.trim_start();
+                line.starts_with("//") || line.starts_with("/*")
+            });
+            if commented {
                 reason.push_str(
-                    "; comments are not JSON, so own this file whole with targets.<resource>.ownership: file",
+                    "; comments are not JSON, so set ownership: file on this target to own it whole",
                 );
             }
             Err(reason)
         }
+    }
+}
+
+/// A value's meaning without its formatting: key order drops out, and a float
+/// with no fraction reads as the integer an app may write back for it.
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Number(number) => match number.as_f64() {
+            Some(float) if float.fract() == 0.0 && float.abs() < 9.0e15 => {
+                format!("{}", float as i64)
+            }
+            _ => number.to_string(),
+        },
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        Value::Object(map) => format!(
+            "{{{}}}",
+            map.iter()
+                .map(|(k, v)| format!(
+                    "{}:{}",
+                    serde_json::to_string(k).unwrap_or_default(),
+                    canonical(v)
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        other => other.to_string(),
     }
 }
 
@@ -186,7 +223,7 @@ fn remove(doc: &mut Map<String, Value>, path: &[String]) -> bool {
 
 fn hash_value(value: Option<&Value>) -> String {
     match value {
-        Some(value) => keyed::short_hash(&serde_json::to_string(value).unwrap_or_default()),
+        Some(value) => keyed::short_hash(&canonical(value)),
         None => String::new(),
     }
 }
@@ -287,13 +324,44 @@ mod tests {
     #[test]
     fn refuses_jsonc_with_a_hint() {
         let reason = merge("{\n  // mine\n  \"a\": 1\n}\n", r#"{"a": 1}"#, None).unwrap_err();
-        assert!(reason.starts_with("line 2, column "), "{reason}");
-        assert!(reason.contains("ownership: file"), "{reason}");
         assert!(
-            merge("[1]", "{}", None)
-                .unwrap_err()
-                .contains("not a JSON object")
+            reason.starts_with("in the live file, line 2, column "),
+            "{reason}"
         );
+        assert!(reason.contains("ownership: file"), "{reason}");
+        assert_eq!(
+            merge("[1]", "{}", None).unwrap_err(),
+            "in the live file, the top level is not a JSON object"
+        );
+    }
+
+    #[test]
+    fn names_the_source_and_skips_the_comment_hint_for_urls() {
+        let source = "{\"$schema\": \"https://x.test/s.json\", \"a\": 1,}";
+        let reason = merge("{}", source, None).unwrap_err();
+        assert!(
+            reason.starts_with("in the source, line 1, column "),
+            "{reason}"
+        );
+        assert!(!reason.contains("comments"), "{reason}");
+    }
+
+    #[test]
+    fn integral_floats_equal_their_integers() {
+        let merged = merge("{\"timeout\": 60}", "{\"timeout\": 60.0}", None).unwrap();
+        assert_eq!(merged.text, "{\"timeout\": 60}");
+        assert!(merged.drifted.is_empty());
+        let now = owned_in("{\"timeout\": 60.0}", &merged.owned).unwrap();
+        assert!(merged.owned.changed(&now).is_empty());
+    }
+
+    #[test]
+    fn hashes_ignore_key_order_inside_a_server() {
+        let desired = r#"{"mcpServers": {"d": {"command": "d", "args": []}}}"#;
+        let first = merge("{}", desired, None).unwrap();
+        let reordered = r#"{"mcpServers": {"d": {"args": [], "command": "d"}}}"#;
+        let now = owned_in(reordered, &first.owned).unwrap();
+        assert!(first.owned.changed(&now).is_empty());
     }
 
     #[test]

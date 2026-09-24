@@ -650,8 +650,8 @@ pub(crate) struct KeyedAdoption {
 fn whole_file_refusal(found: &Adoption, manifest: Option<&Manifest>) -> Option<String> {
     manifest?.entry(&found.dest_rel)?.owned.as_ref()?;
     Some(format!(
-        "{} is recorded as owned by key, and a whole-file copy would pull the app's keys into the source; set targets.settings.ownership: keys, or run agentsync sync --force to own the whole file",
-        found.dest_rel
+        "{} is recorded as owned by key, and a whole-file copy would pull the app's keys into the source; set targets.{}.ownership: keys, or run agentsync sync --force to own the whole file",
+        found.dest_rel, found.resource
     ))
 }
 
@@ -688,7 +688,7 @@ fn keyed_adoption(
             owned: now.present(),
         }));
     }
-    if found.units_from_mcp
+    if (found.units_from_mcp || found.resource == "mcp")
         && let Some(key) = keys.iter().find(|key| keyed::is_unit(key))
     {
         return Ok(Err(format!(

@@ -458,7 +458,9 @@ fn has_regular_file(path: &Path) -> bool {
 }
 
 /// `_check_drift_or_exit`. A key-owned dest without an owned-key record yet
-/// is left to its merge step, which compares the declared keys instead.
+/// is left to its merge step, which compares the declared keys instead; a
+/// record no enabled tool owns by key any more is left to the tool, or to the
+/// step that refuses to own it whole.
 fn check_drift(s: &mut Session, run: &Run, previous: Option<&Manifest>) -> Result<(), Stop> {
     if s.dry_run {
         return Ok(());
@@ -472,7 +474,7 @@ fn check_drift(s: &mut Session, run: &Run, previous: Option<&Manifest>) -> Resul
         .into_iter()
         .filter_map(|rel| {
             let entry = previous.entry(&rel)?;
-            if entry.owned.is_none() && run.keyed_dests.contains(&rel) {
+            if entry.owned.is_some() != run.keyed_dests.contains(&rel) {
                 return None;
             }
             let keys = entry.changed_keys(&root);

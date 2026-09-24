@@ -189,6 +189,12 @@ fn switching_from_keys_to_file_needs_force() {
         ".ai/src/tools/codex.yaml",
         "targets:\n  settings:\n    ownership: file\n",
     );
+    project
+        .agentsync()
+        .args(["sync", "--only", "codex", "--dry-run"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("A real sync would stop"));
     sync(&project)
         .failure()
         .stderr(predicate::str::contains(
@@ -366,6 +372,66 @@ fn a_composed_opencode_config_keeps_keys_opencode_writes() {
     home.0.write("opencode.json", &with_app_key);
     home.run(&["sync", "--only", "opencode"]).success();
     assert_eq!(home.0.read("opencode.json"), with_app_key);
+}
+
+#[test]
+fn a_key_owned_codex_config_with_no_source_is_not_created() {
+    let home = Home::new(&["codex"]);
+    home.0.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  settings:\n    enabled: false\n",
+    );
+    home.run(&["sync", "--only", "codex"]).success();
+    assert!(!home.0.exists(".codex/config.toml"));
+}
+
+#[test]
+fn tools_sharing_an_mcp_file_must_own_it_the_same_way() {
+    let home = Home::new(&["claude", "minimax"]);
+    home.0.write(".ai/src/mcp.json", r#"{"mcpServers": {}}"#);
+    home.0.write(
+        ".ai/src/tools/minimax.yaml",
+        "targets:\n  mcp:\n    ownership: file\n",
+    );
+    home.run(&["sync"])
+        .failure()
+        .stderr(predicate::str::contains(
+            "one owns it by key and the other whole; give both the same targets.mcp.ownership",
+        ));
+}
+
+#[test]
+fn a_disabled_tool_keeps_its_file_without_blocking_later_syncs() {
+    let home = Home::new(&["claude", "cursor"]);
+    home.0.write(
+        ".ai/src/tools/claude/settings.json",
+        "{\"theme\": \"dark\"}\n",
+    );
+    home.run(&["sync"]).success();
+    home.run(&["disable", "claude"]).success();
+    home.0.write(CLAUDE_SETTINGS, "{\"theme\": \"light\"}\n");
+    home.run(&["sync"]).success();
+    home.run(&["sync"]).success();
+    assert_eq!(home.0.read(CLAUDE_SETTINGS), "{\"theme\": \"light\"}\n");
+}
+
+#[test]
+fn adopt_sends_a_changed_mcp_server_back_to_its_source() {
+    let home = Home::new(&["cursor"]);
+    home.0.write(
+        ".ai/src/mcp.json",
+        r#"{"mcpServers": {"dart": {"command": "dart"}}}"#,
+    );
+    home.run(&["sync", "--only", "cursor"]).success();
+    home.0.write(
+        ".cursor/mcp.json",
+        r#"{"mcpServers": {"dart": {"command": "dart2"}}}"#,
+    );
+    home.run(&["adopt", "--yes", ".cursor/mcp.json"])
+        .failure()
+        .stderr(predicate::str::contains(
+            "mcpServers.dart comes from the MCP source",
+        ));
 }
 
 #[test]

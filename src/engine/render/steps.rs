@@ -396,10 +396,11 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
         } else {
             &dests.settings
         };
-        if keyed_settings || keyed_mcp {
+        let has_source = src_settings.is_some() || src_mcp.is_some();
+        if (keyed_settings || keyed_mcp) && has_source {
             let desired = codex_text(s, src_settings.as_deref(), src_mcp.as_deref(), true)?;
             merge_keyed(s, dest, &desired, "Codex settings and MCP")?;
-        } else if !dest.is_empty() && (src_settings.is_some() || src_mcp.is_some()) {
+        } else if !dest.is_empty() && has_source && !(keyed_settings || keyed_mcp) {
             guard_whole_file(s, tool, "settings", dest)?;
             match &src_mcp {
                 Some(mcp) => compose_codex(s, src_settings.as_deref(), mcp, dest)?,
@@ -475,8 +476,7 @@ fn read_text(s: &mut Session, path: Option<&str>, what: &str) -> Result<String, 
         None => Vec::new(),
     };
     String::from_utf8(bytes).map_err(|_| {
-        s.log
-            .error(&format!("Cannot compose Codex config: {what} is not UTF-8"));
+        s.log.error(&format!("Cannot read {what}: it is not UTF-8"));
         Stop(1)
     })
 }
@@ -515,20 +515,26 @@ fn codex_text(
 /// A whole-file write over a file the previous sync owned by key would drop
 /// what the tool itself wrote there; it takes `--force`.
 fn guard_whole_file(s: &mut Session, tool: &Tool, resource: &str, dest: &str) -> Step {
-    if dest.is_empty() || s.owned_before(dest).is_none() || s.force || s.dry_run {
+    if dest.is_empty() || s.owned_before(dest).is_none() || s.force {
         return Ok(());
     }
     let shown = s.display(dest);
-    s.log.error(&format!(
+    let headline = format!(
         "{shown} is owned by key; owning the whole file drops what {} wrote there",
         tool.display_name()
-    ));
+    );
+    if s.dry_run {
+        s.log
+            .warning(&format!("A real sync would stop: {headline}"));
+    } else {
+        s.log.error(&headline);
+    }
     let force = s.log.command("agentsync sync --force");
     s.log.err(format!(
         "  • Set targets.{resource}.ownership: keys in .ai/src/tools/{}.yaml, or run {force} to own the whole file",
         tool.slug
     ));
-    Err(Stop(1))
+    if s.dry_run { Ok(()) } else { Err(Stop(1)) }
 }
 
 /// `desired`, the document the file would otherwise get whole, merged into
@@ -569,7 +575,7 @@ fn merge_keyed(s: &mut Session, dest: &str, desired: &str, what: &str) -> Step {
         }
         let force = s.log.command("agentsync sync --force");
         s.log.err(format!(
-            "  • Copy the live values into the settings source, or run {force} to apply .ai/src"
+            "  • Copy the live values into the source, or run {force} to apply .ai/src; adopt works once a sync has recorded the owned keys"
         ));
         if !s.dry_run {
             return Err(Stop(1));
