@@ -428,6 +428,16 @@ fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str)
     let composed = codex_toml::compose(&settings_text, &mcp_bytes).map_err(|reason| {
         s.log
             .error(&format!("Cannot compose Codex config: {reason}"));
+        if codex_toml::settings_claim_mcp(&settings_text) {
+            s.log.err(
+                "  • Move the [mcp_servers] tables into the MCP source as JSON, then re-run sync"
+                    .into(),
+            );
+            s.log.err(
+                "  • Or keep them in settings: set targets.mcp.enabled: false in .ai/src/tools/codex.yaml"
+                    .into(),
+            );
+        }
         Stop(1)
     })?;
     if s.dry_run {

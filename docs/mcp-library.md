@@ -87,11 +87,21 @@ form in `.mcp.json`; OpenCode composes it into `opencode.json` during `sync`.
 Hand-written shared HTTP sources are copied to Kimi unchanged; use a per-tool
 Kimi source with its native `url` shape for those servers.
 For Codex, normal `sync` composes selected MCP servers into the existing
-`.codex/config.toml` settings. It supports stdio `command`, string `args`, and
-string `env` entries, or an HTTP(S) `url`; other server fields are refused.
+`.codex/config.toml` settings. A stdio server takes `command`, `args`, `cwd`,
+`env_vars`, and an `env` map; an HTTP(S) `url` server takes
+`bearer_token_env_var` and the `http_headers` and `env_http_headers` maps.
+Either kind takes `enabled`, `required`, `startup_timeout_sec`,
+`tool_timeout_sec`, `enabled_tools`, and `disabled_tools`, with the names and
+types of the
+[Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference.md).
+Any other field is refused by name. Put Codex-only fields in a per-tool
+`.ai/src/tools/codex/mcp.json`, since the shared source reaches other tools.
 Settings that already define or may encode `mcp_servers` conflict with a
-separate MCP source and leave the generated config unchanged. Edit the two
-sources separately; `adopt` cannot split a composed config back into them.
+separate MCP source and leave the generated config unchanged. Either move the
+servers into the MCP source, or set `targets.mcp.enabled: false` in
+`.ai/src/tools/codex.yaml` to keep them in the settings file, which `sync` then
+copies unchanged. Edit the two sources separately; `adopt` cannot split a
+composed config back into them.
 
 ## Manifest format
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Codex MCP servers take Codex's own fields.** Besides `command`, `args`, `env`, and `url`, a server composed into `.codex/config.toml` can carry `cwd`, `env_vars`, `enabled`, `required`, `startup_timeout_sec`, `tool_timeout_sec`, `enabled_tools`, and `disabled_tools`, and an HTTP server `bearer_token_env_var`, `http_headers`, and `env_http_headers`. A server that needed one of them, such as the Codex app's `node_repl` with `startup_timeout_sec`, can move out of the settings file into a per-tool `.ai/src/tools/codex/mcp.json`. A field Codex does not take is still refused, and the error now names it: ``MCP server docs: field `headers` is not supported for a Codex http server``.
+
+### Fixed
+
+- **`doctor` reported an MCP ownership conflict that `sync` does not have.** With `targets.mcp.enabled: false` in `.ai/src/tools/codex.yaml` or `opencode.yaml`, `sync` copies the settings file and leaves the MCP source alone, but `doctor` still failed with `Codex MCP ownership conflict` (or the OpenCode one). It skips the check when the MCP target is off.
+- **The Codex ownership error says how to get out of it.** Under `Cannot compose Codex config: settings already contain or may encode mcp_servers`, `sync` prints the two ways out: move the `[mcp_servers]` tables into the MCP source, or set `targets.mcp.enabled: false` to keep them in settings. `doctor` names both too.
+
 ## 0.40.0
 
 ### Breaking

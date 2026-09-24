@@ -49,14 +49,16 @@ impl Doctor<'_> {
 
     /// `_doctor_check_payload_ownership`.
     pub(super) fn check_payload_ownership(&mut self, tool: &Tool) -> Result<(), Error> {
-        if tool.value("targets.mcp.format") == "codex_toml" {
+        let mcp_synced = tool.flag("targets.mcp.enabled") != Some(false)
+            && !tool.value("targets.mcp.dest").is_empty();
+        if mcp_synced && tool.value("targets.mcp.format") == "codex_toml" {
             let settings = self.resolve(tool, "settings")?;
             let mcp = self.resolve(tool, "mcp")?;
             if let (Some(settings), Some(mcp)) = (settings, mcp) {
                 let text = String::from_utf8_lossy(&settings.bytes()?).into_owned();
                 if codex_toml::settings_claim_mcp(&text) {
                     self.fail(&format!(
-                        "Codex MCP ownership conflict: {} and {} both define or may encode mcp_servers. Move the server map into one source.",
+                        "Codex MCP ownership conflict: {} and {} both define or may encode mcp_servers. Move the server map into one source, or set targets.mcp.enabled: false in .ai/src/tools/codex.yaml to keep it in settings.",
                         self.source_shown(&settings),
                         self.source_shown(&mcp)
                     ))?;
@@ -64,7 +66,7 @@ impl Doctor<'_> {
             }
         }
         match tool.slug.as_str() {
-            "opencode" => {
+            "opencode" if mcp_synced => {
                 let settings = self.resolve(tool, "settings")?;
                 let mcp = self.resolve(tool, "mcp")?;
                 if let (Some(settings), Some(mcp)) = (settings, mcp) {

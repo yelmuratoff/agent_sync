@@ -731,7 +731,10 @@ fn codex_ownership_conflict_refuses_sync_without_changing_output() {
         .arg("sync")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("MCP ownership"));
+        .stderr(predicate::str::contains("MCP ownership"))
+        .stderr(predicate::str::contains(
+            "  • Or keep them in settings: set targets.mcp.enabled: false in .ai/src/tools/codex.yaml",
+        ));
     assert_eq!(project.read(".codex/config.toml"), before);
     project
         .agentsync()
@@ -739,6 +742,47 @@ fn codex_ownership_conflict_refuses_sync_without_changing_output() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("Codex MCP ownership conflict"));
+}
+
+#[test]
+fn codex_settings_keep_their_servers_when_mcp_composition_is_disabled() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["codex"]);
+    let settings = "[mcp_servers.repl]\ncommand = \"manual\"\nstartup_timeout_sec = 120\n";
+    project.write(".ai/src/tools/codex/settings.toml", settings);
+    project.write(
+        ".ai/src/mcp.json",
+        "{\"mcpServers\":{\"docs\":{\"url\":\"https://example.invalid/mcp\"}}}\n",
+    );
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  mcp:\n    enabled: false\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".codex/config.toml"), settings);
+    project
+        .agentsync()
+        .arg("doctor")
+        .assert()
+        .stdout(predicate::str::contains("MCP ownership conflict").not());
+}
+
+#[test]
+fn codex_composes_native_server_fields_from_a_per_tool_source() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["codex"]);
+    project.write(".ai/src/tools/codex/settings.toml", "model = \"gpt\"\n");
+    project.write(
+        ".ai/src/tools/codex/mcp.json",
+        r#"{"mcpServers":{"repl":{"command":"node_repl","args":[],"cwd":".","enabled":false,"startup_timeout_sec":120,"env":{"MODE":"1"}}}}"#,
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(
+        project.read(".codex/config.toml"),
+        "model = \"gpt\"\n\n[mcp_servers.repl]\ncommand = \"node_repl\"\nargs = []\ncwd = \".\"\n\
+         enabled = false\nstartup_timeout_sec = 120\n\n[mcp_servers.repl.env]\n\"MODE\" = \"1\"\n"
+    );
+    project.agentsync().arg("check").assert().success();
 }
 
 #[test]

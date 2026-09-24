@@ -404,6 +404,19 @@ fn doctor_recognizes_kimi_code_and_opencode_output_ownership() {
 }
 
 #[test]
+fn doctor_accepts_opencode_settings_mcp_when_the_mcp_target_is_disabled() {
+    let project = Project::seeded(&["--no-detect"]);
+    project.enable_tools(&["opencode"]);
+    project.write(".ai/src/tools/opencode/settings.json", "{\"mcp\":{}}\n");
+    project.write(".ai/src/mcp.json", "{\"mcpServers\":{}}\n");
+    project.write(
+        ".ai/src/tools/opencode.yaml",
+        "targets:\n  mcp:\n    enabled: false\n",
+    );
+    doctor(&project).stdout(predicate::str::contains("MCP ownership conflict").not());
+}
+
+#[test]
 fn doctor_fails_when_opencode_settings_and_canonical_mcp_both_own_mcp() {
     let project = Project::seeded(&["--no-detect"]);
     project.enable_tools(&["opencode"]);
