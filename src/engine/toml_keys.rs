@@ -354,6 +354,15 @@ mod tests {
     }
 
     #[test]
+    fn a_source_that_does_not_parse_is_named_as_the_source() {
+        let reason = merge("model = \"a\"\n", "model = \n", None).unwrap_err();
+        assert!(
+            reason.starts_with("in the source, line 1, column "),
+            "{reason}"
+        );
+    }
+
+    #[test]
     fn owns_each_server_entry_as_one_value() {
         let desired =
             "[mcp_servers.dart]\ncommand = \"dart\"\n\n[mcp_servers.dart.env]\nA = \"1\"\n";

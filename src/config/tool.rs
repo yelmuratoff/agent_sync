@@ -105,6 +105,14 @@ impl Tool {
         }
     }
 
+    /// Whether the settings file is composed with the MCP source into one file.
+    pub fn composed(&self) -> bool {
+        matches!(
+            self.value("targets.mcp.format").as_str(),
+            "codex_toml" | "opencode_json"
+        )
+    }
+
     /// Whether sync owns only the declared keys of the TOML or JSON file the
     /// `settings` or `mcp` target writes: `targets.<resource>.ownership` `keys`,
     /// or `auto` (the default) in a config home, the project rooted at `$HOME`
@@ -115,11 +123,11 @@ impl Tool {
         if !(dest.ends_with(".toml") || dest.ends_with(".json")) {
             return false;
         }
-        let composed = matches!(
-            self.value("targets.mcp.format").as_str(),
-            "codex_toml" | "opencode_json"
-        );
-        let owner = if composed { "settings" } else { resource };
+        let owner = if self.composed() {
+            "settings"
+        } else {
+            resource
+        };
         match self.value(&format!("targets.{owner}.ownership")).as_str() {
             "keys" => true,
             "" | "auto" => root_is_home || !self.value("profile_home").is_empty(),
@@ -180,6 +188,21 @@ mod tests {
         assert!(!Tool::new("codex", Some(file.into())).keyed("mcp", true));
         assert!(Tool::new("cursor", None).keyed("mcp", true));
         assert!(!Tool::new("cursor", None).keyed("rules", true));
+    }
+
+    #[test]
+    fn every_shipped_settings_and_mcp_file_but_zed_settings_is_keyed_in_a_home() {
+        for slug in crate::config::catalog::base_tools() {
+            let tool = Tool::new(&slug, None);
+            for resource in ["settings", "mcp"] {
+                if tool.value(&format!("targets.{resource}.dest")).is_empty() {
+                    continue;
+                }
+                let expected = !(slug == "zed" && resource == "settings");
+                assert_eq!(tool.keyed(resource, true), expected, "{slug} {resource}");
+                assert!(!tool.keyed(resource, false), "{slug} {resource}");
+            }
+        }
     }
 
     fn claude_with(user: &str) -> Tool {

@@ -435,9 +435,86 @@ fn adopt_sends_a_changed_mcp_server_back_to_its_source() {
 }
 
 #[test]
+fn gemini_settings_in_a_home_keep_what_gemini_writes() {
+    let home = Home::new(&["gemini"]);
+    home.0.write(
+        ".ai/src/tools/gemini/settings.json",
+        "{\"theme\": \"Dracula\"}\n",
+    );
+    home.run(&["sync", "--only", "gemini"]).success();
+    home.0.write(
+        ".gemini/settings.json",
+        "{\"theme\": \"Dracula\", \"security\": {\"auth\": {\"selectedType\": \"oauth-personal\"}}}\n",
+    );
+    let with_app_key = home.0.read(".gemini/settings.json");
+    home.run(&["sync", "--only", "gemini"]).success();
+    assert_eq!(home.0.read(".gemini/settings.json"), with_app_key);
+}
+
+#[test]
+fn a_profile_variant_in_a_repository_owns_its_config_home_by_key() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude"]);
+    project
+        .agentsync()
+        .args(["profile", "add", "hub", "--tools", "claude"])
+        .assert()
+        .success();
+    project.write(
+        ".ai/src/tools/claude/settings.json",
+        "{\"theme\": \"dark\"}\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    let hub = ".claude-hub/settings.json";
+    let with_app_key =
+        project
+            .read(hub)
+            .replacen('{', "{\n  \"feedbackSurveyState\": {\"last\": 1},", 1);
+    project.write(hub, &with_app_key);
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(hub), with_app_key);
+    project.write(".claude/settings.json", "{\"theme\": \"light\"}\n");
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Manual edits detected"));
+}
+
+#[test]
+fn an_unknown_mcp_ownership_value_stops_sync() {
+    let home = Home::new(&["cursor"]);
+    home.0.write(
+        ".ai/src/tools/cursor.yaml",
+        "targets:\n  mcp:\n    ownership: key\n",
+    );
+    home.run(&["sync", "--only", "cursor"])
+        .failure()
+        .stderr(predicate::str::contains(
+            "Unknown targets.mcp.ownership for Cursor: key (expected auto, keys, or file)",
+        ));
+}
+
+#[test]
+fn servers_left_in_key_owned_codex_settings_point_at_the_app_owned_way_out() {
+    let project = codex_project(Some("keys"));
+    project.write(SETTINGS, "[mcp_servers.repl]\ncommand = \"repl\"\n");
+    sync(&project).failure().stderr(predicate::str::contains(
+        "Servers the Codex app manages need no source",
+    ));
+}
+
+#[test]
 fn zed_settings_stay_owned_whole_in_a_home() {
     let home = Home::new(&["zed"]);
     home.run(&["sync", "--only", "zed"]).success();
+    let manifest = home.0.read(".ai/.sync-manifest");
+    let line = manifest
+        .lines()
+        .find(|line| line.starts_with(".zed/settings.json\t"))
+        .unwrap();
+    assert_eq!(line.split('\t').count(), 2, "{line}");
     home.0.append(".zed/settings.json", "// app note\n");
     home.run(&["sync", "--only", "zed"])
         .failure()

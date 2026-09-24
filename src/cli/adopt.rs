@@ -250,11 +250,9 @@ impl<'a> Resolver<'a> {
         }
         if self.dest_for(tool, "settings").as_deref() == Some(abs) {
             if tool.keyed("settings", self.paths.root_is_home()) {
-                let composed = matches!(
-                    tool.value("targets.mcp.format").as_str(),
-                    "codex_toml" | "opencode_json"
-                );
-                let units_from_mcp = composed && self.payload_source(tool, "mcp", err)?.is_some();
+                let units_from_mcp = tool.composed()
+                    && tool.flag("targets.mcp.enabled") != Some(false)
+                    && self.payload_source(tool, "mcp", err)?.is_some();
                 let found = self.payload_target(tool, self.adoption(tool, "settings", dest))?;
                 return Ok(Some(found.map(|found| Adoption {
                     keyed: true,
@@ -294,15 +292,7 @@ impl<'a> Resolver<'a> {
             if self.dest_for(tool, resource).as_deref() == Some(abs) {
                 let found = self.payload_target(tool, self.adoption(tool, resource, dest))?;
                 let keyed = resource == "mcp" && tool.keyed("mcp", self.paths.root_is_home());
-                let composed = matches!(
-                    tool.value("targets.mcp.format").as_str(),
-                    "codex_toml" | "opencode_json"
-                );
-                return Ok(Some(found.map(|found| Adoption {
-                    keyed,
-                    units_from_mcp: composed,
-                    ..found
-                })));
+                return Ok(Some(found.map(|found| Adoption { keyed, ..found })));
             }
         }
         let mut best: Option<(&'static str, String)> = None;
@@ -637,7 +627,7 @@ pub(crate) fn copy_into_source(found: &Adoption) -> Result<(), Error> {
     write_into_source(found, &bytes)
 }
 
-/// What adopting a key-owned file writes: the settings source with the owned
+/// What adopting a key-owned file writes: its source with the owned
 /// keys the live file changed, those keys, and the owned-key record after.
 pub(crate) struct KeyedAdoption {
     source_text: String,
@@ -923,8 +913,8 @@ fn adopt_one(
     Ok(0)
 }
 
-/// `adopt_one` for a key-owned settings file: only the owned keys the live
-/// file changed move into the settings source.
+/// `adopt_one` for a key-owned settings or MCP file: only the owned keys the live
+/// file changed move into its source.
 fn adopt_keys(
     run: &mut Run,
     found: &Adoption,

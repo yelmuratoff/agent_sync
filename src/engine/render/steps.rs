@@ -355,105 +355,33 @@ pub(super) fn sync_subagents_step(
     result.map_err(|e| io(s, e))
 }
 
+/// The settings and MCP sources a tool's payload pass reads, and whether each
+/// target's file is owned by key.
+struct Payload {
+    settings: Option<String>,
+    mcp: Option<String>,
+    keyed_settings: bool,
+    keyed_mcp: bool,
+}
+
 pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) -> Step {
-    let root = s.paths.root.clone();
-    let tools_dir = s.tools_dir.clone();
-    let src_settings = if dests.settings.is_empty() {
-        None
-    } else {
-        payload::resolve_source(s, tool, "settings")
-    }
-    .filter(|path| s.ws.is_file(path));
-    let src_mcp = if dests.mcp.is_empty() {
-        None
-    } else {
-        payload::resolve_source(s, tool, "mcp")
-    }
-    .filter(|path| s.ws.is_file(path));
-
-    for resource in ["settings", "mcp"] {
-        let ownership = tool.value(&format!("targets.{resource}.ownership"));
-        if !matches!(ownership.as_str(), "" | "auto" | "keys" | "file") {
-            s.log.error(&format!(
-                "Unknown targets.{resource}.ownership for {}: {ownership} (expected auto, keys, or file)",
-                tool.display_name()
-            ));
-            return Err(Stop(1));
+    check_ownership_values(s, tool)?;
+    let source = |s: &mut Session, resource: &str, dest: &str| {
+        if dest.is_empty() {
+            return None;
         }
-    }
-    let keyed_settings = !dests.settings.is_empty() && tools::keyed(s, tool, "settings");
-    let keyed_mcp = !dests.mcp.is_empty() && tools::keyed(s, tool, "mcp");
-    let format = tool.value("targets.mcp.format");
-
-    if format == "codex_toml" {
-        if !dests.settings.is_empty() && !dests.mcp.is_empty() && dests.settings != dests.mcp {
-            s.log
-                .error("Codex settings and MCP destinations must match");
-            return Err(Stop(1));
-        }
-        let dest = if dests.settings.is_empty() {
-            &dests.mcp
-        } else {
-            &dests.settings
-        };
-        let has_source = src_settings.is_some() || src_mcp.is_some();
-        if (keyed_settings || keyed_mcp) && has_source {
-            let desired = codex_text(s, src_settings.as_deref(), src_mcp.as_deref(), true)?;
-            merge_keyed(s, dest, &desired, "Codex settings and MCP")?;
-        } else if !dest.is_empty() && has_source && !(keyed_settings || keyed_mcp) {
-            guard_whole_file(s, tool, "settings", dest)?;
-            match &src_mcp {
-                Some(mcp) => compose_codex(s, src_settings.as_deref(), mcp, dest)?,
-                None => {
-                    let settings = src_settings.as_deref().unwrap_or_default();
-                    file_ops::copy_file(s, settings, dest).map_err(|e| io(s, e))?;
-                }
-            }
-        }
-    } else if format == "opencode_json" {
-        if let Some(settings) = &src_settings {
-            let label = src_mcp
-                .as_deref()
-                .map(|mcp| payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp"))
-                .unwrap_or_default();
-            if keyed_settings {
-                let desired = match &src_mcp {
-                    Some(mcp) => opencode_text(s, settings, mcp)?,
-                    None => read_text(s, Some(settings), "settings")?,
-                };
-                merge_keyed(s, &dests.settings, &desired, "OpenCode settings and MCP")?;
-            } else {
-                guard_whole_file(s, tool, "settings", &dests.settings)?;
-                match &src_mcp {
-                    Some(mcp) => compose_opencode(s, settings, mcp, &dests.settings, label)?,
-                    None => {
-                        file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?
-                    }
-                }
-            }
-        }
-    } else {
-        if let Some(settings) = &src_settings {
-            if keyed_settings {
-                let desired = read_text(s, Some(settings), "settings")?;
-                let what = s.display(settings);
-                merge_keyed(s, &dests.settings, &desired, &what)?;
-            } else {
-                guard_whole_file(s, tool, "settings", &dests.settings)?;
-                file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
-            }
-        }
-        if let Some(mcp) = &src_mcp {
-            let label = payload::describe_source(&tools_dir, &root, mcp, &tool.slug, "mcp");
-            if keyed_mcp {
-                let desired = read_text(s, Some(mcp), "MCP source")?;
-                let what = s.display(mcp);
-                merge_keyed(s, &dests.mcp, &desired, &what)?;
-            } else {
-                guard_whole_file(s, tool, "mcp", &dests.mcp)?;
-                file_ops::copy_file_noted(s, mcp, &dests.mcp, label).map_err(|e| io(s, e))?;
-            }
-        }
+        payload::resolve_source(s, tool, resource).filter(|path| s.ws.is_file(path))
+    };
+    let sources = Payload {
+        settings: source(s, "settings", &dests.settings),
+        mcp: source(s, "mcp", &dests.mcp),
+        keyed_settings: !dests.settings.is_empty() && tools::keyed(s, tool, "settings"),
+        keyed_mcp: !dests.mcp.is_empty() && tools::keyed(s, tool, "mcp"),
+    };
+    match tool.value("targets.mcp.format").as_str() {
+        "codex_toml" => sync_codex_payload(s, tool, dests, &sources)?,
+        "opencode_json" => sync_opencode_payload(s, tool, dests, &sources)?,
+        _ => sync_copied_payloads(s, tool, dests, &sources)?,
     }
 
     for (resource, dest) in [("hooks", &dests.hooks), ("guard", &dests.guard)] {
@@ -468,6 +396,96 @@ pub(super) fn sync_payloads_step(s: &mut Session, tool: &Tool, dests: &Dests) ->
         }
     }
     Ok(())
+}
+
+fn check_ownership_values(s: &mut Session, tool: &Tool) -> Step {
+    for resource in ["settings", "mcp"] {
+        let ownership = tool.value(&format!("targets.{resource}.ownership"));
+        if !matches!(ownership.as_str(), "" | "auto" | "keys" | "file") {
+            s.log.error(&format!(
+                "Unknown targets.{resource}.ownership for {}: {ownership} (expected auto, keys, or file)",
+                tool.display_name()
+            ));
+            return Err(Stop(1));
+        }
+    }
+    Ok(())
+}
+
+fn sync_codex_payload(s: &mut Session, tool: &Tool, dests: &Dests, p: &Payload) -> Step {
+    if !dests.settings.is_empty() && !dests.mcp.is_empty() && dests.settings != dests.mcp {
+        s.log
+            .error("Codex settings and MCP destinations must match");
+        return Err(Stop(1));
+    }
+    let dest = if dests.settings.is_empty() {
+        &dests.mcp
+    } else {
+        &dests.settings
+    };
+    if dest.is_empty() || (p.settings.is_none() && p.mcp.is_none()) {
+        return Ok(());
+    }
+    if p.keyed_settings || p.keyed_mcp {
+        let desired = codex_text(s, p.settings.as_deref(), p.mcp.as_deref(), true)?;
+        return merge_keyed(s, dest, &desired, "Codex settings and MCP");
+    }
+    guard_whole_file(s, tool, "settings", dest)?;
+    match (&p.mcp, &p.settings) {
+        (Some(mcp), _) => compose_codex(s, p.settings.as_deref(), mcp, dest),
+        (None, Some(settings)) => file_ops::copy_file(s, settings, dest).map_err(|e| io(s, e)),
+        (None, None) => Ok(()),
+    }
+}
+
+fn sync_opencode_payload(s: &mut Session, tool: &Tool, dests: &Dests, p: &Payload) -> Step {
+    let Some(settings) = &p.settings else {
+        return Ok(());
+    };
+    if p.keyed_settings {
+        let desired = match &p.mcp {
+            Some(mcp) => opencode_text(s, settings, mcp)?,
+            None => read_text(s, Some(settings), "settings")?,
+        };
+        return merge_keyed(s, &dests.settings, &desired, "OpenCode settings and MCP");
+    }
+    guard_whole_file(s, tool, "settings", &dests.settings)?;
+    match &p.mcp {
+        Some(mcp) => {
+            let label = mcp_label(s, tool, mcp);
+            compose_opencode(s, settings, mcp, &dests.settings, label)
+        }
+        None => file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e)),
+    }
+}
+
+fn sync_copied_payloads(s: &mut Session, tool: &Tool, dests: &Dests, p: &Payload) -> Step {
+    if let Some(settings) = &p.settings {
+        if p.keyed_settings {
+            let desired = read_text(s, Some(settings), "settings")?;
+            let what = s.display(settings);
+            merge_keyed(s, &dests.settings, &desired, &what)?;
+        } else {
+            guard_whole_file(s, tool, "settings", &dests.settings)?;
+            file_ops::copy_file(s, settings, &dests.settings).map_err(|e| io(s, e))?;
+        }
+    }
+    if let Some(mcp) = &p.mcp {
+        if p.keyed_mcp {
+            let desired = read_text(s, Some(mcp), "MCP source")?;
+            let what = s.display(mcp);
+            merge_keyed(s, &dests.mcp, &desired, &what)?;
+        } else {
+            guard_whole_file(s, tool, "mcp", &dests.mcp)?;
+            let label = mcp_label(s, tool, mcp);
+            file_ops::copy_file_noted(s, mcp, &dests.mcp, label).map_err(|e| io(s, e))?;
+        }
+    }
+    Ok(())
+}
+
+fn mcp_label(s: &Session, tool: &Tool, mcp: &str) -> &'static str {
+    payload::describe_source(&s.tools_dir, &s.paths.root, mcp, &tool.slug, "mcp")
 }
 
 fn read_text(s: &mut Session, path: Option<&str>, what: &str) -> Result<String, Stop> {
@@ -574,8 +592,9 @@ fn merge_keyed(s: &mut Session, dest: &str, desired: &str, what: &str) -> Step {
             s.log.err(format!("      {}", keyed::display(key)));
         }
         let force = s.log.command("agentsync sync --force");
+        let adopt = s.log.command("agentsync adopt <file>");
         s.log.err(format!(
-            "  • Copy the live values into the source, or run {force} to apply .ai/src; adopt works once a sync has recorded the owned keys"
+            "  • Copy the live values into the source, or run {force} to apply .ai/src; {adopt} works once a sync has recorded the owned keys"
         ));
         if !s.dry_run {
             return Err(Stop(1));
@@ -623,7 +642,6 @@ fn compose_codex(s: &mut Session, settings: Option<&str>, mcp: &str, dest: &str)
     Ok(())
 }
 
-/// The OpenCode settings with the MCP source composed in.
 fn opencode_text(s: &mut Session, settings: &str, mcp: &str) -> Result<String, Stop> {
     let settings_text =
         String::from_utf8_lossy(&s.ws.read(settings).map_err(|e| io(s, e))?).into_owned();

@@ -115,12 +115,12 @@ manages need no source at all. In a repository `auto` owns the whole file, so
 `adopt` cannot split a composed config back into its two sources; set
 `ownership: keys` or `file` to choose explicitly.
 
-The same holds for every MCP file in a config home. An editor that adds a
-server to its global `mcp.json` (Cursor, Windsurf, and the rest) keeps it:
-sync owns one `mcpServers` entry per server in the MCP source, and removes an
-entry only after the source dropped it. OpenCode's `mcp` map and Zed's
-`context_servers` follow the same rule; Zed's settings are JSON with comments,
-so Zed stays owned whole.
+The same holds for every MCP file sync writes in a config home. A server an
+editor such as Cursor added to that file stays: sync owns one `mcpServers`
+entry per server in the MCP source, and removes an entry only after the source
+dropped it. OpenCode's `mcp` map follows the same rule. Zed's shipped tool owns
+its settings whole, because they are JSON with comments; an `ownership: keys`
+override is refused at the first comment.
 
 ## Manifest format
 

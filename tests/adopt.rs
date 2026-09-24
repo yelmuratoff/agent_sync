@@ -664,6 +664,10 @@ fn adopt_takes_mcp_server_fields_the_settings_own() {
         "targets:\n  settings:\n    ownership: keys\n  mcp:\n    enabled: false\n",
     );
     project.write(CODEX_SETTINGS, "[mcp_servers.repl]\ncommand = \"repl\"\n");
+    project.write(
+        ".ai/src/mcp.json",
+        r#"{"mcpServers":{"shared":{"command":"x"}}}"#,
+    );
     project.agentsync().arg("sync").assert().success();
     let edited = project.read(CODEX_CONFIG).replace("\"repl\"", "\"repl2\"");
     project.write(CODEX_CONFIG, &edited);
