@@ -15,6 +15,10 @@
 
 - **`.ai/.sync-manifest` gains a third column** on the line of a file AgentSync owns by key: the declared keys with a short hash of each value, and the line's hash covers only those keys. A two-column line reads as before. An older `agentsync` reading the new line sees a hash mismatch and stops with `Manual edits detected` instead of overwriting.
 
+### Fixed
+
+- **`skills catalog --source` read folded and literal strings only in `name` and `description`.** A `SKILL.md` that wrote `compatibility`, an extension field, or a `metadata` value such as `metadata.when_to_use` as a `>` or `|` block showed its name and description as `unknown`. Those fields accept the block form now: two-space indentation at the top level, four under `metadata`.
+
 ## 0.40.1
 
 ### Added
