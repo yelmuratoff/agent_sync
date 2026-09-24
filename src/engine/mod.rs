@@ -12,4 +12,5 @@ pub mod render;
 pub mod rules;
 pub mod session;
 pub mod staging;
+pub mod toml_keys;
 pub mod workspace;
