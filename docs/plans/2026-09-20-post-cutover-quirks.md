@@ -151,6 +151,13 @@ Do not schedule these; attach them to a major when one is cut for another reason
 - **Group C, 2026-09-28.** 14, 30, 32 and 40 route through the project's
   config resolution, and 15 rides along, ratified for a minor release. 30
   keeps rewriting every top-level `agentsync_version:` line on purpose.
+- **The list is closed, 2026-09-28.** Of the 55 items, 49 are fixed, 5 are
+  kept with the reason in the spec (2, 3, 7, 37, 38), and 8 stays struck. The
+  cosmetic items and 5 and 7 ship with Groups A to C; Group D, 47, 48 and 51
+  change what an existing project reads or writes and wait for a major
+  release. 47 went in with 46 as planned above, and 51 became the design
+  change described there: every import reads the declared `source.*` paths
+  and drops the ones the target project would not have.
 - **Group B status, 2026-09-28.** 12, 17, 18, 19, 21, 26, 28, 29, 31, 33, 41,
   42, 45 (its `<…>` half), 49 and 50 are fixed; the spec strikes each. Two
   items were left on purpose:

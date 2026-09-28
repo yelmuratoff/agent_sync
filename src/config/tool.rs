@@ -48,26 +48,27 @@ impl Tool {
             .unwrap_or_default()
     }
 
-    /// Effective scalar for a dotted key. A non-empty user value wins; a shipped
-    /// base answers next, even with an empty value; only a slug without a
-    /// shipped file falls back to its `base:` tool, and never for `base` or `name`.
+    /// Effective scalar for a dotted key. A key the user file writes wins, even
+    /// empty; the shipped file answers next; what both leave empty comes from
+    /// the `base:` tool, never for `base` or `name`.
     pub fn value(&self, key_path: &str) -> String {
-        if let Some(user) = &self.user_yaml {
-            let found = yaml_subset::value(user, key_path);
-            if !found.is_empty() {
-                return found;
-            }
+        if let Some(found) = self
+            .user_yaml
+            .as_deref()
+            .and_then(|user| yaml_subset::found(user, key_path))
+        {
+            return found;
         }
-        if let Some(base) = self.base_yaml {
-            return yaml_subset::value(base, key_path);
+        let shipped = self
+            .base_yaml
+            .map(|base| yaml_subset::value(base, key_path))
+            .unwrap_or_default();
+        if !shipped.is_empty() || key_path == "base" || key_path == "name" {
+            return shipped;
         }
-        if key_path != "base" && key_path != "name" {
-            let base_tool = self.base_name();
-            if let Some(text) = catalog::base_tool_yaml(&base_tool) {
-                return yaml_subset::value(text, key_path);
-            }
-        }
-        String::new()
+        catalog::base_tool_yaml(&self.base_name())
+            .map(|text| yaml_subset::value(text, key_path))
+            .unwrap_or_default()
     }
 
     /// A scalar from `.ai/src/tools/<slug>.yaml` alone, as the legacy
@@ -99,19 +100,21 @@ impl Tool {
     /// `get_tool_filter`: an include/exclude list as one space-joined string,
     /// layered like `value` but per file, from a scalar, `[a, b]`, or a block list.
     pub fn filter(&self, key_path: &str) -> String {
-        if let Some(user) = &self.user_yaml {
-            let found = read_filter(user, key_path);
-            if !found.is_empty() {
-                return found;
-            }
+        if let Some(user) = &self.user_yaml
+            && yaml_subset::found(user, key_path).is_some()
+        {
+            return read_filter(user, key_path);
         }
-        if let Some(base) = self.base_yaml {
-            return read_filter(base, key_path);
+        let shipped = self
+            .base_yaml
+            .map(|base| read_filter(base, key_path))
+            .unwrap_or_default();
+        if !shipped.is_empty() {
+            return shipped;
         }
-        match catalog::base_tool_yaml(&self.base_name()) {
-            Some(text) => read_filter(text, key_path),
-            None => String::new(),
-        }
+        catalog::base_tool_yaml(&self.base_name())
+            .map(|text| read_filter(text, key_path))
+            .unwrap_or_default()
     }
 
     /// Whether the settings file is composed with the MCP source into one file.
@@ -228,15 +231,33 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_user_value_falls_back_to_the_base() {
-        assert_eq!(claude_with("name:\n").display_name(), "Claude Code");
+    fn an_explicit_empty_user_value_wins_over_the_base() {
+        let tool = claude_with("targets:\n  rules:\n    dest: \"\"\n");
+        assert_eq!(tool.value("targets.rules.dest"), "");
+        assert_eq!(tool.value("targets.skills.dest"), ".claude/skills");
     }
 
     #[test]
-    fn a_shipped_base_answers_even_when_empty_and_blocks_the_variant_fallback() {
+    fn a_declared_base_fills_what_the_shipped_file_leaves_empty() {
         let tool = claude_with("base: cursor\n");
-        assert_eq!(tool.value("targets.rules.extension"), "");
+        assert_eq!(tool.value("targets.rules.extension"), ".mdc");
         assert_eq!(tool.value("targets.rules.dest"), ".claude/rules");
+        assert_eq!(tool.display_name(), "Claude Code");
+    }
+
+    #[test]
+    fn an_explicit_empty_user_filter_wins_over_the_base() {
+        let tool = Tool::from_parts(
+            "x",
+            Some("targets:\n  skills:\n    exclude: []\n".to_string()),
+            Some("targets:\n  skills:\n    exclude: [a]\n"),
+        );
+        assert_eq!(tool.filter("targets.skills.exclude"), "");
+        assert_eq!(
+            Tool::from_parts("x", None, Some("targets:\n  skills:\n    exclude: [a]\n"))
+                .filter("targets.skills.exclude"),
+            "a"
+        );
     }
 
     #[test]

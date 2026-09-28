@@ -315,8 +315,8 @@ fn conflicts_report(conflicts: &[Conflict], style: &Style) -> String {
     out
 }
 
-/// `_show_migration_banner`: a file under `.ai/src/{hooks,mcp,settings}/`,
-/// dotfiles skipped as the glob skipped them.
+/// `_show_migration_banner`: a payload file (one with an extension) under
+/// `.ai/src/{hooks,mcp,settings}/`, the files `migrate` would move.
 fn migration_banner(project_dir: &Path, style: &Style) -> String {
     let src = project_dir.join(".ai/src");
     if !src.is_dir() {
@@ -326,7 +326,8 @@ fn migration_banner(project_dir: &Path, style: &Style) -> String {
         std::fs::read_dir(src.join(resource))
             .map(|entries| {
                 entries.filter_map(|entry| entry.ok()).any(|entry| {
-                    !entry.file_name().disk_text().starts_with('.') && entry.path().is_file()
+                    let name = entry.file_name().disk_text();
+                    !name.starts_with('.') && name.contains('.') && entry.path().is_file()
                 })
             })
             .unwrap_or(false)
@@ -823,6 +824,7 @@ mod tests {
         assert_eq!(migration_banner(dir.path(), &style), "");
         std::fs::create_dir_all(dir.path().join(".ai/src/mcp")).unwrap();
         std::fs::write(dir.path().join(".ai/src/mcp/.keep"), "").unwrap();
+        std::fs::write(dir.path().join(".ai/src/mcp/README"), "").unwrap();
         assert_eq!(migration_banner(dir.path(), &style), "");
         std::fs::write(dir.path().join(".ai/src/mcp/claude.json"), "{}").unwrap();
         assert_eq!(

@@ -202,6 +202,25 @@ mod tests {
     use crate::transaction::manifest::sha256_hex;
 
     #[test]
+    fn an_auto_update_off_a_terminal_waits_for_yes() {
+        let (_dir, root) = seeded();
+        let base = Path::new(&root).join(".ai/src");
+        append(&root, "rules/core.md", "USER LOCAL EDIT\n");
+        set_entry(
+            &root,
+            "rules/core.md",
+            &template_manifest::hash(&base.join("rules/core.md")).unwrap(),
+        );
+        let refused = call(&root, &[], false, &[]);
+        assert_eq!((refused.status, refused.err.as_str()), (1, NOT_A_TTY));
+        assert!(
+            std::fs::read_to_string(base.join("rules/core.md"))
+                .unwrap()
+                .ends_with("USER LOCAL EDIT\n")
+        );
+    }
+
+    #[test]
     fn new_deleted_auto_update_and_conflict_files_classify_and_apply_like_bash() {
         let (_dir, root) = seeded();
         let base = Path::new(&root).join(".ai/src");

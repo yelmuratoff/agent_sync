@@ -65,6 +65,12 @@ pub(super) fn scaffold(
     write_project_config(&s, run.env.version)?;
     checkpoint(interrupt)?;
 
+    if !s.existing.is_empty() && s.adopt {
+        run.say("\n")?;
+        adopt_existing(run, s.target, s.existing)?;
+    }
+    checkpoint(interrupt)?;
+
     let mut manifest = TemplateManifest::load(Path::new(s.target))?;
     let templates = catalog::template_files();
     manifest.heal_from_match(
@@ -72,12 +78,6 @@ pub(super) fn scaffold(
         |rel| Path::new(&src).join(rel),
     );
     manifest.write(Path::new(s.target))?;
-    checkpoint(interrupt)?;
-
-    if !s.existing.is_empty() && s.adopt {
-        run.say("\n")?;
-        adopt_existing(run, s.target, s.existing)?;
-    }
     checkpoint(interrupt)?;
 
     if s.ci_github {

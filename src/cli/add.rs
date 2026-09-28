@@ -525,43 +525,19 @@ fn slice(s: &[u8], from: usize, to: usize) -> &[u8] {
     }
 }
 
-/// `_add_mcp_merge`: the file re-emitted canonically with `entry` spliced in
-/// under `server`. The awk program reads the file record by record, so the
-/// text it parses ends in one newline; the first `"mcpServers"` anywhere is
-/// the member, whatever surrounds it, and without one the file is replaced.
-fn merge(content: &[u8], server: &str, entry: &str, force: bool) -> Result<Vec<u8>, Refusal> {
-    let mut s = content.to_vec();
-    if !s.is_empty() && s.last() != Some(&b'\n') {
-        s.push(b'\n');
-    }
-    let key = b"\"mcpServers\"";
-    let Some(k) = s.windows(key.len()).position(|w| w == key) else {
-        let mut out = b"{\n  \"mcpServers\": {\n    \"".to_vec();
-        out.extend_from_slice(server.as_bytes());
-        out.extend_from_slice(b"\": ");
-        out.extend_from_slice(&compact(entry.as_bytes()));
-        out.extend_from_slice(b"\n  }\n}\n");
-        return Ok(out);
+/// The members of the object whose `{` is at `open`, in file order: each key
+/// as written between its quotes, with its value.
+fn members(s: &[u8], open: usize) -> Vec<(&[u8], &[u8])> {
+    let end = skip_value(s, open);
+    let skip_ws = |mut at: usize| {
+        while at < s.len() && is_ws(s[at]) {
+            at += 1;
+        }
+        at
     };
-    let mut j = k + key.len();
-    while j < s.len() && is_ws(s[j]) {
-        j += 1;
-    }
-    if s.get(j) == Some(&b':') {
-        j += 1;
-    }
-    while j < s.len() && is_ws(s[j]) {
-        j += 1;
-    }
-    if s.get(j) != Some(&b'{') {
-        return Err(Refusal::Malformed);
-    }
-    let obj_start = j;
-    let obj_end = skip_value(&s, j);
-    let mut names: Vec<&[u8]> = Vec::new();
-    let mut values: Vec<&[u8]> = Vec::new();
-    let mut p = obj_start + 1;
-    while p + 1 < obj_end {
+    let mut found = Vec::new();
+    let mut p = open + 1;
+    while p + 1 < end {
         let c = s[p];
         if is_ws(c) || c == b',' {
             p += 1;
@@ -570,47 +546,84 @@ fn merge(content: &[u8], server: &str, entry: &str, force: bool) -> Result<Vec<u
         if c != b'"' {
             break;
         }
-        let key_end = skip_string(&s, p);
-        let mut q = key_end;
-        while q < s.len() && is_ws(s[q]) {
-            q += 1;
-        }
+        let key_end = skip_string(s, p);
+        let mut q = skip_ws(key_end);
         if s.get(q) == Some(&b':') {
             q += 1;
         }
-        while q < s.len() && is_ws(s[q]) {
-            q += 1;
-        }
-        let value_end = skip_value(&s, q);
-        names.push(slice(&s, p + 1, key_end.saturating_sub(1)));
-        values.push(slice(&s, q, value_end));
+        let q = skip_ws(q);
+        let value_end = skip_value(s, q);
+        found.push((
+            slice(s, p + 1, key_end.saturating_sub(1)),
+            slice(s, q, value_end),
+        ));
         p = value_end;
     }
-    let mut entries: Vec<(&[u8], Vec<u8>)> = names
-        .iter()
-        .zip(&values)
-        .map(|(name, value)| (*name, value.to_vec()))
-        .collect();
-    match entries
+    found
+}
+
+/// `_add_mcp_merge`: the file re-emitted canonically with `entry` spliced in
+/// under `server` in its top-level `mcpServers`, every other top-level member
+/// kept in order. An empty file starts a fresh object; a file that is not a
+/// JSON object, or whose `mcpServers` is not one, is refused.
+fn merge(content: &[u8], server: &str, entry: &str, force: bool) -> Result<Vec<u8>, Refusal> {
+    let top = match content.iter().position(|b| !is_ws(*b)) {
+        None => Vec::new(),
+        Some(root) => {
+            if !serde_json::from_slice::<serde_json::Value>(content).is_ok_and(|v| v.is_object()) {
+                return Err(Refusal::Malformed);
+            }
+            members(content, root)
+        }
+    };
+    let mut servers: Vec<(&[u8], Vec<u8>)> =
+        match top.iter().find(|(name, _)| *name == b"mcpServers") {
+            None => Vec::new(),
+            Some((_, value)) if value.first() == Some(&b'{') => members(value, 0)
+                .into_iter()
+                .map(|(name, value)| (name, value.to_vec()))
+                .collect(),
+            Some(_) => return Err(Refusal::Malformed),
+        };
+    match servers
         .iter()
         .position(|(name, _)| *name == server.as_bytes())
     {
         Some(_) if !force => return Err(Refusal::Exists),
-        Some(found) => entries[found].1 = entry.as_bytes().to_vec(),
-        None => entries.push((server.as_bytes(), entry.as_bytes().to_vec())),
+        Some(found) => servers[found].1 = entry.as_bytes().to_vec(),
+        None => servers.push((server.as_bytes(), entry.as_bytes().to_vec())),
     }
-    let mut out = b"{\n  \"mcpServers\": {".to_vec();
-    let last = entries.len() - 1;
-    for (index, (name, value)) in entries.iter().enumerate() {
-        out.extend_from_slice(b"\n    \"");
-        out.extend_from_slice(name);
-        out.extend_from_slice(b"\": ");
-        out.extend_from_slice(&compact(value));
-        if index < last {
-            out.push(b',');
+    let mut block = b"  \"mcpServers\": {".to_vec();
+    for (index, (name, value)) in servers.iter().enumerate() {
+        if index > 0 {
+            block.push(b',');
         }
+        block.extend_from_slice(b"\n    \"");
+        block.extend_from_slice(name);
+        block.extend_from_slice(b"\": ");
+        block.extend_from_slice(&compact(value));
     }
-    out.extend_from_slice(b"\n  }\n}\n");
+    block.extend_from_slice(b"\n  }");
+    let mut parts: Vec<Vec<u8>> = Vec::new();
+    for (name, value) in &top {
+        if *name == b"mcpServers" {
+            if !block.is_empty() {
+                parts.push(std::mem::take(&mut block));
+            }
+            continue;
+        }
+        let mut part = b"  \"".to_vec();
+        part.extend_from_slice(name);
+        part.extend_from_slice(b"\": ");
+        part.extend_from_slice(&compact(value));
+        parts.push(part);
+    }
+    if !block.is_empty() {
+        parts.push(block);
+    }
+    let mut out = b"{\n".to_vec();
+    out.extend_from_slice(&parts.join(&b",\n"[..]));
+    out.extend_from_slice(b"\n}\n");
     Ok(out)
 }
 
@@ -762,9 +775,8 @@ fn add_mcp(
             put(
                 err,
                 format!(
-                    "{}: failed to update {}\n",
-                    style.red("Error"),
-                    mcp_file.display()
+                    "{}: .ai/src/mcp.json is not a JSON object with an object under mcpServers.\nFix it by hand, then run the command again.\n",
+                    style.red("Error")
                 )
                 .as_bytes(),
             )?;
@@ -902,6 +914,27 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn an_invalid_mcp_file_is_refused_and_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().disk_text();
+        std::fs::create_dir_all(dir.path().join(".ai/src")).unwrap();
+        std::fs::write(dir.path().join(".ai/src/mcp.json"), "garbage\n").unwrap();
+        let (status, _, err) = run(&root, &["mcp", "n", "--url", "https://n"]);
+        assert_eq!(
+            (status, err.as_str()),
+            (
+                1,
+                "Error: .ai/src/mcp.json is not a JSON object with an object under mcpServers.\nFix it by hand, then run the command again.\n"
+            )
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".ai/src/mcp.json")).unwrap(),
+            "garbage\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_refused_env_leaves_no_mcp_file_behind() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().disk_text();
@@ -973,39 +1006,47 @@ mod tests {
                 "{\"type\": \"http\", \"url\": \"https://d\"}",
                 false
             ),
-            "{\n  \"mcpServers\": {\n    \"a\": {\"env\":{\"X\":\"}\\\"{\"},\"args\":[\"1\",[\"2\"]]},\n    \"b\": \"str\",\n    \"c\": 12,\n    \"d\": {\"type\":\"http\",\"url\":\"https://d\"}\n  }\n}\n"
+            "{\n  \"mcpServers\": {\n    \"a\": {\"env\":{\"X\":\"}\\\"{\"},\"args\":[\"1\",[\"2\"]]},\n    \"b\": \"str\",\n    \"c\": 12,\n    \"d\": {\"type\":\"http\",\"url\":\"https://d\"}\n  },\n  \"trailing\": true\n}\n"
         );
     }
 
     #[test]
-    fn odd_files_are_replaced_dropped_or_refused_like_the_awk_merge() {
+    fn other_members_stay_and_invalid_files_are_refused() {
         let n = "{\"type\": \"http\", \"url\": \"https://n\"}";
-        let fresh = "{\n  \"mcpServers\": {\n    \"n\": {\"type\":\"http\",\"url\":\"https://n\"}\n  }\n}\n";
-        assert_eq!(merged("{\"servers\": {}}\n", "n", n, false), fresh);
-        assert_eq!(merged("garbage\n", "n", n, false), fresh);
-        assert_eq!(merged("", "n", n, false), fresh);
+        let n_line = "    \"n\": {\"type\":\"http\",\"url\":\"https://n\"}\n";
+        assert_eq!(
+            merged("", "n", n, false),
+            format!("{{\n  \"mcpServers\": {{\n{n_line}  }}\n}}\n")
+        );
+        assert_eq!(
+            merged("{\"servers\": {}}\n", "n", n, false),
+            format!("{{\n  \"servers\": {{}},\n  \"mcpServers\": {{\n{n_line}  }}\n}}\n")
+        );
         assert_eq!(
             merged(
-                "{\"mcpServers\": {\"a\": {}, 1: {}, \"z\": {}}}\n",
+                "{\n  \"other\": {\"mcpServers\": 1},\n  \"mcpServers\": {}\n}\n",
                 "n",
                 n,
                 false
             ),
-            "{\n  \"mcpServers\": {\n    \"a\": {},\n    \"n\": {\"type\":\"http\",\"url\":\"https://n\"}\n  }\n}\n"
+            format!(
+                "{{\n  \"other\": {{\"mcpServers\":1}},\n  \"mcpServers\": {{\n{n_line}  }}\n}}\n"
+            )
         );
-        assert!(matches!(
-            merge(b"{\"mcpServers\": []}\n", "n", n, false),
-            Err(Refusal::Malformed)
-        ));
-        assert!(matches!(
-            merge(
-                b"{\n  \"other\": {\"mcpServers\": 1},\n  \"mcpServers\": {}\n}\n",
-                "n",
-                n,
-                false
-            ),
-            Err(Refusal::Malformed)
-        ));
+        for invalid in [
+            "garbage\n",
+            "[1]\n",
+            "{\"mcpServers\": {\"a\": {}, 1: {}, \"z\": {}}}\n",
+            "{\"mcpServers\": []}\n",
+        ] {
+            assert!(
+                matches!(
+                    merge(invalid.as_bytes(), "n", n, false),
+                    Err(Refusal::Malformed)
+                ),
+                "{invalid}"
+            );
+        }
     }
 
     #[cfg(unix)]

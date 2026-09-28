@@ -482,8 +482,10 @@ was never a quirk. The rest stand, and 21 of them have no test pinning them,
 which the plan puts first. Nothing here is a regression: each item is a
 decision to make once rather than a bug to find twice.
 
-1. `parse_yaml_list` on an empty block key keeps scanning and returns the next
-   dash list anywhere later in the file (`yaml.sh:180-197`).
+1. *Fixed after 0.42.0.* `parse_yaml_list` on an empty block key kept scanning
+   and returned the next dash list anywhere later in the file
+   (`yaml.sh:180-197`); the first line under the key that is not a list item
+   now ends the list.
 2. *Kept and documented after 0.42.0.* An unquoted scalar is cut at the first
    `#`, even without a preceding space. Changing it would lengthen every
    existing unquoted value holding a `#` without a migration, so the README
@@ -492,8 +494,10 @@ decision to make once rather than a bug to find twice.
    `printf '%b'` at write time. The only place it shows is `show`, which then
    prints a header on one line; unescaping in the reader would make the writer
    interpret the backslashes twice.
-4. `get_tool_value` cannot override a base value with an empty string, and
-   never consults `base:` when a shipped file exists for the slug.
+4. *Fixed after 0.42.0.* `get_tool_value` could not override a base value
+   with an empty string, and never consulted `base:` when a shipped file
+   existed for the slug. A key the user file writes now wins even empty, and
+   a declared `base:` fills what the shipped file leaves empty.
 5. *Fixed after 0.42.0.* `defaults.enabled` in `agent_sync.yaml` and the
    `defaults:` block in `lib/config.yaml` were never read. `init` no longer
    writes the key and the shipped block is gone; `defaults.cleanup` in the
@@ -508,26 +512,35 @@ decision to make once rather than a bug to find twice.
 8. *Struck 2026-09-20: not a quirk.* Locale-ordered tool listings were
    ratified as an accepted deviation, below; the numbering stays as it is
    because source comments and tests cite these items by number.
-9. `read_frontmatter_field` returns the last occurrence of a key. (The Bash
-   comment promised the first; `src/convert.rs` documents the real behaviour.)
-10. `_rule_paths_csv` collects every list item in a rule's frontmatter once it
-    has a bare `paths:` key, not only the items under `paths:`.
-11. The inline skill index strips `>` from `description: >-` and indexes the
-    skill with the description `-`.
+9. *Fixed after 0.42.0.* `read_frontmatter_field` returned the last occurrence
+   of a key, and read `"x" # note` as `x"`. It now returns the first, and a
+   quoted value up to its closing quote.
+10. *Fixed after 0.42.0.* `_rule_paths_csv` collected every list item in a
+    rule's frontmatter once it had a bare `paths:` key, not only the items
+    under `paths:`. It now reads only the `paths:` value, and accepts a flow
+    list or a single glob there as well as a block list.
+11. *Fixed after 0.42.0.* The inline skill index stripped `>` from
+    `description: >-` and indexed the skill with the description `-`. It now
+    reads the description as `skills show` does, a block string folded to one
+    line.
 12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last
     project that failed as "max exit code" and exited with it
     (`bin/agentsync.sh`, `cmd_workspace_fanout`).
-13. `version_pin: warn` followed later by a `version_pin:` mapping with
-    `mode: strict` reads as `warn`: the reader answers the first `version_pin`
-    key, so the nested lookup is empty and the scalar wins (`version.sh`,
-    `version_pin_mode`).
+13. *Fixed after 0.42.0.* `version_pin: warn` followed later by a
+    `version_pin:` mapping with `mode: strict` read as `warn`: the reader
+    answered the first `version_pin` key, so the nested lookup was empty and
+    the scalar won (`version.sh`, `version_pin_mode`). A key holding a value
+    no longer opens a section, so the later mapping answers.
 14. *Fixed after 0.42.0.* `enable` and `disable` edited `.ai/agent_sync.yaml`,
     or a root `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selected
     another file, while "already enabled" read the selected one.
 15. *Fixed after 0.42.0.* `disable` created `.ai/agent_sync.yaml` when the
     project had none.
-16. `enable` under a `tools:` block without `enabled:` appends a second `tools:`
-    block at the end of the file.
+16. *Fixed after 0.42.0.* `enable` under a `tools:` block without `enabled:`
+    appended a second `tools:` block at the end of the file; it now adds
+    `enabled:` inside the existing block. The same change makes a nested key
+    match only a direct child, where `tools.enabled` used to find
+    `tools.foo.enabled` in both the reader and the editor.
 17. *Fixed after 0.42.0.* `disable` listed every argument that was not
     enabled afterwards, unknown slugs and repeated ones included.
 18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
@@ -546,8 +559,9 @@ decision to make once rather than a bug to find twice.
     it from what follows.
 24. *Fixed in 0.38.0.* `resolve` in a project without overrides deleted
     `.ai/.pending-resolutions.yaml` whether or not it had a terminal.
-25. `simplify --apply` without a terminal deletes byte-identical payload copies
-    but keeps an override file it emptied.
+25. *Fixed after 0.42.0.* `simplify --apply` without a terminal deleted
+    byte-identical payload copies but kept an override file it emptied. Off a
+    terminal it now deletes neither without `-y`, and says so.
 26. *Fixed after 0.42.0.* `profile add --tools` kept spaces around
     comma-separated names and accepted unknown tools: `'claude, codex'` wrote
     `.ai/src/tools/ codex-hub.yaml`.
@@ -576,19 +590,24 @@ decision to make once rather than a bug to find twice.
     destination, so two identical edits of one source named it twice.
 35. *Fixed after 0.42.0.* `migrate --apply --yes` printed `removed .agent/
     (pre-v0.6 layout)` with no blank line before `Planned moves:`.
-36. A legacy file without an extension, such as `.ai/src/settings/README`, moves
-    to `.ai/src/tools/README/settings.README`.
-37. Off a terminal without `--yes`, `migrate --apply` consolidates identical MCP
-    files but leaves `.agent/` in place.
+36. *Fixed after 0.42.0.* A legacy file without an extension, such as
+    `.ai/src/settings/README`, moved to `.ai/src/tools/README/settings.README`.
+    It is no payload, so `migrate` leaves it and the `update` banner ignores it.
+37. *Kept after 0.42.0.* Off a terminal without `--yes`, `migrate --apply`
+    consolidates identical MCP files but leaves `.agent/` in place. Each step
+    takes its prompt's default there: consolidating identical files loses
+    nothing and defaults to yes, removing `.agent/` loses its content and
+    defaults to no.
 38. *Kept after 0.42.0.* `refresh` heals `.ai/.template-manifest` with every
     shipped template that matches its copy, including categories outside
     `--only` and `AGENTS.md` without `--include-agents-md`. The healing keeps
     the manifest honest (`src/config/template_manifest.rs`); scoping it would
     rewrite that committed file on every scoped refresh and buy nothing.
-39. Off a terminal without `--yes`, `refresh` applies pending auto-updates,
-    because the TTY gate looks only at new files and conflicts; with
-    `--include-deleted` and nothing else pending it prints each RESTORE prompt
-    on stderr and declines it.
+39. *Fixed after 0.42.0.* Off a terminal without `--yes`, `refresh` applied
+    pending auto-updates, because the TTY gate looked only at new files and
+    conflicts; with `--include-deleted` and nothing else pending it printed
+    each RESTORE prompt on stderr and declined it. The gate now refuses any
+    pending change there.
 40. *Fixed after 0.42.0.* `refresh` read `template_overrides` from
     `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`, ignoring
     `AGENTSYNC_CONFIG_PATH`.
@@ -602,9 +621,10 @@ decision to make once rather than a bug to find twice.
     `--content ''` skipped the wizard while contributing nothing. Tokens are
     now trimmed, a tool name with a space inside is refused, and an empty
     value is refused as a missing one.
-43. `init` heals `.ai/.template-manifest` before it adopts existing outputs, so
-    an adopted `AGENTS.md` carries the template's hash and `refresh` treats it
-    as a silently kept edit.
+43. *Fixed after 0.42.0.* `init` healed `.ai/.template-manifest` before it
+    adopted existing outputs, so an adopted `AGENTS.md` carried the template's
+    hash and `refresh` treated it as a silently kept edit. It heals after
+    adopting now.
 44. *Fixed in 0.38.0.* `doctor`'s secret scan listed only the lines of the
     first pattern with a hit, so an AWS key on line 1 hid an OpenAI key on
     line 2.
@@ -613,21 +633,30 @@ decision to make once rather than a bug to find twice.
     placeholder, and a line holding `<…>` was never reported unless it held
     `sk-`. The scan now reads the line with those spans removed; a `<…>` span
     that holds `sk-` stays readable.
-46. `add mcp` re-emits only the `mcpServers` member of `.ai/src/mcp.json`,
-    dropping every other top-level member, and replaces a file without a
-    `"mcpServers"` substring with a fresh object holding the one server.
-47. `add mcp` takes the first `"mcpServers"` anywhere in the file as the
-    member, so a nested decoy makes the merge fail with `failed to update`.
-48. `add mcp` stops reading the server map at the first key that is not a
-    string and drops the servers after it.
+46. *Fixed after 0.42.0.* `add mcp` re-emitted only the `mcpServers` member of
+    `.ai/src/mcp.json`, dropping every other top-level member, and replaced a
+    file without a `"mcpServers"` substring with a fresh object holding the
+    one server. Every top-level member now stays in order, and `mcpServers` is
+    added beside them when missing.
+47. *Fixed after 0.42.0.* `add mcp` took the first `"mcpServers"` anywhere in
+    the file as the member, so a nested decoy made the merge fail with
+    `failed to update`; only the top-level member counts now.
+48. *Fixed after 0.42.0.* `add mcp` stopped reading the server map at the
+    first key that is not a string and dropped the servers after it. A file
+    that is not a valid JSON object is now refused and left unchanged.
 49. *Fixed after 0.42.0.* `add mcp` created `.ai/src/mcp.json` with an empty
     server map before it validated `--env`, so a bad pair left the file
     behind; `--args` and `--env` read only the first line of their value.
 50. *Fixed after 0.42.0.* `import` stripped a `.git` suffix before a trailing
     `/`, so `https://github.com/user/repo.git/` downloaded the repository
     `repo.git`.
-51. A directory `import` copies the source project's `.ai/` alone, so a
-    `source:` override pointing elsewhere in that project is not carried.
+51. *Fixed after 0.42.0.* A directory `import` copied the source project's
+    `.ai/` alone, so a `source:` override pointing elsewhere in that project
+    was not carried; no import read `source.*` at all, and the imported config
+    kept paths the target project lacked. A directory import now copies what
+    `export` would archive, every import reads each section from its declared
+    relative path, and the imported config drops the `source.*` entries that
+    name another place than where the import writes.
 52. *Fixed after 0.42.0.* `generate` ended with status 1 and no message when
     stdin closed before the menu choice or the description was complete. At
     the menu it now says `Cancelled.`; in the description the end of input

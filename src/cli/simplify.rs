@@ -469,10 +469,14 @@ impl Pass<'_> {
         for file in redundant {
             let rel = relative(self.project, file);
             let delete = self.auto_yes
-                || !self.interactive
-                || self.confirmed(&format!("Delete {rel}? [y/N]"));
+                || (self.interactive && self.confirmed(&format!("Delete {rel}? [y/N]")));
             if !delete {
-                self.say(&format!("{}\n", style.dim(&format!("  Kept {rel}"))))?;
+                let kept = if self.interactive {
+                    format!("  Kept {rel}")
+                } else {
+                    format!("  Kept {rel} (not a terminal; pass -y to delete)")
+                };
+                self.say(&format!("{}\n", style.dim(&kept)))?;
                 skipped += 1;
                 continue;
             }
@@ -611,6 +615,11 @@ mod tests {
         .unwrap();
         let (_, payload, _) = call(&root, &["--apply"], true, "n");
         assert!(payload.contains("  Delete .ai/src/tools/cursor/hooks.json? [y/N]   Kept .ai/src/tools/cursor/hooks.json\n\n  Removed 0, kept 1.\n"));
+        let (_, off_terminal, _) = call(&root, &["--apply"], false, "");
+        assert!(off_terminal.contains(
+            "  Kept .ai/src/tools/cursor/hooks.json (not a terminal; pass -y to delete)\n\n  Removed 0, kept 1.\n"
+        ), "{off_terminal}");
+        assert!(std::path::Path::new(&format!("{root}/.ai/src/tools/cursor/hooks.json")).is_file());
         let (_, gone, _) = call(&root, &["--apply", "-y"], false, "");
         assert!(
             gone.contains("  Deleted .ai/src/tools/cursor/hooks.json\n\n  Removed 1, kept 0.\n")

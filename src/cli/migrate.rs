@@ -291,10 +291,10 @@ fn scan_legacy(root: &Path) -> Vec<Legacy> {
                 continue;
             }
             let base = file.file_name().map(|n| n.disk_text()).unwrap_or_default();
-            let (tool, ext) = match base.rfind('.') {
-                Some(dot) => (base[..dot].to_string(), base[dot + 1..].to_string()),
-                None => (base.clone(), base.clone()),
+            let Some(dot) = base.rfind('.') else {
+                continue;
             };
+            let (tool, ext) = (base[..dot].to_string(), base[dot + 1..].to_string());
             if tool.is_empty() || ext.is_empty() {
                 continue;
             }
@@ -976,7 +976,7 @@ mod tests {
         let header = format!(
             "\n  AgentSync Migrate\n  {root}\n\n  Legacy pre-v0.6 layout:\n    .agent/ — orphan directory from before tool-specific outputs.\n      · AGENTS.md\n\n"
         );
-        let plan = "  Planned moves:\n  .ai/src/hooks/cursor.json  →  .ai/src/tools/cursor/hooks.json\n  .ai/src/settings/README  →  .ai/src/tools/README/settings.README\n  .ai/src/settings/claude.json  →  .ai/src/tools/claude/settings.json\n  .ai/src/settings/cursor.json  →  .ai/src/tools/cursor/settings.json\n\n  MCP consolidation:\n    All 2 .ai/src/mcp/*.json are byte-identical — can consolidate into .ai/src/mcp.json.\n    Source file: .ai/src/mcp/claude.json\n\n";
+        let plan = "  Planned moves:\n  .ai/src/hooks/cursor.json  →  .ai/src/tools/cursor/hooks.json\n  .ai/src/settings/claude.json  →  .ai/src/tools/claude/settings.json\n  .ai/src/settings/cursor.json  →  .ai/src/tools/cursor/settings.json\n\n  MCP consolidation:\n    All 2 .ai/src/mcp/*.json are byte-identical — can consolidate into .ai/src/mcp.json.\n    Source file: .ai/src/mcp/claude.json\n\n";
 
         let dry = call(&root, &["--legacy"], false, false, None);
         assert_eq!(
@@ -991,7 +991,7 @@ mod tests {
         assert_eq!(
             applied.out,
             format!(
-                "{header}  removed .agent/ (pre-v0.6 layout)\n\n{plan}  consolidated .ai/src/mcp/claude.json → .ai/src/mcp.json\n  consolidated .ai/src/mcp/cursor.json → .ai/src/mcp.json\n  moved .ai/src/hooks/cursor.json → .ai/src/tools/cursor/hooks.json\n  moved .ai/src/settings/README → .ai/src/tools/README/settings.README\n  moved .ai/src/settings/claude.json → .ai/src/tools/claude/settings.json\n  skipped (target already exists) .ai/src/tools/cursor/settings.json\n\n  Migration complete.\n    moved:        5\n    skipped:      1 (target already existed)\n    consolidated: .ai/src/mcp.json\n\n  Run agentsync sync to confirm outputs are unchanged.\n\n"
+                "{header}  removed .agent/ (pre-v0.6 layout)\n\n{plan}  consolidated .ai/src/mcp/claude.json → .ai/src/mcp.json\n  consolidated .ai/src/mcp/cursor.json → .ai/src/mcp.json\n  moved .ai/src/hooks/cursor.json → .ai/src/tools/cursor/hooks.json\n  moved .ai/src/settings/claude.json → .ai/src/tools/claude/settings.json\n  skipped (target already exists) .ai/src/tools/cursor/settings.json\n\n  Migration complete.\n    moved:        4\n    skipped:      1 (target already existed)\n    consolidated: .ai/src/mcp.json\n\n  Run agentsync sync to confirm outputs are unchanged.\n\n"
             )
         );
         assert_eq!(
@@ -999,8 +999,8 @@ mod tests {
             [
                 ".ai/agent_sync.yaml",
                 ".ai/src/mcp.json",
+                ".ai/src/settings/README",
                 ".ai/src/settings/cursor.json",
-                ".ai/src/tools/README/settings.README",
                 ".ai/src/tools/claude/settings.json",
                 ".ai/src/tools/cursor/hooks.json",
                 ".ai/src/tools/cursor/settings.json",

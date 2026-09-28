@@ -73,11 +73,10 @@ mod tests {
     }
 
     #[test]
-    fn a_scalar_before_the_mapping_answers_first_like_bash_does() {
-        // Known quirk 13.
+    fn a_later_mapping_is_not_hidden_by_an_earlier_scalar() {
         assert_eq!(
             mode("version_pin: warn\nversion_pin:\n  mode: strict\n"),
-            Ok(Mode::Warn)
+            Ok(Mode::Strict)
         );
     }
 
