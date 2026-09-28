@@ -3,7 +3,7 @@
 
 use crate::paths::DiskText;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::put;
 use crate::config::tool::Tool;
@@ -138,6 +138,86 @@ fn usage_error(style: &Style, err: &mut dyn Write, message: &str) -> Result<u8, 
     Ok(2)
 }
 
+/// The profile name, `--tools`, and `--adopt`: `Err(None)` exits 1 without a
+/// message (`--tools` without a value), `Err(Some(message))` is a usage error.
+fn add_args(args: &[String]) -> Result<(String, String, bool), Option<String>> {
+    let (mut name, mut tools_csv, mut adopt) = (String::new(), String::new(), false);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--tools" => tools_csv = rest.next().cloned().ok_or(None)?,
+            "--adopt" => adopt = true,
+            "--yes" | "-y" => {}
+            flag if flag.starts_with('-') => return Err(Some(format!("unknown flag: {flag}"))),
+            value if name.is_empty() => name = value.to_string(),
+            _ => return Err(Some("too many arguments.".into())),
+        }
+    }
+    if name.is_empty() {
+        return Err(Some(
+            "agentsync profile add <name> [--tools a,b] [--adopt]".into(),
+        ));
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return Err(Some("profile name must be [a-zA-Z0-9_-].".into()));
+    }
+    Ok((name, tools_csv, adopt))
+}
+
+/// The tools a profile varies: `--tools`, else the enabled ones; `Err(status)`
+/// once an empty list or a tool without config-home support is reported.
+fn base_tools(
+    project: &Project,
+    tools_csv: &str,
+    style: &Style,
+    err: &mut dyn Write,
+) -> Result<Result<Vec<String>, u8>, Error> {
+    let base_tools: Vec<String> = if tools_csv.is_empty() {
+        project.configured_enabled_tools()?
+    } else {
+        tools_csv
+            .split(',')
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    if base_tools.is_empty() {
+        put(
+            err,
+            format!(
+                "{}: no base tools — enable tools first or pass --tools.\n",
+                style.red("Error")
+            )
+            .as_bytes(),
+        )?;
+        return Ok(Err(1));
+    }
+    for base in &base_tools {
+        if Tool::load(project, base)?.flag("profile_supported") == Some(false) {
+            let message = format!(
+                "{base} reads project-root files and does not support config-home profiles."
+            );
+            return usage_error(style, err, &message).map(Err);
+        }
+    }
+    Ok(Ok(base_tools))
+}
+
+/// Creates the profile's overlay `src/` and its README: the overlay `src/`.
+fn profile_overlay(project: &Project, overlay_rel: &str, name: &str) -> Result<PathBuf, Error> {
+    let overlay_root = project.root.join(overlay_rel);
+    let overlay_src = overlay_root.join("src");
+    std::fs::create_dir_all(&overlay_src).map_err(|e| Error::io(&overlay_src, e))?;
+    let readme = overlay_root.join("README.md");
+    if !readme.is_file() {
+        std::fs::write(&readme, readme_text(name)).map_err(|e| Error::io(&readme, e))?;
+    }
+    Ok(overlay_src)
+}
+
 /// `_profile_add`.
 fn add(
     args: &[String],
@@ -146,41 +226,11 @@ fn add(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let (mut name, mut tools_csv, mut adopt) = (String::new(), String::new(), false);
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--tools" => {
-                tools_csv = args.get(index + 1).cloned().unwrap_or_default();
-                if index + 1 >= args.len() {
-                    return Ok(1);
-                }
-                index += 2;
-                continue;
-            }
-            "--adopt" => adopt = true,
-            "--yes" | "-y" => {}
-            flag if flag.starts_with('-') => {
-                return usage_error(style, err, &format!("unknown flag: {flag}"));
-            }
-            value if name.is_empty() => name = value.to_string(),
-            _ => return usage_error(style, err, "too many arguments."),
-        }
-        index += 1;
-    }
-    if name.is_empty() {
-        return usage_error(
-            style,
-            err,
-            "agentsync profile add <name> [--tools a,b] [--adopt]",
-        );
-    }
-    if !name
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    {
-        return usage_error(style, err, "profile name must be [a-zA-Z0-9_-].");
-    }
+    let (name, tools_csv, adopt) = match add_args(args) {
+        Ok(parsed) => parsed,
+        Err(None) => return Ok(1),
+        Err(Some(message)) => return usage_error(style, err, &message),
+    };
     let project = match context(discover, style, err)? {
         Ok(project) => project,
         Err(status) => return Ok(status),
@@ -213,46 +263,12 @@ fn add(
         )?;
         return Ok(1);
     }
-    let base_tools: Vec<String> = if tools_csv.is_empty() {
-        project.configured_enabled_tools()?
-    } else {
-        tools_csv
-            .split(',')
-            .filter(|t| !t.is_empty())
-            .map(str::to_string)
-            .collect()
+    let base_tools = match base_tools(&project, &tools_csv, style, err)? {
+        Ok(base_tools) => base_tools,
+        Err(status) => return Ok(status),
     };
-    if base_tools.is_empty() {
-        put(
-            err,
-            format!(
-                "{}: no base tools — enable tools first or pass --tools.\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
-    for base in &base_tools {
-        if Tool::load(&project, base)?.flag("profile_supported") == Some(false) {
-            return usage_error(
-                style,
-                err,
-                &format!(
-                    "{base} reads project-root files and does not support config-home profiles."
-                ),
-            );
-        }
-    }
-
     let overlay_rel = format!(".ai/profiles/{name}");
-    let overlay_root = project.root.join(&overlay_rel);
-    let overlay_src = overlay_root.join("src");
-    std::fs::create_dir_all(&overlay_src).map_err(|e| Error::io(&overlay_src, e))?;
-    let readme = overlay_root.join("README.md");
-    if !readme.is_file() {
-        std::fs::write(&readme, readme_text(&name)).map_err(|e| Error::io(&readme, e))?;
-    }
+    let overlay_src = profile_overlay(&project, &overlay_rel, &name)?;
     put(
         out,
         format!(
