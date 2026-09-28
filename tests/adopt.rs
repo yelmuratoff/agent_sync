@@ -537,16 +537,16 @@ fn adopt_writes_an_edited_rule_into_the_source_rules_directory_sync_reads() {
 }
 
 #[test]
-fn adopt_a_cline_workflow_goes_to_commands_not_the_rules_directory_around_it() {
+fn adopt_a_cline_workflow_goes_to_commands() {
     let project = Project::seeded(&[]);
     project.enable_tools(&["cline"]);
     project.write(".ai/src/commands/go.md", "---\ndescription: Go\n---\nGo.\n");
     project.agentsync().arg("sync").assert().success();
-    project.append(".clinerules/workflows/go.md", "Edited.\n");
+    project.append(".cline/workflows/go.md", "Edited.\n");
 
     project
         .agentsync()
-        .args(["adopt", "--yes", ".clinerules/workflows/go.md"])
+        .args(["adopt", "--yes", ".cline/workflows/go.md"])
         .assert()
         .success()
         .stdout(predicate::str::contains("resource: commands"));

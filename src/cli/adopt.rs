@@ -1210,7 +1210,7 @@ mod tests {
         let mut files = SOURCES.to_vec();
         files.extend([
             ("CLAUDE.md", "# Agents\n"),
-            (".clinerules/workflows/go.md", "Go.\n"),
+            (".cline/workflows/go.md", "Go.\n"),
             (".github/prompts/go.prompt.md", "Go.\n"),
             (".cursor/rules/core.mdc", "---\n---\n# Core\n"),
             (".claude/settings.json", "{}\n"),
@@ -1237,7 +1237,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            resolve(".clinerules/workflows/go.md"),
+            resolve(".cline/workflows/go.md"),
             Ok((
                 "cline".to_string(),
                 "commands",

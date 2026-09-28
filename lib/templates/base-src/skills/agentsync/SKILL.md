@@ -171,12 +171,12 @@ OpenCode hooks use `.ai/src/tools/opencode/hooks.ts` → `.opencode/plugins/agen
 For tools without separate rules/skills directories, use inline options:
 
 - **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie, Kimi Code, OpenCode.
-- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Junie, Cline, Amazon Q, Zed.
+- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Amazon Q, Zed.
 - **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex, Kimi Code.
 - **`inline_into_agents: true`** (commands) — appends a `## Commands` index (one `` `/<name>` — description `` line per command) to the agents file. For tools that have neither a commands dir nor a skills dir. Requires `targets.agents.dest` (or `rules.merge_to_file` fallback). Used by: Amazon Q, Zed.
 - **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Zed.
-- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q, Cline.
-- **`legacy_dest`** (any target) — the path an earlier release of the tool config wrote that target to. Sync removes only the files there that the previous manifest records, then the directories that leaves empty, so a tool reading both paths does not load them twice; hand-written files stay, and a failed sync restores them. Used by: Windsurf (`.windsurf/` → `.devin/`).
+- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q.
+- **`legacy_dest`** (any target) — the path an earlier release of the tool config wrote that target to. Sync removes only the files there that the previous manifest records, then the directories that leaves empty, so a tool reading both paths does not load them twice; hand-written files stay, and a failed sync restores them. Used by: Windsurf (`.windsurf/` → `.devin/`), Cline (`.clinerules/` → `.cline/`).
 
 ## Adding a New Tool
 

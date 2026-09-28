@@ -634,6 +634,36 @@ fn sync_removes_what_it_generated_at_a_moved_destination_and_keeps_the_rest() {
 }
 
 #[test]
+fn sync_cline_writes_native_skills_and_moves_off_clinerules() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["cline"]);
+    project.write(
+        ".ai/src/tools/cline.yaml",
+        "targets:\n  agents:\n    dest: \".clinerules/00-context.md\"\n  rules:\n    dest: \".clinerules\"\n  commands:\n    dest: \".clinerules/workflows\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".clinerules/00-context.md"));
+    project.write(".clinerules/team.md", "hand-written\n");
+
+    std::fs::remove_file(project.join(".ai/src/tools/cline.yaml")).unwrap();
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        "---\nname: bloc\ndescription: Bloc\n---\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists("AGENTS.md"));
+    assert!(project.exists(".cline/rules/core.md"));
+    assert!(project.exists(".cline/skills/bloc/SKILL.md"));
+    assert!(project.exists(".cline/workflows/review.md"));
+    assert!(!project.exists(".clinerules/00-context.md"));
+    assert!(!project.exists(".clinerules/core.md"));
+    assert!(!project.exists(".clinerules/workflows"));
+    assert_eq!(project.read(".clinerules/team.md"), "hand-written\n");
+    assert!(!project.read("AGENTS.md").contains("## Skills"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
 fn a_failed_sync_restores_what_it_removed_at_a_moved_destination() {
     let project = Project::seeded(&["--outputs", "local"]);
     project.enable_tools(&["windsurf"]);

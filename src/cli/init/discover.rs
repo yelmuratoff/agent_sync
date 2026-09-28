@@ -33,7 +33,7 @@ const DETECTORS: [(&str, &[&str]); 13] = [
     ),
     ("windsurf", &[".devin", ".windsurf", ".windsurfrules"]),
     ("junie", &[".junie"]),
-    ("cline", &[".clinerules"]),
+    ("cline", &[".cline", ".clinerules"]),
     ("amazonq", &[".amazonq"]),
     ("zed", &[".zed", ".rules"]),
     ("antigravity", &[".agents/rules", ".agents/workflows"]),

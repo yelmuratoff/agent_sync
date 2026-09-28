@@ -441,7 +441,7 @@ always skips it.
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
 | `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode) |
-| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Cline, Amazon Q, Zed)                            |
+| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Amazon Q, Zed)                                    |
 | `as_skills` (commands)          | Emit each command as a generated skill at `<skills.dest>/command-<name>/SKILL.md` (Codex, Kimi Code)                  |
 | `inline_into_agents` (commands) | Append a `## Commands` index (`` `/<name>` — description ``) into AGENTS file (Amazon Q, Zed)                          |
 | `prepend_agents`                | Prepend AGENTS.md content before merged rules (Zed)                                                                    |
@@ -473,7 +473,7 @@ documents every option, including the ones this table leaves out.
 | **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
 | **Devin Desktop (Windsurf)** | `windsurf.yaml` | AGENTS.md and `.devin/` rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json; removes its old `.windsurf/` outputs |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
-| **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
+| **Cline**              | `cline.yaml`       | AGENTS.md, `.cline/` rules, skills, workflows (commands); removes its old `.clinerules/` outputs           |
 | **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index, mcp.json, cli-agents (MD→JSON) |
 | **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index, +inlined commands index, settings.json   |
 | **Google Antigravity** | `antigravity.yaml` | GEMINI.md, .agents/rules (trigger frontmatter), .agents/skills, .agents/workflows (commands)               |
@@ -489,8 +489,8 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                    |
 | Rules `.md`    | Single merged file                               | Zed                         |
 | Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Cline, Amazon Q, Zed        |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q             |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Amazon Q, Zed               |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Amazon Q                    |
 | AGENTS.md      | Prepended before merged rules                    | Zed                         |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                  |
 | Commands `.md` | `.prompt.md`                                     | Copilot                     |
