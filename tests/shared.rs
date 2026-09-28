@@ -275,6 +275,22 @@ fn dry_run_does_not_produce_output_but_still_tears_down_tmpdir() {
 }
 
 #[test]
+fn doctor_finds_a_parent_skill_the_child_copied_into_a_category() {
+    let project = Project::empty();
+    let (parent, child) = make_pair(&project);
+    let skill = "---\nname: bloc\ndescription: Bloc\n---\n";
+    write(&parent.join(".ai/src/skills/bloc/SKILL.md"), skill);
+    write(&child.join(".ai/src/skills/flutter/bloc/SKILL.md"), skill);
+
+    agentsync_in(&child)
+        .arg("doctor")
+        .assert()
+        .stdout(predicate::str::contains(
+            "skills/flutter/bloc/SKILL.md — duplicate of parent's",
+        ));
+}
+
+#[test]
 fn doctor_adds_inherited_via_shared_hint_on_duplicates_in_inherited_categories() {
     let project = Project::empty();
     let (parent, child) = make_pair(&project);
