@@ -51,19 +51,70 @@ pub(super) struct Changes {
     pub(super) silently_kept: usize,
 }
 
-struct Classifier<'a> {
-    locator: &'a Locator,
-    manifest: &'a TemplateManifest,
-    declined: &'a [String],
-    pinned: &'a [String],
-    review: bool,
-    changes: Changes,
+impl Changes {
+    /// Whether the run has anything to add, update, or restore.
+    pub(super) fn offers_anything(&self, visible_deleted: bool) -> bool {
+        !self.new.is_empty()
+            || !self.conflicts.is_empty()
+            || !self.auto.is_empty()
+            || visible_deleted
+    }
+}
+
+/// `template_overrides.declined` and `.pinned` from `agent_sync.yaml`.
+#[derive(Default)]
+pub(super) struct Overrides {
+    pub(super) declined: Vec<String>,
+    pub(super) pinned: Vec<String>,
+}
+
+pub(super) struct Classifier<'a> {
+    pub(super) locator: &'a Locator,
+    pub(super) manifest: &'a TemplateManifest,
+    pub(super) overrides: &'a Overrides,
+    pub(super) review: bool,
 }
 
 impl Classifier<'_> {
+    /// `_refresh_collect_changes`: `AGENTS.md` when asked, then the `*.md`
+    /// files of `rules`, `commands`, and `agents`, then every file below `skills`.
+    pub(super) fn collect(
+        &self,
+        templates: &[(String, &'static [u8])],
+        categories: &[String],
+        include_agents_md: bool,
+    ) -> Changes {
+        let mut changes = Changes::default();
+        let in_scope = |category: &str| categories.iter().any(|c| c == category);
+        let in_category = |rel: &str, category: &str| {
+            if category == "skills" {
+                rel.starts_with("skills/")
+            } else {
+                rel.rsplit_once('/').is_some_and(|(dir, _)| dir == category)
+            }
+        };
+        if include_agents_md {
+            for (rel, bytes) in templates.iter().filter(|(rel, _)| rel == "AGENTS.md") {
+                self.classify(&mut changes, rel, bytes);
+            }
+        }
+        for category in ["rules", "commands", "agents", "skills"] {
+            if !in_scope(category) {
+                continue;
+            }
+            for (rel, bytes) in templates
+                .iter()
+                .filter(|(rel, _)| in_category(rel, category))
+            {
+                self.classify(&mut changes, rel, bytes);
+            }
+        }
+        changes
+    }
+
     /// `_refresh_classify`.
-    fn classify(&mut self, rel: &str, bytes: &'static [u8]) {
-        if self.declined.iter().any(|item| item == rel) {
+    fn classify(&self, changes: &mut Changes, rel: &str, bytes: &'static [u8]) {
+        if self.overrides.declined.iter().any(|item| item == rel) {
             return;
         }
         let t_new = sha256_hex(bytes);
@@ -77,9 +128,9 @@ impl Classifier<'_> {
         };
         if !dest.is_file() {
             if t_old.is_some() {
-                self.changes.deleted.push(candidate());
+                changes.deleted.push(candidate());
             } else {
-                self.changes.new.push(candidate());
+                changes.new.push(candidate());
             }
             return;
         }
@@ -87,34 +138,34 @@ impl Classifier<'_> {
             return;
         };
         if u_cur == t_new {
-            self.changes.unchanged += 1;
+            changes.unchanged += 1;
             return;
         }
-        if self.pinned.iter().any(|item| item == rel) {
+        if self.overrides.pinned.iter().any(|item| item == rel) {
             return;
         }
         let Some(t_old) = t_old else {
-            self.changes.conflicts.push(candidate());
+            changes.conflicts.push(candidate());
             return;
         };
         if u_cur == t_old {
-            self.changes.auto.push(candidate());
+            changes.auto.push(candidate());
             return;
         }
         if t_old == t_new {
-            self.changes.silently_kept += 1;
+            changes.silently_kept += 1;
             if self.review {
-                self.changes.conflicts.push(candidate());
+                changes.conflicts.push(candidate());
             }
             return;
         }
-        self.changes.conflicts.push(candidate());
+        changes.conflicts.push(candidate());
     }
 }
 
 /// `_refresh_load_overrides`: `template_overrides.declined` and `.pinned` from
 /// `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`.
-pub(super) fn load_overrides(root: &str) -> (Vec<String>, Vec<String>) {
+pub(super) fn load_overrides(root: &str) -> Overrides {
     let text = [
         format!("{root}/.ai/agent_sync.yaml"),
         format!("{root}/agent_sync.yaml"),
@@ -130,59 +181,10 @@ pub(super) fn load_overrides(root: &str) -> (Vec<String>, Vec<String>) {
             .filter(|item| !item.is_empty())
             .collect()
     };
-    (
-        list("template_overrides.declined"),
-        list("template_overrides.pinned"),
-    )
-}
-
-/// `_refresh_collect_changes`: `AGENTS.md` when asked, then the `*.md` files of
-/// `rules`, `commands`, and `agents`, then every file below `skills`.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn collect(
-    templates: &[(String, &'static [u8])],
-    locator: &Locator,
-    categories: &[String],
-    include_agents_md: bool,
-    manifest: &TemplateManifest,
-    declined: &[String],
-    pinned: &[String],
-    review: bool,
-) -> Changes {
-    let mut classifier = Classifier {
-        locator,
-        manifest,
-        declined,
-        pinned,
-        review,
-        changes: Changes::default(),
-    };
-    let in_scope = |category: &str| categories.iter().any(|c| c == category);
-    if include_agents_md {
-        for (rel, bytes) in templates.iter().filter(|(rel, _)| rel == "AGENTS.md") {
-            classifier.classify(rel, bytes);
-        }
+    Overrides {
+        declined: list("template_overrides.declined"),
+        pinned: list("template_overrides.pinned"),
     }
-    for category in ["rules", "commands", "agents"] {
-        if !in_scope(category) {
-            continue;
-        }
-        for (rel, bytes) in templates
-            .iter()
-            .filter(|(rel, _)| rel.rsplit_once('/').is_some_and(|(dir, _)| dir == category))
-        {
-            classifier.classify(rel, bytes);
-        }
-    }
-    if in_scope("skills") {
-        for (rel, bytes) in templates
-            .iter()
-            .filter(|(rel, _)| rel.starts_with("skills/"))
-        {
-            classifier.classify(rel, bytes);
-        }
-    }
-    classifier.changes
 }
 
 #[cfg(all(test, unix))]

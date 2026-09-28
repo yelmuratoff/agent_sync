@@ -3,8 +3,10 @@
 //! template manifest, so untouched files update silently and only true
 //! conflicts wait for an answer.
 
+mod apply;
 mod args;
 mod classify;
+mod report;
 mod session;
 
 use std::io::Write;
@@ -17,7 +19,8 @@ use crate::{Error, config::catalog};
 
 pub use args::HELP;
 use args::{parse_args, resolve_scope};
-use classify::{Locator, collect, load_overrides};
+use classify::{Classifier, Locator, load_overrides};
+use report::Report;
 use session::Run;
 pub(crate) use session::write_template;
 
@@ -35,6 +38,13 @@ pub struct Env<'a> {
     pub read_line: &'a mut dyn FnMut() -> String,
 }
 
+/// The source directory below `root`: `.ai/src`, else a flat `.ai`.
+fn src_base(root: &str) -> Option<&'static str> {
+    [".ai/src", ".ai"]
+        .into_iter()
+        .find(|dir| Path::new(root).join(dir).is_dir())
+}
+
 pub fn refresh(
     args: &[String],
     root: &str,
@@ -48,11 +58,7 @@ pub fn refresh(
         Err(status) => return Ok(status),
     };
 
-    let src_base = if Path::new(root).join(".ai/src").is_dir() {
-        ".ai/src"
-    } else if Path::new(root).join(".ai").is_dir() {
-        ".ai"
-    } else {
+    let Some(src_base) = src_base(root) else {
         put(
             err,
             format!(
@@ -74,18 +80,19 @@ pub fn refresh(
 
     let manifest = TemplateManifest::load(Path::new(root))?;
     let has_manifest = !manifest.is_empty();
-    let (declined, pinned) = load_overrides(root);
+    let overrides = load_overrides(root);
     let templates = catalog::template_files();
-    let changes = collect(
-        &templates,
-        &locator,
-        &categories,
-        options.include_agents_md,
-        &manifest,
-        &declined,
-        &pinned,
-        options.review,
-    );
+    let changes = Classifier {
+        locator: &locator,
+        manifest: &manifest,
+        overrides: &overrides,
+        review: options.review,
+    }
+    .collect(&templates, &categories, options.include_agents_md);
+    let report = Report {
+        style,
+        options: &options,
+    };
 
     let mut run = Run {
         style,
@@ -97,78 +104,14 @@ pub fn refresh(
     };
 
     if options.status_only {
-        run.print_status(&declined, &changes.deleted)?;
+        run.print_status(&overrides.declined, &changes.deleted)?;
         return Ok(0);
     }
-
-    let mut scope_label = categories.join(",");
-    if options.include_agents_md {
-        scope_label.push_str(",AGENTS.md");
-    }
-    let mut header = format!(
-        "\n{}\n\n  {} {}\n  {}   {user_base_shown}\n  {}     {scope_label}\n",
-        style.bold("  AgentSync Refresh"),
-        style.dim("Templates:"),
-        templates_display(),
-        style.dim("Project:"),
-        style.dim("Scope:")
-    );
-    if !has_manifest {
-        header.push_str(&format!(
-            "  {}  {}\n",
-            style.dim("Manifest:"),
-            style.yellow("none — falling back to two-way diff")
-        ));
-    }
-    header.push('\n');
-    run.say(&header)?;
+    run.say(&report.header(&user_base_shown, &categories, has_manifest))?;
 
     let visible_deleted = options.include_deleted && !changes.deleted.is_empty();
-
-    if changes.new.is_empty()
-        && changes.conflicts.is_empty()
-        && changes.auto.is_empty()
-        && !visible_deleted
-    {
-        let mut text = format!(
-            "  {} {} file(s) match the current templates.\n",
-            style.green("Already up to date!"),
-            changes.unchanged
-        );
-        if !declined.is_empty() {
-            text.push_str(&format!(
-                "  {}\n",
-                style.dim(&format!(
-                    "Persistently declined (agent_sync.yaml): {} file(s).",
-                    declined.len()
-                ))
-            ));
-        }
-        if !changes.deleted.is_empty() {
-            text.push_str(&format!(
-                "  {}\n",
-                style.dim(&format!(
-                    "Locally declined (.template-manifest):    {} file(s); --include-deleted to revisit.",
-                    changes.deleted.len()
-                ))
-            ));
-        }
-        if !declined.is_empty() || !changes.deleted.is_empty() {
-            text.push_str(&format!(
-                "  {}\n",
-                style.dim("Pass --status for the full list.")
-            ));
-        }
-        if changes.silently_kept > 0 && !options.review {
-            text.push_str(&format!(
-                "  {}\n",
-                style.dim(&format!(
-                    "{} file(s) differ from the shipped template (local edits or earlier skips); pass --review to revisit.",
-                    changes.silently_kept
-                ))
-            ));
-        }
-        run.say(&text)?;
+    if !changes.offers_anything(visible_deleted) {
+        run.say(&report.up_to_date(&changes, overrides.declined.len()))?;
         run.heal(&templates);
         if !options.dry_run {
             run.manifest.write(Path::new(root))?;
@@ -177,214 +120,25 @@ pub fn refresh(
         return Ok(0);
     }
 
-    let mut summary = format!("  {}\n", style.green("Summary:"));
-    if !changes.new.is_empty() {
-        summary.push_str(&format!(
-            "    {} {} new template(s)\n",
-            style.green("+"),
-            changes.new.len()
-        ));
-    }
-    if !changes.auto.is_empty() {
-        summary.push_str(&format!(
-            "    {} {} auto-update(s) — you hadn't touched them locally\n",
-            style.cyan("↑"),
-            changes.auto.len()
-        ));
-    }
-    if !changes.conflicts.is_empty() {
-        summary.push_str(&format!(
-            "    {} {} conflict(s) — your version differs from the template\n",
-            style.yellow("~"),
-            changes.conflicts.len()
-        ));
-    }
-    if visible_deleted {
-        summary.push_str(&format!(
-            "    {} {} previously declined — pass --include-deleted to revisit\n",
-            style.dim("?"),
-            changes.deleted.len()
-        ));
-    }
-    if changes.silently_kept > 0 && !options.review {
-        summary.push_str(&format!(
-            "    {} {} silently kept (local edits or earlier skips) — pass --review to revisit\n",
-            style.dim("·"),
-            changes.silently_kept
-        ));
-    }
-    if changes.unchanged > 0 {
-        summary.push_str(&format!(
-            "    {} {} unchanged\n",
-            style.dim("·"),
-            changes.unchanged
-        ));
-    }
-    summary.push('\n');
-    run.say(&summary)?;
-
+    run.say(&report.summary(&changes, visible_deleted))?;
     run.list_proposed(&changes, visible_deleted)?;
 
     if options.dry_run {
-        run.say(&format!(
-            "  {} — no files written.\n\n",
-            style.yellow("Dry run")
-        ))?;
+        run.say(&report.dry_run())?;
         return Ok(0);
     }
-
     if !run.env.interactive
         && !options.assume_yes
         && changes.new.len() + changes.conflicts.len() > 0
     {
-        put(
-            run.err,
-            format!(
-                "  {}: Cannot run interactively (not a TTY).\n  Use {} to add new files and apply auto-updates\n  (conflicts are always skipped non-interactively).\n  Use {} to preview.\n",
-                style.red("Error"),
-                style.cyan("--yes"),
-                style.cyan("--dry-run")
-            )
-            .as_bytes(),
-        )?;
+        put(run.err, report.not_a_tty().as_bytes())?;
         return Ok(1);
     }
 
-    let (mut added, mut updated, mut auto_applied, mut skipped) = (0, 0, 0, 0);
-    let mut cancelled = false;
-
-    for entry in &changes.auto {
-        run.copy(entry)?;
-        run.say(&format!(
-            "  {} {}  {}\n",
-            style.cyan("↑"),
-            entry.rel,
-            style.dim("(auto-updated; you hadn't touched it)")
-        ))?;
-        auto_applied += 1;
-    }
-
-    if visible_deleted {
-        for entry in &changes.deleted {
-            if cancelled {
-                break;
-            }
-            if options.assume_yes {
-                run.say(&format!(
-                    "  {} {} {}\n",
-                    style.dim("?"),
-                    entry.rel,
-                    style.dim("(previously declined — skipped under --yes; run interactively)")
-                ))?;
-                skipped += 1;
-                continue;
-            }
-            match run.prompt_deleted(entry)? {
-                'a' => {
-                    run.copy(entry)?;
-                    run.say(&format!("    {}\n", style.green("restored.")))?;
-                    added += 1;
-                }
-                'q' => cancelled = true,
-                _ => {
-                    run.say(&format!("    {}\n", style.dim("still declined.")))?;
-                    skipped += 1;
-                }
-            }
-        }
-    }
-
-    if !changes.new.is_empty() && !cancelled {
-        for entry in &changes.new {
-            if cancelled {
-                break;
-            }
-            if options.assume_yes {
-                run.copy(entry)?;
-                run.say(&format!("  {} {}\n", style.green("+"), entry.rel))?;
-                added += 1;
-                continue;
-            }
-            match run.prompt_new(entry)? {
-                'a' => {
-                    run.copy(entry)?;
-                    run.say(&format!("    {}\n", style.green("added.")))?;
-                    added += 1;
-                }
-                'q' => cancelled = true,
-                _ => {
-                    // Skip-as-decline: recorded so the file never reappears as NEW.
-                    run.manifest.record(&entry.rel, &entry.hash);
-                    run.say(&format!(
-                        "    {}\n",
-                        style.dim(
-                            "declined (will not be offered again — use --include-deleted to revisit)."
-                        )
-                    ))?;
-                    skipped += 1;
-                }
-            }
-        }
-    }
-
-    if !changes.conflicts.is_empty() && !cancelled {
-        for entry in &changes.conflicts {
-            if cancelled {
-                break;
-            }
-            if options.assume_yes {
-                run.say(&format!(
-                    "  {} {} {}\n",
-                    style.yellow("~"),
-                    entry.rel,
-                    style.dim("(conflict — skipped; run interactively to review)")
-                ))?;
-                skipped += 1;
-                continue;
-            }
-            match run.prompt_conflict(entry)? {
-                'u' => {
-                    run.copy(entry)?;
-                    run.say(&format!("    {}\n", style.yellow("updated.")))?;
-                    updated += 1;
-                }
-                'q' => cancelled = true,
-                _ => {
-                    // Recorded at the new template hash so the skip is remembered.
-                    run.manifest.record(&entry.rel, &entry.hash);
-                    run.say(&format!(
-                        "    {}\n",
-                        style.dim("skipped (remembered — agentsync refresh --review to revisit).")
-                    ))?;
-                    skipped += 1;
-                }
-            }
-        }
-    }
-
+    let tally = run.apply(&changes, options.assume_yes, visible_deleted)?;
     run.heal(&templates);
     run.manifest.write(Path::new(root))?;
-
-    let mut closing = String::from("\n");
-    if cancelled {
-        closing.push_str(&format!(
-            "  {} Files already applied are kept.\n",
-            style.yellow("Cancelled.")
-        ));
-    }
-    closing.push_str(&format!(
-        "  {} Added: {added} · Auto-updated: {auto_applied} · Updated: {updated} · Skipped: {skipped} · Unchanged: {}\n",
-        style.green("Done."),
-        changes.unchanged
-    ));
-    if added + auto_applied + updated > 0 {
-        closing.push_str(&format!(
-            "\n  Next: {} to distribute the updates to enabled tools.\n",
-            style.cyan("agentsync sync")
-        ));
-    }
-    closing.push('\n');
-    run.say(&closing)?;
+    run.say(&report.closing(&tally, changes.unchanged))?;
     Ok(0)
 }
 
