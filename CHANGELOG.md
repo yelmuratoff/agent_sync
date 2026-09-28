@@ -20,6 +20,7 @@
 
 - **`doctor` reports a secret beside an angle-bracket placeholder.** A line such as `host: <your-host> token: ghp_…` was skipped whole, so the token went unreported. Only the `<…>` span is skipped now, as `${…}` already was.
 - **`simplify` finds payload overrides under `source.tools`.** With the tool override directory moved, it looked in `.ai/src/tools` and reported no payloads to remove.
+- **`import https://github.com/user/repo.git/` downloads `repo`.** The trailing `/` hid the `.git` suffix, so the download asked for a repository named `repo.git`.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 

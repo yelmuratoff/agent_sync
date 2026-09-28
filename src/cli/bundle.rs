@@ -343,6 +343,12 @@ fn github_segments(source: &str) -> Option<(&str, &str)> {
     (!owner.is_empty() && !repo.is_empty()).then_some((owner, repo))
 }
 
+/// A GitHub source without its trailing `/`, then without a `.git` suffix.
+fn github_url(source: &str) -> &str {
+    let url = source.strip_suffix('/').unwrap_or(source);
+    url.strip_suffix(".git").unwrap_or(url)
+}
+
 /// A scratch directory under the system temp dir, removed on drop as the run
 /// directory was.
 pub(crate) struct Scratch(pub(crate) PathBuf);
@@ -663,8 +669,7 @@ impl Importer<'_, '_> {
         if !curl_on_path(self.env.path.as_deref()) {
             return self.fail("curl is required for GitHub import.");
         }
-        let url = source.strip_suffix(".git").unwrap_or(source);
-        let url = url.strip_suffix('/').unwrap_or(url);
+        let url = github_url(source);
         let (owner, repo) = github_segments(url)
             .or_else(|| github_segments(source))
             .unwrap_or(("", ""));
@@ -1053,6 +1058,22 @@ mod tests {
         assert_eq!(github_segments("https://github.com/user"), None);
         assert_eq!(github_segments("https://gitlab.com/a/b"), None);
         assert_eq!(github_segments("bundle.tar.gz"), None);
+    }
+
+    #[test]
+    fn a_github_source_loses_its_trailing_slash_and_git_suffix() {
+        for source in [
+            "https://github.com/user/repo",
+            "https://github.com/user/repo/",
+            "https://github.com/user/repo.git",
+            "https://github.com/user/repo.git/",
+        ] {
+            assert_eq!(
+                github_url(source),
+                "https://github.com/user/repo",
+                "{source}"
+            );
+        }
     }
 
     #[test]
