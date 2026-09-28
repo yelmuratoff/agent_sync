@@ -769,6 +769,9 @@ Appended one line at a time as they are found, with the phase:
   of copying the directory. Bash copied every top-level entry as it was, and
   most tools then ignored the nested skills. Two skills sharing a name stop
   sync.
+- After Phase 7: `doctor` no longer suggests `agentsync simplify` for an empty
+  skill directory. Bash printed that tip, but `simplify` never touched skill
+  directories; the advisory itself still says to populate or remove it.
 
 ## Risks
 

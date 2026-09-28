@@ -192,14 +192,11 @@ impl Doctor<'_> {
                 style.dim("(agentsync add --category refuses it — rename)")
             ))?;
         }
-        if !tree.empty_categories.is_empty() {
-            self.info(&format!(
-                "{} {} {}",
-                style.dim("Tip:"),
-                style.cyan("agentsync simplify"),
-                style.dim("can prune empty skill dirs.")
-            ))
-        } else if collisions.is_empty() && tree.too_deep.is_empty() && nonstandard.is_empty() {
+        if collisions.is_empty()
+            && tree.too_deep.is_empty()
+            && tree.empty_categories.is_empty()
+            && nonstandard.is_empty()
+        {
             self.ok("All skill directories contain SKILL.md")
         } else {
             Ok(())
