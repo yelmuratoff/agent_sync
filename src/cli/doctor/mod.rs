@@ -7,6 +7,7 @@ mod project_checks;
 mod secrets;
 mod tool_checks;
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
@@ -243,247 +244,259 @@ pub fn doctor(
         out,
         err,
     };
-
     d.say(&format!(
         "\n{}\n{}\n\n",
         style.bold("  AgentSync Doctor"),
         style.dim(&format!("  {root}"))
     ))?;
-
-    d.heading("Project layout")?;
-    if Path::new(&root).join(".ai").is_dir() {
-        d.ok(".ai/ directory present")?;
-    } else {
-        d.fail(&format!(
-            ".ai/ directory missing — run {}",
-            style.cyan("agentsync init")
-        ))?;
+    if !d.check_layout()? {
         d.say("\n")?;
         return Ok(2);
     }
-    let agents_found = match d.external_source("agents") {
-        Some(external) => Path::new(&external.abs).is_file(),
-        None => {
-            Path::new(&root).join(".ai/src/AGENTS.md").is_file()
-                || Path::new(&root).join(".ai/AGENTS.md").is_file()
-        }
-    };
-    if agents_found {
-        d.ok("AGENTS.md source file found")?;
-    } else {
-        d.fail("No AGENTS.md in .ai/src/ or .ai/ — sync will fail")?;
+    d.say("\n")?;
+    let enabled = project.enabled_tools()?;
+    d.check_enabled_tools(&enabled)?;
+    if !enabled.is_empty() {
+        d.check_edit_paths(&enabled)?;
     }
-    if let Some(config) = d.config.clone() {
-        let shown = d.config_shown.clone();
-        d.ok(&format!("Project config: {}", style.dim(&shown)))?;
-        let pinned = yaml_subset::value(&config, "agentsync_version").replace('"', "");
-        if !pinned.is_empty() && !d.version.is_empty() && pinned != d.version {
-            d.warn(&format!(
+    d.check_overrides()?;
+    d.check_sources()?;
+    d.section("Drift", Doctor::check_drift)?;
+    d.section("Security", Doctor::scan_overrides)?;
+    d.section("Skills", Doctor::check_empty_skills)?;
+    d.section("Rules", Doctor::check_always_on_rules)?;
+    d.section("Tool outputs", Doctor::check_orphan_outputs)?;
+    d.section("Cross-project", Doctor::check_cross_project)?;
+    d.verdict()
+}
+
+impl Doctor<'_> {
+    /// A heading, its check, and the blank line that closes the section.
+    fn section(
+        &mut self,
+        heading: &str,
+        check: impl FnOnce(&mut Self) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        self.heading(heading)?;
+        check(self)?;
+        self.say("\n")
+    }
+
+    /// `Project layout`: false when `.ai/` is missing, which ends the report.
+    fn check_layout(&mut self) -> Result<bool, Error> {
+        let style = self.style;
+        let root = self.root.clone();
+        self.heading("Project layout")?;
+        if !Path::new(&root).join(".ai").is_dir() {
+            self.fail(&format!(
+                ".ai/ directory missing — run {}",
+                style.cyan("agentsync init")
+            ))?;
+            return Ok(false);
+        }
+        self.ok(".ai/ directory present")?;
+        let agents_found = match self.external_source("agents") {
+            Some(external) => Path::new(&external.abs).is_file(),
+            None => {
+                Path::new(&root).join(".ai/src/AGENTS.md").is_file()
+                    || Path::new(&root).join(".ai/AGENTS.md").is_file()
+            }
+        };
+        if agents_found {
+            self.ok("AGENTS.md source file found")?;
+        } else {
+            self.fail("No AGENTS.md in .ai/src/ or .ai/ — sync will fail")?;
+        }
+        match self.config.clone() {
+            Some(config) => self.check_project_config(&config)?,
+            None => self.warn("No agent_sync.yaml — using defaults only")?,
+        }
+        Ok(true)
+    }
+
+    /// The config's path, its pinned engine version, and its format revision.
+    fn check_project_config(&mut self, config: &str) -> Result<(), Error> {
+        let style = self.style;
+        let shown = self.config_shown.clone();
+        self.ok(&format!("Project config: {}", style.dim(&shown)))?;
+        let pinned = yaml_subset::value(config, "agentsync_version").replace('"', "");
+        if !pinned.is_empty() && !self.version.is_empty() && pinned != self.version {
+            self.warn(&format!(
                 "CLI version {} differs from pinned {} — run {} to align",
-                style.dim(&format!("v{}", d.version)),
+                style.dim(&format!("v{}", self.version)),
                 style.dim(&format!("v{pinned}")),
                 style.cyan("agentsync upgrade-config")
             ))?;
         }
         let engine_rev = format_rev::engine();
-        let project_rev = format_rev::project(&config);
+        let project_rev = format_rev::project(config);
         if project_rev < engine_rev {
-            d.warn(&format!(
+            self.warn(&format!(
                 "Project format {} is behind the engine {} — run {} to preview",
                 style.dim(&format!("r{project_rev}")),
                 style.dim(&format!("r{engine_rev}")),
                 style.cyan("agentsync migrate")
-            ))?;
+            ))
         } else {
-            d.ok(&format!(
+            self.ok(&format!(
                 "Project format: {}",
                 style.dim(&format!("r{project_rev}"))
+            ))
+        }
+    }
+
+    fn check_enabled_tools(&mut self, enabled: &BTreeSet<String>) -> Result<(), Error> {
+        let style = self.style;
+        self.heading("Enabled tools")?;
+        if enabled.is_empty() {
+            self.info(&format!(
+                "No tools enabled — run {}",
+                style.cyan("agentsync enable <slug>")
             ))?;
         }
-    } else {
-        d.warn("No agent_sync.yaml — using defaults only")?;
-    }
-    d.say("\n")?;
-
-    d.heading("Enabled tools")?;
-    let enabled = project.enabled_tools()?;
-    if enabled.is_empty() {
-        d.info(&format!(
-            "No tools enabled — run {}",
-            style.cyan("agentsync enable <slug>")
-        ))?;
-    } else {
-        for slug in &enabled {
+        for slug in enabled {
             let has_base = catalog::base_tool_yaml(slug).is_some();
-            let has_user = project.user_tool_file(slug).is_file();
-            if has_base && has_user {
-                let display = d.display_name(slug)?;
-                d.ok(&format!("{display} {}", style.dim("(customized)")))?;
-            } else if has_base {
-                let display = d.display_name(slug)?;
-                d.ok(&display)?;
-            } else if has_user {
-                d.warn(&format!(
+            let has_user = self.project.user_tool_file(slug).is_file();
+            match (has_base, has_user) {
+                (true, true) => {
+                    let display = self.display_name(slug)?;
+                    self.ok(&format!("{display} {}", style.dim("(customized)")))?;
+                }
+                (true, false) => {
+                    let display = self.display_name(slug)?;
+                    self.ok(&display)?;
+                }
+                (false, true) => self.warn(&format!(
                     "{slug}: custom tool (no base) — ensure override defines full config"
-                ))?;
-            } else {
-                d.fail(&format!(
+                ))?,
+                (false, false) => self.fail(&format!(
                     "{slug}: unknown — no base template and no override"
-                ))?;
+                ))?,
             }
-            let tool = d.tool(slug)?;
-            d.check_commands_config(&tool)?;
-            d.check_payload_ownership(&tool)?;
-            d.check_guard_wired(&tool)?;
+            let tool = self.tool(slug)?;
+            self.check_commands_config(&tool)?;
+            self.check_payload_ownership(&tool)?;
+            self.check_guard_wired(&tool)?;
         }
+        self.say("\n")
     }
-    d.say("\n")?;
 
-    if !enabled.is_empty() {
-        d.heading("Edit paths")?;
-        let known: Vec<String> = {
-            let mut all = catalog::base_tools();
-            all.extend(project.user_override_tools()?);
-            all
-        };
+    fn check_edit_paths(&mut self, enabled: &BTreeSet<String>) -> Result<(), Error> {
+        self.heading("Edit paths")?;
+        let mut known = catalog::base_tools();
+        known.extend(self.project.user_override_tools()?);
         let mut any = false;
-        for slug in &enabled {
-            if !known.contains(slug) {
-                continue;
-            }
-            let tool = d.tool(slug)?;
-            let text = edit_paths::checklist(&project, &tool, style);
-            d.say(&text)?;
+        for slug in enabled.iter().filter(|slug| known.contains(slug)) {
+            let tool = self.tool(slug)?;
+            let text = edit_paths::checklist(self.project, &tool, self.style);
+            self.say(&text)?;
             any = true;
         }
         if !any {
-            d.info("No tools with editable payloads.")?;
+            self.info("No tools with editable payloads.")?;
         }
-        d.say("\n")?;
+        self.say("\n")
     }
 
-    d.heading("User overrides")?;
-    let overrides = project.user_override_tools()?;
-    if overrides.is_empty() {
-        d.info("No customizations — all tools inherit fully from base")?;
-    } else {
-        let configured = project.configured_enabled_tools()?;
+    fn check_overrides(&mut self) -> Result<(), Error> {
+        let style = self.style;
+        self.heading("User overrides")?;
+        let overrides = self.project.user_override_tools()?;
+        if overrides.is_empty() {
+            self.info("No customizations — all tools inherit fully from base")?;
+        }
+        let configured = if overrides.is_empty() {
+            Vec::new()
+        } else {
+            self.project.configured_enabled_tools()?
+        };
         for slug in &overrides {
-            let user_file = project.user_tool_file(slug);
+            let user_file = self.project.user_tool_file(slug);
             let text = std::fs::read(&user_file)
                 .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
                 .map_err(|e| Error::io(&user_file, e))?;
             if yaml_subset::value(&text, "enabled") == "true" && !configured.contains(slug) {
-                d.warn(&format!(
+                self.warn(&format!(
                     "{slug}: uses legacy 'enabled: true' — migrate with {}",
                     style.cyan(&format!("agentsync enable {slug}"))
                 ))?;
             } else if catalog::base_tool_yaml(slug).is_some() {
-                let display = d.display_name(slug)?;
-                d.info(&format!(
+                let display = self.display_name(slug)?;
+                self.info(&format!(
                     "{display} — see {}",
                     style.cyan(&format!("agentsync diff {slug}"))
                 ))?;
             } else {
-                d.info(&format!("{slug} (custom tool, no base)"))?;
+                self.info(&format!("{slug} (custom tool, no base)"))?;
             }
         }
+        self.say("\n")
     }
-    d.say("\n")?;
 
-    d.heading("Source directories")?;
-    for (src, key) in [
-        ("AGENTS.md", "agents"),
-        ("rules", "rules"),
-        ("skills", "skills"),
-        ("commands", "commands"),
-        ("agents", "subagents"),
-    ] {
-        let (display, abs) = match d.external_source(key) {
-            Some(external) => {
-                if external.refused {
-                    d.fail(&format!(
+    fn check_sources(&mut self) -> Result<(), Error> {
+        let root = self.root.clone();
+        self.heading("Source directories")?;
+        for (src, key) in [
+            ("AGENTS.md", "agents"),
+            ("rules", "rules"),
+            ("skills", "skills"),
+            ("commands", "commands"),
+            ("agents", "subagents"),
+        ] {
+            let (display, abs) = match self.external_source(key) {
+                Some(external) if external.refused => {
+                    self.fail(&format!(
                         "source.{key} must not be the filesystem root, the home directory, or the project root or its ancestor: {}",
                         external.raw
                     ))?;
                     continue;
                 }
-                if external.untrusted {
-                    d.fail(&format!(
+                Some(external) if external.untrusted => {
+                    self.fail(&format!(
                         "source.{key} points outside the project and AGENTSYNC_EXTERNAL_SOURCE_ROOTS does not list it: {}",
                         external.raw
                     ))?;
                     continue;
                 }
-                (external.raw, external.abs)
+                Some(external) => (external.raw, external.abs),
+                None => (format!(".ai/src/{src}"), format!("{root}/.ai/src/{src}")),
+            };
+            if Path::new(&abs).exists() {
+                self.ok(&display)?;
+            } else if src == "AGENTS.md" {
+                self.fail(&format!("{display} missing (required)"))?;
+            } else {
+                self.info(&format!("{display} not present (optional)"))?;
             }
-            None => (format!(".ai/src/{src}"), format!("{root}/.ai/src/{src}")),
-        };
-        if Path::new(&abs).exists() {
-            d.ok(&display)?;
-        } else if src == "AGENTS.md" {
-            d.fail(&format!("{display} missing (required)"))?;
-        } else {
-            d.info(&format!("{display} not present (optional)"))?;
         }
+        self.say("\n")
     }
-    d.say("\n")?;
 
-    d.heading("Drift")?;
-    d.check_drift()?;
-    d.say("\n")?;
-
-    d.heading("Security")?;
-    d.scan_overrides()?;
-    d.say("\n")?;
-
-    d.heading("Skills")?;
-    d.check_empty_skills()?;
-    d.say("\n")?;
-
-    d.heading("Rules")?;
-    d.check_always_on_rules()?;
-    d.say("\n")?;
-
-    d.heading("Tool outputs")?;
-    d.check_orphan_outputs()?;
-    d.say("\n")?;
-
-    d.heading("Cross-project")?;
-    d.check_cross_project()?;
-    d.say("\n")?;
-
-    let advisory_label = if d.advisories > 0 {
-        format!(
-            ", {}",
-            style.dim(&format!("{} advisory(ies)", d.advisories))
-        )
-    } else {
-        String::new()
-    };
-    if d.errors > 0 {
-        d.say(&format!(
-            "  {}, {}{advisory_label}\n\n",
-            style.red(&format!("{} error(s)", d.errors)),
-            style.yellow(&format!("{} warning(s)", d.warnings))
-        ))?;
-        Ok(2)
-    } else if d.warnings > 0 {
-        d.say(&format!(
-            "  {} with {}{advisory_label}\n\n",
-            style.green("OK"),
-            style.yellow(&format!("{} warning(s)", d.warnings))
-        ))?;
-        Ok(1)
-    } else if d.advisories > 0 {
-        d.say(&format!(
-            "  {} with {}\n\n",
-            style.green("OK"),
-            style.dim(&format!("{} advisory(ies)", d.advisories))
-        ))?;
-        Ok(0)
-    } else {
-        d.say(&format!("  {}\n\n", style.green("All checks passed.")))?;
+    /// The closing tally and the exit status it maps to.
+    fn verdict(&mut self) -> Result<u8, Error> {
+        let style = self.style;
+        let advisories = style.dim(&format!("{} advisory(ies)", self.advisories));
+        let advisory_label = if self.advisories > 0 {
+            format!(", {advisories}")
+        } else {
+            String::new()
+        };
+        let warnings = style.yellow(&format!("{} warning(s)", self.warnings));
+        if self.errors > 0 {
+            let errors = style.red(&format!("{} error(s)", self.errors));
+            self.say(&format!("  {errors}, {warnings}{advisory_label}\n\n"))?;
+            return Ok(2);
+        }
+        if self.warnings > 0 {
+            let ok = style.green("OK");
+            self.say(&format!("  {ok} with {warnings}{advisory_label}\n\n"))?;
+            return Ok(1);
+        }
+        if self.advisories > 0 {
+            self.say(&format!("  {} with {advisories}\n\n", style.green("OK")))?;
+        } else {
+            self.say(&format!("  {}\n\n", style.green("All checks passed.")))?;
+        }
         Ok(0)
     }
 }
