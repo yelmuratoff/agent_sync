@@ -7,11 +7,6 @@ source:
   skills: ".ai/src/skills"
   tools: ".ai/src/tools"
 
-# Default settings for all tools
-defaults:
-  enabled: false
-  cleanup: true
-
 # Post-sync hooks run arbitrary shell from a tool YAML, so they are gated behind
 # an out-of-repo trust signal: export AGENTSYNC_ALLOW_POST_SYNC=true, or set
 # allow: true here and rebuild — this file is compiled into the binary. The

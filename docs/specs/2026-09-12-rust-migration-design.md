@@ -488,8 +488,10 @@ decision to make once rather than a bug to find twice.
 3. `\n` in a quoted header stays literal until `printf '%b'` at write time.
 4. `get_tool_value` cannot override a base value with an empty string, and
    never consults `base:` when a shipped file exists for the slug.
-5. `defaults.enabled` in `agent_sync.yaml` and the `defaults:` block in
-   `lib/config.yaml` are never read.
+5. *Fixed after 0.42.0.* `defaults.enabled` in `agent_sync.yaml` and the
+   `defaults:` block in `lib/config.yaml` were never read. `init` no longer
+   writes the key and the shipped block is gone; `defaults.cleanup` in the
+   project config is read and stays.
 6. *Fixed after 0.42.0.* Bash `printf '%-Ns'` padded styled strings including
    their escape bytes, so coloured `list` columns drifted; `pad_right` now
    counts only the cells a terminal shows.

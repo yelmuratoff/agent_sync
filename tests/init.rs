@@ -367,6 +367,18 @@ fn init_auto_detects_existing_tool_markers() {
 }
 
 #[test]
+fn init_writes_only_the_defaults_sync_reads() {
+    let project = Project::empty();
+    project
+        .agentsync()
+        .args(["init", "--no-detect", "--no-sync"])
+        .assert()
+        .success();
+    let config = project.read(".ai/agent_sync.yaml");
+    assert!(config.contains("\ndefaults:\n  cleanup: true\n"), "{config}");
+}
+
+#[test]
 fn init_detects_cline_from_a_single_file_clinerules_and_keeps_it() {
     let project = Project::empty();
     project.write(".clinerules", "# hand-written Cline rules\n");

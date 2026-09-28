@@ -46,6 +46,7 @@
 - **`generate` keeps a description ended with Ctrl-D.** Closing the input while describing the project exited 1 and dropped what was typed; it now ends the description and prints the prompt. Closing it at the menu says `Cancelled.` instead of exiting in silence.
 - **`setup-hooks --help` answers wherever `--help` appears,** as the other commands do.
 - **`release` explains an input that ends at its prompt:** `input ended before an answer; nothing was released.` It exited 1 in silence.
+- **`init` no longer writes `defaults.enabled`,** a key nothing ever read, so a new config does not suggest tools can be switched on there. An existing one keeps working; the key stays ignored. `defaults.cleanup` is read and stays.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 
