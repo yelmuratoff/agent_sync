@@ -11,24 +11,35 @@ pub struct SkillMetadata {
     pub requirements: Option<String>,
 }
 
-pub fn read(bytes: &[u8], directory: &str) -> Result<SkillMetadata, String> {
-    let text = std::str::from_utf8(bytes).map_err(|_| "SKILL.md is not UTF-8".to_string())?;
+/// The lines between a leading `---` and the closing one.
+fn frontmatter(text: &str) -> Result<Vec<&str>, String> {
     let mut lines = text.lines();
     if lines.next().map(str::trim) != Some("---") {
         return Err("missing YAML frontmatter".to_string());
     }
     let mut frontmatter = Vec::new();
-    let mut closed = false;
     for line in lines {
         if line.trim() == "---" {
-            closed = true;
-            break;
+            return Ok(frontmatter);
         }
         frontmatter.push(line);
     }
-    if !closed {
-        return Err("unclosed YAML frontmatter".to_string());
-    }
+    Err("unclosed YAML frontmatter".to_string())
+}
+
+/// The `description` a `SKILL.md` declares, block strings folded to one line;
+/// `None` when it declares none or cannot be read. Checks nothing else.
+pub fn description(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    field(&frontmatter(text).ok()?, "description")
+        .ok()
+        .flatten()
+        .filter(|description| !description.is_empty())
+}
+
+pub fn read(bytes: &[u8], directory: &str) -> Result<SkillMetadata, String> {
+    let text = std::str::from_utf8(bytes).map_err(|_| "SKILL.md is not UTF-8".to_string())?;
+    let frontmatter = frontmatter(text)?;
     for key in ["name", "description", "compatibility"] {
         if frontmatter
             .iter()

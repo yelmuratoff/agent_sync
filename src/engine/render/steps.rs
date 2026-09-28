@@ -2,6 +2,7 @@
 
 use super::passes::{Dests, source_path, tool_source};
 use super::{Run, Step, Stop, io, tools};
+use crate::config::skill_metadata;
 use crate::config::tool::Tool;
 use crate::engine::filters::Filter;
 use crate::engine::keyed;
@@ -117,58 +118,9 @@ fn inline_rules_into_agents(
 }
 
 fn skill_description(skill: &[u8]) -> Vec<u8> {
-    let lines = crate::text::lines(skill);
-    let mut in_range = false;
-    let mut first = Vec::new();
-    for line in &lines {
-        if !in_range {
-            in_range = *line == b"---";
-            continue;
-        }
-        if *line == b"---" {
-            in_range = false;
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix(b"description:") {
-            let rest = crate::text::trim_start_space(rest);
-            let rest = match rest.strip_prefix(b">") {
-                Some(after) => crate::text::trim_start_space(after),
-                None => rest,
-            };
-            first = rest.to_vec();
-            break;
-        }
-    }
-    if first == b">" {
-        first.clear();
-    }
-    if !first.is_empty() {
-        return first;
-    }
-    let mut outer = false;
-    let mut inner = false;
-    for line in &lines {
-        let mut closes_outer = false;
-        if !outer {
-            if *line != b"---" {
-                continue;
-            }
-            outer = true;
-        } else if *line == b"---" {
-            closes_outer = true;
-        }
-        if !inner {
-            inner = line.starts_with(b"description:");
-        } else if line.first().is_some_and(u8::is_ascii_lowercase) {
-            inner = false;
-        } else if line.starts_with(b"  ") {
-            return crate::text::trim_start_space(line).to_vec();
-        }
-        if closes_outer {
-            outer = false;
-        }
-    }
-    Vec::new()
+    skill_metadata::description(skill)
+        .map(String::into_bytes)
+        .unwrap_or_default()
 }
 
 /// `_inline_skills_into_file`.
@@ -743,18 +695,21 @@ mod tests {
         assert!(s.ws.is_file("/proj/.agents/skills/command-review/SKILL.md"));
     }
 
-    // Design spec, "Known quirks", item 11: `description: >-` indexes as `-`.
     #[test]
-    fn skill_descriptions_come_from_the_frontmatter_scalar_or_its_first_folded_line() {
+    fn skill_descriptions_read_scalars_and_fold_block_strings() {
         assert_eq!(
             skill_description(b"---\nname: a\ndescription: Does A\n---\n"),
             b"Does A"
         );
         assert_eq!(
             skill_description(b"---\ndescription: >\n  Folded first\n  second\nname: x\n---\n"),
-            b"Folded first"
+            b"Folded first second"
         );
-        assert_eq!(skill_description(b"---\ndescription: >-\n  x\n---\n"), b"-");
+        assert_eq!(skill_description(b"---\ndescription: >-\n  x\n---\n"), b"x");
+        assert_eq!(
+            skill_description(b"---\ndescription: \"Quoted: yes\"\n---\n"),
+            b"Quoted: yes"
+        );
         assert_eq!(skill_description(b"no frontmatter\n"), b"");
     }
 }

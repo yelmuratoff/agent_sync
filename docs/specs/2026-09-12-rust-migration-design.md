@@ -519,8 +519,10 @@ decision to make once rather than a bug to find twice.
     rule's frontmatter once it had a bare `paths:` key, not only the items
     under `paths:`. It now reads only the `paths:` value, and accepts a flow
     list or a single glob there as well as a block list.
-11. The inline skill index strips `>` from `description: >-` and indexes the
-    skill with the description `-`.
+11. *Fixed after 0.42.0.* The inline skill index stripped `>` from
+    `description: >-` and indexed the skill with the description `-`. It now
+    reads the description as `skills show` does, a block string folded to one
+    line.
 12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last
     project that failed as "max exit code" and exited with it
     (`bin/agentsync.sh`, `cmd_workspace_fanout`).

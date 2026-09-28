@@ -19,6 +19,7 @@
 - **A tool override can set a field to empty.** `header: ""` or `exclude: []` in `.ai/src/tools/<tool>.yaml` used to fall back to the shipped value; a key you write now wins even when empty. A `base:` in an override of a shipped tool now fills the fields the shipped file leaves empty, where it used to be ignored.
 - **Frontmatter fields read the first occurrence and whole quoted values.** A field written twice in a command took its last value, and `description: "use # with care"` was cut at the `#`; the generated `command-*` skills and the inlined command index now carry the first value, quoted text intact.
 - **A rule's globs come only from `paths:`.** A rule with `paths:` also took every other list in its frontmatter, such as `tags:`, into the globs of Cursor's `.mdc`, Copilot's `applyTo`, and the other scoped headers. `paths: ["src/**"]` and `paths: src/**` now scope a rule too, where they used to leave it always on.
+- **The inlined skill index shows a folded description whole.** A skill whose `description:` is a `>-` block was indexed as `-`, and a `>` block showed only its first line; the index now carries the description `skills show` prints.
 
 ### Fixed
 
