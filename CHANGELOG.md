@@ -44,6 +44,7 @@
 - **`adopt --all` names each adopted source once.** The same edit in two tools' copies of a skill printed `✓ adopted` twice for one file and counted it twice in the total.
 - **`migrate --apply --yes` separates `removed .agent/` from the planned moves** with a blank line, as every other block of its report is.
 - **`generate` keeps a description ended with Ctrl-D.** Closing the input while describing the project exited 1 and dropped what was typed; it now ends the description and prints the prompt. Closing it at the menu says `Cancelled.` instead of exiting in silence.
+- **`setup-hooks --help` answers wherever `--help` appears,** as the other commands do.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 

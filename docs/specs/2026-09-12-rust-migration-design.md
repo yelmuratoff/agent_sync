@@ -620,8 +620,9 @@ decision to make once rather than a bug to find twice.
     stdin closed before the menu choice or the description was complete. At
     the menu it now says `Cancelled.`; in the description the end of input
     ends the text, which then goes into the prompt.
-53. `setup-hooks` reads its options in order and refuses the first unknown
-    one, so `--bogus --help` prints the unknown-option error, not the help.
+53. *Fixed after 0.42.0.* `setup-hooks` read its options in order and refused
+    the first unknown one, so `--bogus --help` printed the unknown-option
+    error, not the help.
 54. `release` exits 1 with nothing after its `Continue? [Y/n]:` prompt when
     stdin ends there: `read -r confirm` fails and errexit ends the run.
 55. *Fixed in 0.38.0.* `update`'s changelog renderer matched a
