@@ -132,6 +132,53 @@ fn human_size(size: Option<u64>) -> String {
     }
 }
 
+/// `--output` (empty when not given) and `--dry-run`.
+fn parse_export(args: &[String]) -> Result<(String, bool), BundleStop> {
+    let (mut output, mut dry_run) = (String::new(), false);
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--output" | "-o" => {
+                let Some(value) = args.next() else {
+                    return Err(refuse("--output requires a path".into(), false));
+                };
+                output = value.clone();
+            }
+            "--dry-run" => dry_run = true,
+            "--help" | "-h" => return Err(BundleStop::Help),
+            other => return Err(refuse(format!("Unknown option: {other}"), true)),
+        }
+    }
+    Ok((output, dry_run))
+}
+
+/// Each path the bundle archives, relative to `root`, with the label the
+/// contents list shows for it.
+fn export_items(root: &str, sources: &Sources, style: &Style) -> Vec<(String, String)> {
+    let mut items = Vec::new();
+    if !sources.agents.is_empty() && Path::new(root).join(&sources.agents).is_file() {
+        let name = sources.agents.rsplit('/').next().unwrap_or(&sources.agents);
+        items.push((sources.agents.clone(), name.to_string()));
+    }
+    for (name, path) in &sources.dirs {
+        let dir = Path::new(root).join(path);
+        if path.is_empty() || !dir.is_dir() {
+            continue;
+        }
+        let count = count_files(&dir);
+        if count > 0 {
+            items.push((path.clone(), format!("{name}/ ({count} files)")));
+        }
+    }
+    if Path::new(root).join(CONFIG).is_file() {
+        items.push((CONFIG.to_string(), "agent_sync.yaml".to_string()));
+    } else if Path::new(root).join(CONFIG_LEGACY).is_file() {
+        let label = format!("agent_sync.yaml {}", style.dim("(legacy)"));
+        items.push((CONFIG_LEGACY.to_string(), label));
+    }
+    items
+}
+
 /// `cmd_export`.
 pub fn export(
     args: &[String],
@@ -140,40 +187,23 @@ pub fn export(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut output = String::new();
-    let mut dry_run = false;
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--output" | "-o" => {
-                let Some(value) = args.get(i + 1) else {
-                    put(
-                        err,
-                        format!("{}: --output requires a path\n", style.red("Error")).as_bytes(),
-                    )?;
-                    return Ok(1);
-                };
-                output = value.clone();
-                i += 2;
-            }
-            "--dry-run" => {
-                dry_run = true;
-                i += 1;
-            }
-            "--help" | "-h" => {
-                put(out, EXPORT_HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            other => {
-                put(
-                    err,
-                    format!("{}: Unknown option: {other}\n", style.red("Error")).as_bytes(),
-                )?;
-                put(err, EXPORT_HELP.render(style).as_bytes())?;
-                return Ok(1);
-            }
+    let (mut output, dry_run) = match parse_export(args) {
+        Ok(parsed) => parsed,
+        Err(BundleStop::Help) => {
+            put(out, EXPORT_HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
+        Err(BundleStop::Refuse { message, with_help }) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            if with_help {
+                put(err, EXPORT_HELP.render(style).as_bytes())?;
+            }
+            return Ok(1);
+        }
+    };
     let sources = resolve_sources(root);
     if sources.base.is_empty() {
         put(
@@ -195,40 +225,8 @@ pub fn export(
         format!("\n{}\n\n", style.bold("  AgentSync Export")).as_bytes(),
     )?;
 
-    let mut items: Vec<String> = Vec::new();
-    let mut labels: Vec<String> = Vec::new();
-    if !sources.agents.is_empty() && Path::new(root).join(&sources.agents).is_file() {
-        items.push(sources.agents.clone());
-        labels.push(
-            sources
-                .agents
-                .rsplit('/')
-                .next()
-                .unwrap_or(&sources.agents)
-                .to_string(),
-        );
-    }
-    for (name, path) in &sources.dirs {
-        if path.is_empty() {
-            continue;
-        }
-        let dir = Path::new(root).join(path);
-        if !dir.is_dir() {
-            continue;
-        }
-        let count = count_files(&dir);
-        if count > 0 {
-            items.push(path.clone());
-            labels.push(format!("{name}/ ({count} files)"));
-        }
-    }
-    if Path::new(root).join(CONFIG).is_file() {
-        items.push(CONFIG.to_string());
-        labels.push("agent_sync.yaml".to_string());
-    } else if Path::new(root).join(CONFIG_LEGACY).is_file() {
-        items.push(CONFIG_LEGACY.to_string());
-        labels.push(format!("agent_sync.yaml {}", style.dim("(legacy)")));
-    }
+    let (items, labels): (Vec<String>, Vec<String>) =
+        export_items(root, &sources, style).into_iter().unzip();
     if items.is_empty() {
         put(
             out,
@@ -256,40 +254,40 @@ pub fn export(
     }
     put(out, text.as_bytes())?;
     out.flush().map_err(|e| Error::io("<stdout>", e))?;
-    let status = Command::new("tar")
+    let archived = Command::new("tar")
         .arg("-czf")
         .arg(&output)
         .args(&items)
         .current_dir(root)
         .stdin(Stdio::null())
-        .status();
-    if !status.map(|s| s.success()).unwrap_or(false) {
+        .status()
+        .is_ok_and(|status| status.success());
+    if !archived {
         put(
             err,
             format!("  {}: Failed to create archive.\n", style.red("Error")).as_bytes(),
         )?;
         return Ok(1);
     }
-    let archive = if crate::paths::is_absolute(&output) {
-        PathBuf::from(&output)
+    put(out, exported_text(style, root, &output).as_bytes()).map(|()| 0)
+}
+
+fn exported_text(style: &Style, root: &str, output: &str) -> String {
+    let archive = if crate::paths::is_absolute(output) {
+        PathBuf::from(output)
     } else {
-        Path::new(root).join(&output)
+        Path::new(root).join(output)
     };
     let size = std::fs::metadata(&archive).ok().map(|m| m.len());
-    let base_name = output.rsplit('/').next().unwrap_or(&output).to_string();
-    put(
-        out,
-        format!(
-            "  {} → {} ({})\n\n  Share this file and import with:\n    {} {}\n\n",
-            style.green("Exported!"),
-            style.cyan(&output),
-            human_size(size),
-            style.cyan("agentsync import"),
-            style.dim(&base_name)
-        )
-        .as_bytes(),
+    let base_name = output.rsplit('/').next().unwrap_or(output);
+    format!(
+        "  {} → {} ({})\n\n  Share this file and import with:\n    {} {}\n\n",
+        style.green("Exported!"),
+        style.cyan(output),
+        human_size(size),
+        style.cyan("agentsync import"),
+        style.dim(base_name)
     )
-    .map(|()| 0)
 }
 
 pub const IMPORT_HELP: Help = Help {
@@ -474,40 +472,47 @@ struct Counts {
     skipped: usize,
 }
 
-/// `_import_diff_file`.
-fn diff_file(src: &Path, dest: &Path, label: &str, changes: &mut Vec<Change>, counts: &mut Counts) {
-    if dest.is_file() {
-        if same_bytes(src, dest) {
-            counts.skipped += 1;
-        } else {
-            changes.push(Change::Update(label.to_string()));
-            counts.updated += 1;
-        }
-    } else {
-        changes.push(Change::New(label.to_string()));
-        counts.new += 1;
-    }
+/// What an import changes: one line per file or directory, and the tallies.
+#[derive(Default)]
+struct Diff {
+    changes: Vec<Change>,
+    counts: Counts,
 }
 
-/// `_import_diff_dir`.
-fn diff_dir(src: &Path, dest: &Path, label: &str, changes: &mut Vec<Change>, counts: &mut Counts) {
-    let (mut new, mut updated, mut skipped) = (0usize, 0usize, 0usize);
-    let mut files = Vec::new();
-    files_below(src, &mut files);
-    for file in files {
-        let rel = file.strip_prefix(src).unwrap_or(&file);
-        let target = dest.join(rel);
-        if target.is_file() {
-            if same_bytes(&file, &target) {
+impl Diff {
+    /// `_import_diff_file`.
+    fn file(&mut self, src: &Path, dest: &Path, label: &str) {
+        if !dest.is_file() {
+            self.changes.push(Change::New(label.to_string()));
+            self.counts.new += 1;
+        } else if same_bytes(src, dest) {
+            self.counts.skipped += 1;
+        } else {
+            self.changes.push(Change::Update(label.to_string()));
+            self.counts.updated += 1;
+        }
+    }
+
+    /// `_import_diff_dir`.
+    fn dir(&mut self, src: &Path, dest: &Path, label: &str) {
+        let (mut new, mut updated, mut skipped) = (0usize, 0usize, 0usize);
+        let mut files = Vec::new();
+        files_below(src, &mut files);
+        for file in files {
+            let rel = file.strip_prefix(src).unwrap_or(&file);
+            let target = dest.join(rel);
+            if !target.is_file() {
+                new += 1;
+            } else if same_bytes(&file, &target) {
                 skipped += 1;
             } else {
                 updated += 1;
             }
-        } else {
-            new += 1;
         }
-    }
-    if new + updated > 0 {
+        self.counts.skipped += skipped;
+        if new + updated == 0 {
+            return;
+        }
         let mut detail = Vec::new();
         if new > 0 {
             detail.push(format!("{new} new"));
@@ -518,12 +523,10 @@ fn diff_dir(src: &Path, dest: &Path, label: &str, changes: &mut Vec<Change>, cou
         if skipped > 0 {
             detail.push(format!("{skipped} unchanged"));
         }
-        changes.push(Change::Dir(format!("{label} ({})", detail.join(", "))));
-        counts.new += new;
-        counts.updated += updated;
-        counts.skipped += skipped;
-    } else {
-        counts.skipped += skipped;
+        let line = format!("{label} ({})", detail.join(", "));
+        self.changes.push(Change::Dir(line));
+        self.counts.new += new;
+        self.counts.updated += updated;
     }
 }
 
@@ -550,113 +553,123 @@ fn filter_targets(targets: &[&'static str], only: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// `cmd_import`.
-pub fn import(
-    args: &[String],
-    root: &str,
-    style: &Style,
-    env: &mut Env,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> Result<u8, Error> {
-    let mut source = String::new();
-    let mut dry_run = false;
-    let mut force = false;
-    let mut only = String::new();
-    let mut branch = String::new();
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        match arg {
-            "--dry-run" => {
-                dry_run = true;
-                i += 1;
-            }
-            "--force" => {
-                force = true;
-                i += 1;
-            }
-            "--only" | "--branch" | "-b" => {
-                let Some(value) = args.get(i + 1) else {
-                    let flag = if arg == "--only" {
-                        "--only"
-                    } else {
-                        "--branch"
-                    };
-                    put(
-                        err,
-                        format!("{}: {flag} requires a value\n", style.red("Error")).as_bytes(),
-                    )?;
-                    return Ok(1);
-                };
-                if arg == "--only" {
-                    only = value.clone();
-                } else {
-                    branch = value.clone();
-                }
-                i += 2;
-            }
-            "--help" | "-h" => {
-                put(out, IMPORT_HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: Unknown option: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                put(err, IMPORT_HELP.render(style).as_bytes())?;
-                return Ok(1);
-            }
-            positional => {
-                if source.is_empty() {
-                    source = positional.to_string();
-                } else {
-                    put(
-                        err,
-                        format!(
-                            "{}: Unexpected argument: {positional}\n",
-                            style.red("Error")
-                        )
-                        .as_bytes(),
-                    )?;
-                    return Ok(1);
-                }
-                i += 1;
-            }
-        }
-    }
-    if source.is_empty() {
-        put(
-            err,
-            format!("{}: No source specified.\n", style.red("Error")).as_bytes(),
-        )?;
-        put(err, IMPORT_HELP.render(style).as_bytes())?;
-        return Ok(1);
-    }
-    put(
-        out,
-        format!("\n{}\n\n", style.bold("  AgentSync Import")).as_bytes(),
-    )?;
-    out.flush().map_err(|e| Error::io("<stdout>", e))?;
-    let scratch = Scratch::create("agentsync-import")?;
-    let tmp = scratch.0.as_path();
-    let error = style.red("Error");
+struct ImportArgs {
+    source: String,
+    dry_run: bool,
+    force: bool,
+    only: String,
+    branch: String,
+}
 
-    let label;
-    if let Some((owner, repo)) = github_segments(&source) {
-        label = format!("GitHub: {source}");
-        if !curl_on_path(env.path.as_deref()) {
-            put(
-                err,
-                format!("  {error}: curl is required for GitHub import.\n").as_bytes(),
-            )?;
-            return Ok(1);
+/// How a command line that imports nothing ends: help on stdout, or an error
+/// line on stderr followed by the help when `with_help`.
+enum BundleStop {
+    Help,
+    Refuse { message: String, with_help: bool },
+}
+
+fn refuse(message: String, with_help: bool) -> BundleStop {
+    BundleStop::Refuse { message, with_help }
+}
+
+fn parse_import(args: &[String]) -> Result<ImportArgs, BundleStop> {
+    let mut parsed = ImportArgs {
+        source: String::new(),
+        dry_run: false,
+        force: false,
+        only: String::new(),
+        branch: String::new(),
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--dry-run" => parsed.dry_run = true,
+            "--force" => parsed.force = true,
+            flag @ ("--only" | "--branch" | "-b") => {
+                let name = if flag == "--only" {
+                    "--only"
+                } else {
+                    "--branch"
+                };
+                let Some(value) = args.next() else {
+                    return Err(refuse(format!("{name} requires a value"), false));
+                };
+                if flag == "--only" {
+                    parsed.only = value.clone();
+                } else {
+                    parsed.branch = value.clone();
+                }
+            }
+            "--help" | "-h" => return Err(BundleStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(refuse(format!("Unknown option: {flag}"), true));
+            }
+            positional if parsed.source.is_empty() => parsed.source = positional.to_string(),
+            positional => return Err(refuse(format!("Unexpected argument: {positional}"), false)),
         }
-        let url = source.strip_suffix(".git").unwrap_or(&source);
+    }
+    if parsed.source.is_empty() {
+        return Err(refuse("No source specified.".into(), true));
+    }
+    Ok(parsed)
+}
+
+/// The streams and process inputs an import reports through while it fetches.
+struct Importer<'a, 'b> {
+    style: &'a Style,
+    env: &'a mut Env<'b>,
+    out: &'a mut dyn Write,
+    err: &'a mut dyn Write,
+}
+
+impl Importer<'_, '_> {
+    fn say(&mut self, text: &str) -> Result<(), Error> {
+        put(self.out, text.as_bytes())?;
+        self.out.flush().map_err(|e| Error::io("<stdout>", e))
+    }
+
+    /// Prints the failure on stderr and answers the failed fetch.
+    fn fail(&mut self, message: &str) -> Result<Option<String>, Error> {
+        let text = format!("  {}: {message}\n", self.style.red("Error"));
+        put(self.err, text.as_bytes())?;
+        Ok(None)
+    }
+
+    /// Fetches `source` into `tmp`: the label the report names it by, or `None`
+    /// once the failure is printed.
+    fn fetch(&mut self, source: &str, branch: &str, tmp: &Path) -> Result<Option<String>, Error> {
+        if github_segments(source).is_some() {
+            return self.fetch_github(source, branch, tmp);
+        }
+        let path = Path::new(source);
+        if path.is_file() && (source.ends_with(".tar.gz") || source.ends_with(".tgz")) {
+            return self.extract_archive(source, tmp);
+        }
+        if path.is_dir() {
+            return self.copy_directory(source, tmp);
+        }
+        self.fail(&format!(
+            "Cannot recognize source: {source}\n  Expected: GitHub URL, .tar.gz file, or directory path."
+        ))
+    }
+
+    fn fetch_github(
+        &mut self,
+        source: &str,
+        branch: &str,
+        tmp: &Path,
+    ) -> Result<Option<String>, Error> {
+        let style = self.style;
+        if !curl_on_path(self.env.path.as_deref()) {
+            return self.fail("curl is required for GitHub import.");
+        }
+        let url = source.strip_suffix(".git").unwrap_or(source);
         let url = url.strip_suffix('/').unwrap_or(url);
-        let (owner, repo) = github_segments(url).unwrap_or((owner, repo));
+        let (owner, repo) = github_segments(url)
+            .or_else(|| github_segments(source))
+            .unwrap_or(("", ""));
         let repo_path = format!("{owner}/{repo}");
+        let mut branch = branch.to_string();
         if branch.is_empty()
             && let Some((_, after)) = url.split_once("/tree/")
         {
@@ -665,101 +678,61 @@ pub fn import(
         if branch.is_empty() {
             branch = "main".to_string();
         }
-        put(
-            out,
-            format!(
-                "  Downloading {} (branch: {branch})...\n",
-                style.cyan(&repo_path)
-            )
-            .as_bytes(),
-        )?;
-        out.flush().map_err(|e| Error::io("<stdout>", e))?;
+        self.say(&format!(
+            "  Downloading {} (branch: {branch})...\n",
+            style.cyan(&repo_path)
+        ))?;
         let archive = tmp.join("repo.tar.gz");
         let archive_url = |branch: &str| {
             format!("https://github.com/{repo_path}/archive/refs/heads/{branch}.tar.gz")
         };
         if !download(&archive_url(&branch), &archive) {
-            if branch == "main" {
-                put(
-                    out,
-                    format!(
-                        "  {}\n",
-                        style.dim("Branch 'main' not found, trying 'master'...")
-                    )
-                    .as_bytes(),
-                )?;
-                out.flush().map_err(|e| Error::io("<stdout>", e))?;
-                branch = "master".to_string();
-                if !download(&archive_url(&branch), &archive) {
-                    put(
-                        err,
-                        format!(
-                            "  {error}: Failed to download repository.\n  Check the URL and your network connection.\n"
-                        )
-                        .as_bytes(),
-                    )?;
-                    return Ok(1);
-                }
-            } else {
-                put(
-                    err,
-                    format!("  {error}: Failed to download branch '{branch}'.\n").as_bytes(),
-                )?;
-                return Ok(1);
+            if branch != "main" {
+                return self.fail(&format!("Failed to download branch '{branch}'."));
+            }
+            let note = style.dim("Branch 'main' not found, trying 'master'...");
+            self.say(&format!("  {note}\n"))?;
+            if !download(&archive_url("master"), &archive) {
+                return self.fail(
+                    "Failed to download repository.\n  Check the URL and your network connection.",
+                );
             }
         }
         if !extract(&archive, tmp) {
-            put(
-                err,
-                format!("  {error}: Failed to extract archive.\n").as_bytes(),
-            )?;
-            return Ok(1);
+            return self.fail("Failed to extract archive.");
         }
-        put(
-            out,
-            format!("  {}\n", style.green("Downloaded.")).as_bytes(),
-        )?;
-    } else if Path::new(&source).is_file()
-        && (source.ends_with(".tar.gz") || source.ends_with(".tgz"))
-    {
-        let base_name = source.rsplit('/').next().unwrap_or(&source).to_string();
-        label = format!("Archive: {base_name}");
-        put(
-            out,
-            format!("  Extracting {}...\n", style.cyan(&base_name)).as_bytes(),
-        )?;
-        out.flush().map_err(|e| Error::io("<stdout>", e))?;
-        if !extract(Path::new(&source), tmp) {
-            put(
-                err,
-                format!("  {error}: Failed to extract archive.\n").as_bytes(),
-            )?;
-            return Ok(1);
+        self.say(&format!("  {}\n", style.green("Downloaded.")))?;
+        Ok(Some(format!("GitHub: {source}")))
+    }
+
+    fn extract_archive(&mut self, source: &str, tmp: &Path) -> Result<Option<String>, Error> {
+        let style = self.style;
+        let base_name = source.rsplit('/').next().unwrap_or(source).to_string();
+        self.say(&format!("  Extracting {}...\n", style.cyan(&base_name)))?;
+        if !extract(Path::new(source), tmp) {
+            return self.fail("Failed to extract archive.");
         }
-        put(out, format!("  {}\n", style.green("Extracted.")).as_bytes())?;
-    } else if Path::new(&source).is_dir() {
-        label = format!("Directory: {source}");
-        let Ok(canonical) = std::fs::canonicalize(&source) else {
-            put(
-                err,
-                format!("  {error}: Cannot access directory: {source}\n").as_bytes(),
-            )?;
-            return Ok(1);
+        self.say(&format!("  {}\n", style.green("Extracted.")))?;
+        Ok(Some(format!("Archive: {base_name}")))
+    }
+
+    fn copy_directory(&mut self, source: &str, tmp: &Path) -> Result<Option<String>, Error> {
+        let Ok(canonical) = std::fs::canonicalize(source) else {
+            return self.fail(&format!("Cannot access directory: {source}"));
         };
-        let shown = crate::paths::normalize(&if crate::paths::is_absolute(&source) {
-            source.clone()
+        let spelled = if crate::paths::is_absolute(source) {
+            source.to_string()
         } else {
-            format!("{}/{source}", env.cwd)
-        });
-        let shown = if std::fs::canonicalize(&shown).ok().as_deref() == Some(canonical.as_path()) {
-            shown
+            format!("{}/{source}", self.env.cwd)
+        };
+        let spelled = crate::paths::normalize(&spelled);
+        let shown = if std::fs::canonicalize(&spelled).ok().as_deref() == Some(canonical.as_path())
+        {
+            spelled
         } else {
             canonical.disk_text()
         };
-        put(
-            out,
-            format!("  Reading from {}...\n", style.cyan(&shown)).as_bytes(),
-        )?;
+        self.say(&format!("  Reading from {}...\n", self.style.cyan(&shown)))?;
         let src_dir = Path::new(&shown);
         if src_dir.join(".ai").is_dir() {
             copy_tree(&src_dir.join(".ai"), &tmp.join(".ai"))?;
@@ -769,41 +742,29 @@ pub fn import(
             std::fs::copy(src_dir.join(CONFIG_LEGACY), tmp.join(CONFIG))
                 .map_err(|e| Error::io(src_dir.join(CONFIG_LEGACY), e))?;
         }
-    } else {
-        put(
-            err,
-            format!(
-                "  {error}: Cannot recognize source: {source}\n  Expected: GitHub URL, .tar.gz file, or directory path.\n"
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+        Ok(Some(format!("Directory: {source}")))
     }
-    put(
-        out,
-        format!("  {} {label}\n\n", style.dim("Source:")).as_bytes(),
-    )?;
+}
 
-    let Some(src_root) = find_ai_src(tmp) else {
-        put(
-            err,
-            format!(
-                "  {error}: No .ai/src/ (or .ai/) directory found in source.\n  The source must contain a structure created by {}.\n",
-                style.cyan("agentsync init")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    };
+/// What importing `src_root` over the project writes.
+struct ImportPlan {
+    targets: Vec<&'static str>,
+    src_root: PathBuf,
+    dest_base: PathBuf,
+    dest_base_rel: String,
+    diff: Diff,
+    imported_config: Option<PathBuf>,
+    config_dest: PathBuf,
+    config_action: &'static str,
+}
+
+fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
     let src_project_root = if src_root.ends_with("src") {
-        src_root
-            .parent()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
+        src_root.parent().and_then(Path::parent)
     } else {
-        src_root.parent().map(Path::to_path_buf)
+        src_root.parent()
     }
-    .unwrap_or_else(|| tmp.to_path_buf());
+    .map_or_else(|| src_root.clone(), Path::to_path_buf);
     let imported_config = [CONFIG, CONFIG_LEGACY]
         .iter()
         .map(|rel| src_project_root.join(rel))
@@ -820,47 +781,44 @@ pub fn import(
     let mut targets: Vec<&'static str> = vec!["AGENTS.md"];
     targets.extend(DIR_TARGETS);
     if !only.is_empty() {
-        targets = filter_targets(&targets, &only);
+        targets = filter_targets(&targets, only);
     }
-
-    let mut changes = Vec::new();
-    let mut counts = Counts::default();
+    let mut diff = Diff::default();
     for target in &targets {
         let src_path = src_root.join(target);
         let dest_path = dest_base.join(target);
         if src_path.is_file() {
-            diff_file(&src_path, &dest_path, target, &mut changes, &mut counts);
+            diff.file(&src_path, &dest_path, target);
         } else if src_path.is_dir() {
-            diff_dir(&src_path, &dest_path, target, &mut changes, &mut counts);
+            diff.dir(&src_path, &dest_path, target);
         }
     }
     let config_dest = Path::new(root).join(CONFIG);
-    let mut config_action = "";
-    if let Some(imported) = &imported_config {
-        if config_dest.is_file() {
-            if !same_bytes(imported, &config_dest) {
-                config_action = "update";
-                counts.updated += 1;
-            }
-        } else {
-            config_action = "new";
-            counts.new += 1;
-        }
+    let config_action = match &imported_config {
+        Some(_) if !config_dest.is_file() => "new",
+        Some(imported) if !same_bytes(imported, &config_dest) => "update",
+        _ => "",
+    };
+    match config_action {
+        "new" => diff.counts.new += 1,
+        "update" => diff.counts.updated += 1,
+        _ => {}
     }
-    if changes.is_empty() && config_action.is_empty() {
-        put(
-            out,
-            format!(
-                "  {} Nothing to import.\n\n",
-                style.green("Already up to date!")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(0);
+    ImportPlan {
+        targets,
+        src_root,
+        dest_base,
+        dest_base_rel,
+        diff,
+        imported_config,
+        config_dest,
+        config_action,
     }
+}
 
+fn plan_text(style: &Style, plan: &ImportPlan, dry_run: bool) -> String {
     let mut text = format!("  {}\n", style.green("Changes:"));
-    for change in &changes {
+    for change in &plan.diff.changes {
         match change {
             Change::New(name) => text.push_str(&format!(
                 "    {} {name} {}\n",
@@ -875,20 +833,20 @@ pub fn import(
             Change::Dir(name) => text.push_str(&format!("    {} {name}\n", style.cyan("↳"))),
         }
     }
-    if config_action == "new" {
-        text.push_str(&format!(
+    match plan.config_action {
+        "new" => text.push_str(&format!(
             "    {} agent_sync.yaml {}\n",
             style.green("+"),
             style.dim("(new)")
-        ));
-    }
-    if config_action == "update" {
-        text.push_str(&format!(
+        )),
+        "update" => text.push_str(&format!(
             "    {} agent_sync.yaml {}\n",
             style.yellow("~"),
             style.dim("(update)")
-        ));
+        )),
+        _ => {}
     }
+    let counts = &plan.diff.counts;
     text.push_str(&format!(
         "\n  {} {} new, {} updated, {} unchanged\n\n",
         style.dim("Summary:"),
@@ -901,25 +859,15 @@ pub fn import(
             "  {} — no files written.\n\n",
             style.yellow("Dry run")
         ));
-        put(out, text.as_bytes())?;
-        return Ok(0);
     }
-    put(out, text.as_bytes())?;
+    text
+}
 
-    if !force && counts.updated > 0 && env.interactive {
-        put(out, b"  Proceed? [Y/n] ")?;
-        out.flush().map_err(|e| Error::io("<stdout>", e))?;
-        let answer = (env.read_line)();
-        if answer.starts_with(['N', 'n']) {
-            put(out, b"  Cancelled.\n\n")?;
-            return Ok(0);
-        }
-    }
-
-    std::fs::create_dir_all(&dest_base).map_err(|e| Error::io(&dest_base, e))?;
-    for target in &targets {
-        let src_path = src_root.join(target);
-        let dest_path = dest_base.join(target);
+fn apply_import(plan: &ImportPlan) -> Result<(), Error> {
+    std::fs::create_dir_all(&plan.dest_base).map_err(|e| Error::io(&plan.dest_base, e))?;
+    for target in &plan.targets {
+        let src_path = plan.src_root.join(target);
+        let dest_path = plan.dest_base.join(target);
         if src_path.is_file() {
             copy_file(&src_path, &dest_path)?;
         } else if src_path.is_dir() {
@@ -936,22 +884,109 @@ pub fn import(
             }
         }
     }
-    if !config_action.is_empty()
-        && let Some(imported) = &imported_config
-    {
-        if let Some(parent) = config_dest.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
-        }
-        copy_file(imported, &config_dest)?;
+    if plan.config_action.is_empty() {
+        return Ok(());
     }
+    let Some(imported) = &plan.imported_config else {
+        return Ok(());
+    };
+    if let Some(parent) = plan.config_dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+    }
+    copy_file(imported, &plan.config_dest)
+}
+
+/// `cmd_import`.
+pub fn import(
+    args: &[String],
+    root: &str,
+    style: &Style,
+    env: &mut Env,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<u8, Error> {
+    let parsed = match parse_import(args) {
+        Ok(parsed) => parsed,
+        Err(BundleStop::Help) => {
+            put(out, IMPORT_HELP.render(style).as_bytes())?;
+            return Ok(0);
+        }
+        Err(BundleStop::Refuse { message, with_help }) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            if with_help {
+                put(err, IMPORT_HELP.render(style).as_bytes())?;
+            }
+            return Ok(1);
+        }
+    };
     put(
         out,
+        format!("\n{}\n\n", style.bold("  AgentSync Import")).as_bytes(),
+    )?;
+    out.flush().map_err(|e| Error::io("<stdout>", e))?;
+    let scratch = Scratch::create("agentsync-import")?;
+    let tmp = scratch.0.as_path();
+    let mut importer = Importer {
+        style,
+        env,
+        out,
+        err,
+    };
+    let Some(label) = importer.fetch(&parsed.source, &parsed.branch, tmp)? else {
+        return Ok(1);
+    };
+    put(
+        importer.out,
+        format!("  {} {label}\n\n", style.dim("Source:")).as_bytes(),
+    )?;
+    let Some(src_root) = find_ai_src(tmp) else {
+        put(
+            importer.err,
+            format!(
+                "  {}: No .ai/src/ (or .ai/) directory found in source.\n  The source must contain a structure created by {}.\n",
+                style.red("Error"),
+                style.cyan("agentsync init")
+            )
+            .as_bytes(),
+        )?;
+        return Ok(1);
+    };
+    let plan = plan_import(root, src_root, &parsed.only);
+    if plan.diff.changes.is_empty() && plan.config_action.is_empty() {
+        let text = format!(
+            "  {} Nothing to import.\n\n",
+            style.green("Already up to date!")
+        );
+        put(importer.out, text.as_bytes())?;
+        return Ok(0);
+    }
+    put(
+        importer.out,
+        plan_text(style, &plan, parsed.dry_run).as_bytes(),
+    )?;
+    if parsed.dry_run {
+        return Ok(0);
+    }
+    if !parsed.force && plan.diff.counts.updated > 0 && importer.env.interactive {
+        importer.say("  Proceed? [Y/n] ")?;
+        let answer = (importer.env.read_line)();
+        if answer.starts_with(['N', 'n']) {
+            put(importer.out, b"  Cancelled.\n\n")?;
+            return Ok(0);
+        }
+    }
+    apply_import(&plan)?;
+    put(
+        importer.out,
         format!(
             "  {} {} new, {} updated files.\n\n  Next steps:\n    1. Review imported files in {}\n    2. Run {} to distribute to all tools\n\n",
             style.green("Imported!"),
-            counts.new,
-            counts.updated,
-            style.cyan(&dest_base_rel),
+            plan.diff.counts.new,
+            plan.diff.counts.updated,
+            style.cyan(&plan.dest_base_rel),
             style.cyan("agentsync sync")
         )
         .as_bytes(),
