@@ -91,20 +91,33 @@ impl Secret {
     }
 }
 
-/// Every `${...}` span removed, so a pattern reads what is left. A name in
-/// braces is a placeholder; a secret standing next to one is still a secret.
+/// Every `${...}` span and every `<...>` span without `sk-` removed, so a
+/// pattern reads what is left. A name in braces or angle brackets is a
+/// placeholder; a secret standing next to one is still a secret.
 fn without_placeholders(text: &str) -> String {
+    let text = without_spans(text, "${", '}', |_| true);
+    without_spans(&text, "<", '>', |span| !span.contains("sk-"))
+}
+
+fn without_spans(
+    text: &str,
+    open: &str,
+    close: char,
+    placeholder: impl Fn(&str) -> bool,
+) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
-    while let Some(start) = rest.find("${") {
-        match rest[start..].find('}') {
-            Some(end) => {
-                out.push_str(&rest[..start]);
-                rest = &rest[start + end + 1..];
-            }
-            // An unclosed `${` opens nothing: the text after it stays readable.
-            None => break,
+    while let Some(start) = rest.find(open) {
+        // An unclosed span opens nothing: the text after it stays readable.
+        let Some(len) = rest[start..].find(close) else {
+            break;
+        };
+        let end = start + len + close.len_utf8();
+        out.push_str(&rest[..start]);
+        if !placeholder(&rest[start..end]) {
+            out.push_str(&rest[start..end]);
         }
+        rest = &rest[end..];
     }
     out.push_str(rest);
     out
@@ -123,12 +136,6 @@ pub(super) fn scan_secrets(bytes: &[u8]) -> Vec<String> {
     let mut hits = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         let text = String::from_utf8_lossy(line);
-        if text.contains('<')
-            && text[text.find('<').unwrap_or(0)..].contains('>')
-            && !text.contains("sk-")
-        {
-            continue;
-        }
         let readable = without_placeholders(&text);
         if SECRET_PATTERNS
             .iter()
@@ -197,6 +204,15 @@ mod tests {
         assert_eq!(
             scan_secrets(b"<sk-abcdefghijklmnopqrstuvwxyz>\n"),
             vec!["1:<sk-abcdefghijklmnopqrstuvwxyz>".to_string()]
+        );
+        assert_eq!(
+            scan_secrets(b"host: <your-host> token: ghp_abcdefghijklmnopqrstuvwxyz012345678901\n"),
+            vec![
+                "1:host: <your-host> token: ghp_abcdefghijklmnopqrstuvwxyz012345678901".to_string()
+            ]
+        );
+        assert!(
+            scan_secrets(b"<your-host> <ghp_abcdefghijklmnopqrstuvwxyz012345678901>\n").is_empty()
         );
         assert!(scan_secrets(b"\0binary sk-abcdefghijklmnopqrstuvwxyz\n").is_empty());
         assert!(scan_secrets(b"sk-short\nxoxb-123\nAKIA1234\n").is_empty());

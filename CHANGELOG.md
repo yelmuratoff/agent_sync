@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- **`doctor` reports a secret beside an angle-bracket placeholder.** A line such as `host: <your-host> token: ghp_…` was skipped whole, so the token went unreported. Only the `<…>` span is skipped now, as `${…}` already was.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 

@@ -578,10 +578,11 @@ decision to make once rather than a bug to find twice.
 44. *Fixed in 0.38.0.* `doctor`'s secret scan listed only the lines of the
     first pattern with a hit, so an AWS key on line 1 hid an OpenAI key on
     line 2.
-45. *Fixed in 0.38.0 for `${…}`.* A line holding `${…}` anywhere was never
-    reported, however real the key beside the placeholder; the scan now reads
-    the line with those spans removed. The `<…>` rule stands: an angle-bracket
-    placeholder still suppresses the line unless it holds `sk-`.
+45. *Fixed in 0.38.0 for `${…}`, after 0.42.0 for `<…>`.* A line holding
+    `${…}` anywhere was never reported, however real the key beside the
+    placeholder, and a line holding `<…>` was never reported unless it held
+    `sk-`. The scan now reads the line with those spans removed; a `<…>` span
+    that holds `sk-` stays readable.
 46. `add mcp` re-emits only the `mcpServers` member of `.ai/src/mcp.json`,
     dropping every other top-level member, and replaces a file without a
     `"mcpServers"` substring with a fresh object holding the one server.
