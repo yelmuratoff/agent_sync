@@ -621,9 +621,10 @@ decision to make once rather than a bug to find twice.
     `--content ''` skipped the wizard while contributing nothing. Tokens are
     now trimmed, a tool name with a space inside is refused, and an empty
     value is refused as a missing one.
-43. `init` heals `.ai/.template-manifest` before it adopts existing outputs, so
-    an adopted `AGENTS.md` carries the template's hash and `refresh` treats it
-    as a silently kept edit.
+43. *Fixed after 0.42.0.* `init` healed `.ai/.template-manifest` before it
+    adopted existing outputs, so an adopted `AGENTS.md` carried the template's
+    hash and `refresh` treated it as a silently kept edit. It heals after
+    adopting now.
 44. *Fixed in 0.38.0.* `doctor`'s secret scan listed only the lines of the
     first pattern with a hit, so an AWS key on line 1 hid an OpenAI key on
     line 2.

@@ -449,6 +449,27 @@ fn init_restores_pre_init_state_after_a_partial_scaffold_failure() {
 }
 
 #[test]
+fn init_records_no_template_hash_for_an_adopted_agents_md() {
+    let project = Project::empty();
+    project.write("CLAUDE.md", "# Hand-written\n");
+    project
+        .agentsync()
+        .args(["init", "--tools", "claude", "--no-sync"])
+        .assert()
+        .success();
+    assert_eq!(project.read(".ai/src/AGENTS.md"), "# Hand-written\n");
+    let manifest = project.read(".ai/.template-manifest");
+    assert!(
+        !manifest.lines().any(|line| line.starts_with("AGENTS.md\t")),
+        "{manifest}"
+    );
+    assert!(
+        manifest.lines().any(|line| line.starts_with("rules/")),
+        "{manifest}"
+    );
+}
+
+#[test]
 fn init_auto_detects_kimi_code_and_opencode_markers() {
     let project = Project::empty();
     std::fs::create_dir_all(project.join(".kimi-code")).unwrap();
