@@ -481,12 +481,17 @@ fn walk_files(dir: &str, found: &mut Vec<String>) {
     }
 }
 
-/// `_dedupe_delete_and_prune`: `rm -f`, then `rmdir` up to `.ai/src`.
-fn delete_and_prune(file: &str, stop_at: &str) -> Result<(), Error> {
+/// `_dedupe_delete_and_prune`: `rm -f`, then `rmdir` up to the top-level
+/// directory under `src` that holds the file, such as `rules/` or `skills/`.
+fn delete_and_prune(file: &str, src: &str) -> Result<(), Error> {
     match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(Error::io(file, e)),
         _ => {}
     }
+    let stop_at = file
+        .strip_prefix(&format!("{src}/"))
+        .and_then(|rel| rel.split_once('/'))
+        .map_or_else(|| src.to_string(), |(top, _)| format!("{src}/{top}"));
     let mut dir = paths::parent(file);
     // `dir != "/"` alone names a root Windows does not have; stop at whatever
     // the platform's root is, which is the path that is its own parent.
@@ -804,6 +809,20 @@ mod tests {
         assert!(Path::new(&format!("{src}/skills/foo/.x")).is_file());
         assert!(!Path::new(&format!("{src}/skills/foo/ref")).exists());
         assert!(!Path::new(&format!("{src}/rules/shared.md")).exists());
+    }
+
+    #[test]
+    fn pruning_stops_at_the_top_level_source_directory() {
+        let fx = fixture(&[
+            ("rules/only.md", "rule\n", "rule\n"),
+            ("skills/flutter/bloc/SKILL.md", "skill\n", "skill\n"),
+        ]);
+        let (status, _, err) = call(&fx, &["--yes"], None);
+        assert_eq!((status, err.as_str()), (0, ""));
+        let src = format!("{}/.ai/src", fx.child);
+        assert!(Path::new(&format!("{src}/rules")).is_dir());
+        assert!(Path::new(&format!("{src}/skills")).is_dir());
+        assert!(!Path::new(&format!("{src}/skills/flutter")).exists());
     }
 
     #[test]

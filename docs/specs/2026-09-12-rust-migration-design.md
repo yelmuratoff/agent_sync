@@ -544,8 +544,9 @@ decision to make once rather than a bug to find twice.
     into the overlay.
 30. `upgrade-config` rewrites every `agentsync_version:` line and ignores
     `AGENTSYNC_CONFIG_PATH`.
-31. `dedupe` removes a category directory it emptied, such as `.ai/src/rules/`,
-    not only emptied skill folders.
+31. *Fixed after 0.42.0.* `dedupe` removed a top-level source directory it
+    emptied, such as `.ai/src/rules/`, not only emptied skill folders. It now
+    stops below that directory; an emptied skill category still goes.
 32. `dedupe` ignores `AGENTSYNC_CONFIG_PATH`, even a missing one: it reads
     `shared.path` from and appends declined entries to `.ai/agent_sync.yaml`,
     else a root `agent_sync.yaml`.
