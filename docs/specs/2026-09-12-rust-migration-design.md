@@ -559,8 +559,9 @@ decision to make once rather than a bug to find twice.
     it from what follows.
 24. *Fixed in 0.38.0.* `resolve` in a project without overrides deleted
     `.ai/.pending-resolutions.yaml` whether or not it had a terminal.
-25. `simplify --apply` without a terminal deletes byte-identical payload copies
-    but keeps an override file it emptied.
+25. *Fixed after 0.42.0.* `simplify --apply` without a terminal deleted
+    byte-identical payload copies but kept an override file it emptied. Off a
+    terminal it now deletes neither without `-y`, and says so.
 26. *Fixed after 0.42.0.* `profile add --tools` kept spaces around
     comma-separated names and accepted unknown tools: `'claude, codex'` wrote
     `.ai/src/tools/ codex-hub.yaml`.

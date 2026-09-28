@@ -22,6 +22,7 @@
 - **The inlined skill index shows a folded description whole.** A skill whose `description:` is a `>-` block was indexed as `-`, and a `>` block showed only its first line; the index now carries the description `skills show` prints.
 - **`enable` adds `enabled:` inside an existing `tools:` block.** A config whose `tools:` had other keys but no `enabled:` got a second `tools:` block at the end of the file, which the reader then ignored.
 - **A nested config key matches only at its own level.** `tools.enabled` also matched an `enabled:` nested deeper, such as `tools.foo.enabled`, when reading or editing a config; a key one level further in no longer answers for it.
+- **`simplify --apply` deletes nothing off a terminal without `-y`.** A script running it removed byte-identical payload copies while keeping the override file it had emptied; both now wait for `-y`, and each kept file says so. Scripts that relied on the deletion add `-y`.
 
 ### Fixed
 
