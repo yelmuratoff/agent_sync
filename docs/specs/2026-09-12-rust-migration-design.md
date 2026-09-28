@@ -616,8 +616,10 @@ decision to make once rather than a bug to find twice.
     `repo.git`.
 51. A directory `import` copies the source project's `.ai/` alone, so a
     `source:` override pointing elsewhere in that project is not carried.
-52. `generate` ends with status 1 and no message when stdin closes before the
-    menu choice or the description is complete.
+52. *Fixed after 0.42.0.* `generate` ended with status 1 and no message when
+    stdin closed before the menu choice or the description was complete. At
+    the menu it now says `Cancelled.`; in the description the end of input
+    ends the text, which then goes into the prompt.
 53. `setup-hooks` reads its options in order and refuses the first unknown
     one, so `--bogus --help` prints the unknown-option error, not the help.
 54. `release` exits 1 with nothing after its `Continue? [Y/n]:` prompt when

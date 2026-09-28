@@ -95,8 +95,8 @@ fn output_prompt(
     Ok(())
 }
 
-/// `cmd_generate`: the prompt on `out`, the conversation on `err`. A closed
-/// stdin ends the run with status 1, as `read` under `set -e` did.
+/// `cmd_generate`: the prompt on `out`, the conversation on `err`. Input that
+/// ends at the menu cancels the run; in the description it ends the text.
 pub fn generate(
     args: &[String],
     style: &Style,
@@ -135,6 +135,7 @@ pub fn generate(
         )?;
         err.flush().map_err(|e| Error::io("<stderr>", e))?;
         let Some(line) = (env.read_line)() else {
+            put(err, b"\nCancelled.\n")?;
             return Ok(1);
         };
         choice = if line.is_empty() {
@@ -162,7 +163,7 @@ pub fn generate(
         put(err, format!("  {} ", style.dim("│")).as_bytes())?;
         err.flush().map_err(|e| Error::io("<stderr>", e))?;
         let Some(line) = (env.read_line)() else {
-            return Ok(1);
+            break;
         };
         if line.is_empty() {
             if prev_empty {
@@ -279,8 +280,10 @@ mod tests {
         assert!(err.contains("  ╭─────"));
         assert!(err.contains("  │   │   │   │   │ \n\n  ─── prompt below"));
         let (status, out, _) = run(&[], true, true, None, &["2", "only line"]);
+        assert_eq!(status, 0);
+        assert!(out.starts_with("## My Project\n\nonly line\n\n---\n\n"));
+        let (status, out, err) = run(&[], true, true, None, &[]);
         assert_eq!((status, out.as_str()), (1, ""));
-        let (status, _, _) = run(&[], true, true, None, &[]);
-        assert_eq!(status, 1);
+        assert!(err.ends_with("Choice [1/2]: \nCancelled.\n"), "{err}");
     }
 }
