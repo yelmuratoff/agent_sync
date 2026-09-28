@@ -184,19 +184,25 @@ fn inline_skills_into_file(
     include: &str,
     exclude: &str,
 ) -> Step {
+    let mut skills: Vec<_> = skill_tree::discover(&s.ws, src_skills)
+        .skills
+        .into_iter()
+        .filter(|skill| filters::matches_skill(&skill.name, &skill.rel, include, exclude))
+        .collect();
+    skills.sort_by(|a, b| a.category().cmp(b.category()));
     let mut entries = Vec::new();
-    for name in s.ws.glob(src_skills) {
-        let dir = format!("{src_skills}/{name}");
-        if !s.ws.is_dir(&dir) || !crate::engine::filters::matches(&name, include, exclude) {
-            continue;
+    let mut category = "";
+    for skill in &skills {
+        if skill.category() != category {
+            category = skill.category();
+            if !entries.is_empty() {
+                entries.push(b'\n');
+            }
+            entries.extend_from_slice(format!("### {category}\n\n").as_bytes());
         }
-        let skill_file = format!("{dir}/SKILL.md");
-        let desc = if s.ws.is_file(&skill_file) {
-            skill_description(&s.ws.read(&skill_file).map_err(|e| io(s, e))?)
-        } else {
-            Vec::new()
-        };
-        entries.extend_from_slice(format!("- `{name}`").as_bytes());
+        let skill_file = format!("{src_skills}/{}/SKILL.md", skill.rel);
+        let desc = skill_description(&s.ws.read(&skill_file).map_err(|e| io(s, e))?);
+        entries.extend_from_slice(format!("- `{}`", skill.name).as_bytes());
         if !desc.is_empty() {
             entries.extend_from_slice(" — ".as_bytes());
             entries.extend(desc);

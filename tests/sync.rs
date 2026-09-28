@@ -641,6 +641,18 @@ fn sync_lands_categorized_skills_flat_by_name_in_every_skills_dir() {
 }
 
 #[test]
+fn sync_groups_the_inlined_skill_index_by_category() {
+    let project = categorized_project();
+    project.enable_tools(&["amazonq"]);
+    project.agentsync().arg("sync").assert().success();
+    let index = project.read(".amazonq/rules/00-context.md");
+    assert!(index.contains(
+        "\n### cloudflare\n\n- `wrangler` — The wrangler fixture skill\n\n### flutter\n\n- `bloc` — The bloc fixture skill\n\n### flutter/ui\n\n- `slivers` — The slivers fixture skill\n"
+    ));
+    assert!(index.find("- `agentsync` — ").unwrap() < index.find("### ").unwrap());
+}
+
+#[test]
 fn sync_filters_a_whole_category_by_its_path() {
     let project = categorized_project();
     project.write(
