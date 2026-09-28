@@ -771,12 +771,10 @@ impl Importer<'_, '_> {
 
 /// What importing `src_root` over the project writes.
 struct ImportPlan {
-    /// Where each target is read from in the imported tree.
     sources: Vec<(&'static str, PathBuf)>,
     dest_base: PathBuf,
     dest_base_rel: String,
     diff: Diff,
-    /// The imported `agent_sync.yaml` without its `source:` block.
     imported_config: Option<String>,
     config_dest: PathBuf,
     config_action: &'static str,
