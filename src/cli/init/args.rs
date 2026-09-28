@@ -81,6 +81,20 @@ pub(super) struct Options {
     pub(super) dry_run: bool,
 }
 
+const VALUED_FLAGS: [&str; 5] = ["--tools", "--content", "--outputs", "--existing", "--ci"];
+
+impl Options {
+    fn set(&mut self, flag: &str, value: String) {
+        match flag {
+            "--tools" => self.tools = Some(value),
+            "--content" => self.content = Some(value),
+            "--outputs" => self.outputs = value,
+            "--existing" => self.existing = value,
+            _ => self.ci = value,
+        }
+    }
+}
+
 pub(super) fn parse_args(args: &[String], run: &mut Run) -> Result<Result<Options, u8>, Error> {
     let style = run.style;
     let mut options = Options {
@@ -98,39 +112,24 @@ pub(super) fn parse_args(args: &[String], run: &mut Run) -> Result<Result<Option
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
-        let mut valued = |flag: &str, run: &mut Run| -> Result<Result<String, u8>, Error> {
-            match rest.next() {
-                Some(value) => Ok(Ok(value.clone())),
-                None => {
+        if let Some((flag, value)) = arg
+            .split_once('=')
+            .filter(|(flag, _)| VALUED_FLAGS.contains(flag))
+        {
+            options.set(flag, value.to_string());
+            continue;
+        }
+        match arg.as_str() {
+            flag if VALUED_FLAGS.contains(&flag) => {
+                let Some(value) = rest.next() else {
                     run.tell(&format!(
                         "{}: {flag} requires a value\n",
                         style.red("Error")
                     ))?;
-                    Ok(Err(1))
-                }
+                    return Ok(Err(1));
+                };
+                options.set(flag, value.clone());
             }
-        };
-        match arg.as_str() {
-            "--tools" => match valued("--tools", run)? {
-                Ok(value) => options.tools = Some(value),
-                Err(status) => return Ok(Err(status)),
-            },
-            "--content" => match valued("--content", run)? {
-                Ok(value) => options.content = Some(value),
-                Err(status) => return Ok(Err(status)),
-            },
-            "--outputs" => match valued("--outputs", run)? {
-                Ok(value) => options.outputs = value,
-                Err(status) => return Ok(Err(status)),
-            },
-            "--existing" => match valued("--existing", run)? {
-                Ok(value) => options.existing = value,
-                Err(status) => return Ok(Err(status)),
-            },
-            "--ci" => match valued("--ci", run)? {
-                Ok(value) => options.ci = value,
-                Err(status) => return Ok(Err(status)),
-            },
             "--no-detect" => options.no_detect = true,
             "--no-sync" => options.run_sync = false,
             "--no-templates" => options.no_templates = true,
@@ -139,21 +138,6 @@ pub(super) fn parse_args(args: &[String], run: &mut Run) -> Result<Result<Option
             "--help" | "-h" => {
                 run.say(&HELP.render(style))?;
                 return Ok(Err(0));
-            }
-            flag if flag.starts_with("--tools=") => {
-                options.tools = Some(flag["--tools=".len()..].to_string());
-            }
-            flag if flag.starts_with("--content=") => {
-                options.content = Some(flag["--content=".len()..].to_string());
-            }
-            flag if flag.starts_with("--outputs=") => {
-                options.outputs = flag["--outputs=".len()..].to_string();
-            }
-            flag if flag.starts_with("--existing=") => {
-                options.existing = flag["--existing=".len()..].to_string();
-            }
-            flag if flag.starts_with("--ci=") => {
-                options.ci = flag["--ci=".len()..].to_string();
             }
             flag if flag.starts_with('-') => {
                 run.tell(&format!(
