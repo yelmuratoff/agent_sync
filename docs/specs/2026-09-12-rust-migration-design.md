@@ -590,10 +590,14 @@ decision to make once rather than a bug to find twice.
     destination, so two identical edits of one source named it twice.
 35. *Fixed after 0.42.0.* `migrate --apply --yes` printed `removed .agent/
     (pre-v0.6 layout)` with no blank line before `Planned moves:`.
-36. A legacy file without an extension, such as `.ai/src/settings/README`, moves
-    to `.ai/src/tools/README/settings.README`.
-37. Off a terminal without `--yes`, `migrate --apply` consolidates identical MCP
-    files but leaves `.agent/` in place.
+36. *Fixed after 0.42.0.* A legacy file without an extension, such as
+    `.ai/src/settings/README`, moved to `.ai/src/tools/README/settings.README`.
+    It is no payload, so `migrate` leaves it and the `update` banner ignores it.
+37. *Kept after 0.42.0.* Off a terminal without `--yes`, `migrate --apply`
+    consolidates identical MCP files but leaves `.agent/` in place. Each step
+    takes its prompt's default there: consolidating identical files loses
+    nothing and defaults to yes, removing `.agent/` loses its content and
+    defaults to no.
 38. *Kept after 0.42.0.* `refresh` heals `.ai/.template-manifest` with every
     shipped template that matches its copy, including categories outside
     `--only` and `AGENTS.md` without `--include-agents-md`. The healing keeps
