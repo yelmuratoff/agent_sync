@@ -77,33 +77,55 @@ fn usage(message: &str, style: &Style, err: &mut dyn Write) -> Result<(), Error>
 }
 
 /// `_add_validate_name`: the refusal, or nothing.
-fn validate_name(name: &str, style: &Style) -> Option<String> {
-    let error = style.red("Error");
+fn validate_name(name: &str) -> Option<String> {
     if name.is_empty() {
-        return Some(format!("{error}: Name is empty.\n"));
+        return Some("Name is empty.".into());
     }
     if name.contains('/') || name.contains('\\') {
-        return Some(format!(
-            "{error}: Name cannot contain path separators: {name}\n"
-        ));
+        return Some(format!("Name cannot contain path separators: {name}"));
     }
     if name.contains("..") {
-        return Some(format!("{error}: Name cannot contain '..': {name}\n"));
+        return Some(format!("Name cannot contain '..': {name}"));
     }
     if name.starts_with('.') || name.starts_with('-') {
-        return Some(format!(
-            "{error}: Name cannot start with '.' or '-': {name}\n"
-        ));
+        return Some(format!("Name cannot start with '.' or '-': {name}"));
     }
     if !name
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
         return Some(format!(
-            "{error}: Name may only contain letters, digits, hyphens, and underscores: {name}\n"
+            "Name may only contain letters, digits, hyphens, and underscores: {name}"
         ));
     }
     None
+}
+
+/// Why `entry` cannot be scaffolded, checked in the order `cmd_add` reports.
+fn entry_refusal(entry: &Entry, root: &str) -> Option<ParseStop> {
+    let Entry { kind, name, .. } = entry;
+    if !matches!(kind.as_str(), "rule" | "skill" | "command" | "subagent") {
+        return Some(ParseStop::Error(format!(
+            "Unknown kind '{kind}'.\nValid kinds: rule, skill, command, subagent"
+        )));
+    }
+    if let Some(message) = validate_name(name) {
+        return Some(ParseStop::Error(message));
+    }
+    if kind == "skill" && !crate::config::skill_metadata::valid_name(name) {
+        return Some(ParseStop::Error(format!(
+            "Skill name must be 1–64 lowercase letters, digits, or single hyphens and cannot end with a hyphen: {name}"
+        )));
+    }
+    if kind != "skill" && entry.category.is_some() {
+        return Some(ParseStop::Usage(format!(
+            "--category applies to skills, not {kind}"
+        )));
+    }
+    if kind != "skill" {
+        return None;
+    }
+    skill_place_refusal(root, &entry.category_path(), name).map(ParseStop::Error)
 }
 
 /// Why `category` cannot hold a skill, or nothing; an empty one is the root.
@@ -198,6 +220,15 @@ struct Entry {
     force: bool,
 }
 
+impl Entry {
+    /// The `--category` path without a trailing `/`, empty for the root.
+    fn category_path(&self) -> String {
+        self.category
+            .as_deref()
+            .map_or_else(String::new, |c| c.trim_end_matches('/').to_string())
+    }
+}
+
 /// How a command line that names no entry ends: help on stdout, a refusal
 /// followed by the usage, or a bare error line.
 enum ParseStop {
@@ -257,73 +288,17 @@ pub fn add(
     if args.first().map(String::as_str) == Some("mcp") {
         return add_mcp(&args[1..], root, style, out, err);
     }
-    let Entry {
-        kind,
-        name,
-        category,
-        force,
-    } = match parse_entry(args) {
+    let entry = match parse_entry(args) {
         Ok(entry) => entry,
-        Err(ParseStop::Help) => {
-            put(out, HELP.render(style).as_bytes())?;
-            return Ok(0);
-        }
-        Err(ParseStop::Usage(message)) => {
-            usage(&message, style, err)?;
-            return Ok(1);
-        }
-        Err(ParseStop::Error(message)) => {
-            put(
-                err,
-                format!("{}: {message}\n", style.red("Error")).as_bytes(),
-            )?;
-            return Ok(1);
-        }
+        Err(stop) => return report_stop(stop, style, out, err),
     };
-    if !matches!(kind.as_str(), "rule" | "skill" | "command" | "subagent") {
-        put(
-            err,
-            format!(
-                "{}: Unknown kind '{kind}'.\nValid kinds: rule, skill, command, subagent\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+    if let Some(stop) = entry_refusal(&entry, root) {
+        return report_stop(stop, style, out, err);
     }
-    if let Some(refusal) = validate_name(&name, style) {
-        put(err, refusal.as_bytes())?;
-        return Ok(1);
-    }
-    if kind == "skill" && !crate::config::skill_metadata::valid_name(&name) {
-        put(
-            err,
-            format!(
-                "{}: Skill name must be 1–64 lowercase letters, digits, or single hyphens and cannot end with a hyphen: {name}\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
-    if kind != "skill" && category.is_some() {
-        usage(
-            &format!("--category applies to skills, not {kind}"),
-            style,
-            err,
-        )?;
-        return Ok(1);
-    }
-    let category = category.map_or_else(String::new, |c| c.trim_end_matches('/').to_string());
-    if kind == "skill"
-        && let Some(refusal) = skill_place_refusal(root, &category, &name)
-    {
-        put(
-            err,
-            format!("{}: {refusal}\n", style.red("Error")).as_bytes(),
-        )?;
-        return Ok(1);
-    }
+    let category = entry.category_path();
+    let Entry {
+        kind, name, force, ..
+    } = entry;
     let Some(template) = catalog::content_template(&kind) else {
         put(
             err,
@@ -644,6 +619,96 @@ fn merge(content: &[u8], server: &str, entry: &str, force: bool) -> Result<Vec<u
     Ok(out)
 }
 
+struct McpArgs {
+    server: String,
+    url: String,
+    command: String,
+    args: String,
+    env: String,
+    force: bool,
+}
+
+fn parse_mcp(args: &[String]) -> Result<McpArgs, ParseStop> {
+    let mut parsed = McpArgs {
+        server: String::new(),
+        url: String::new(),
+        command: String::new(),
+        args: String::new(),
+        env: String::new(),
+        force: false,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            flag @ ("--url" | "--command" | "--args" | "--env") => {
+                let Some(value) = args.next() else {
+                    return Err(ParseStop::Usage(format!("{flag} requires a value.")));
+                };
+                let slot = match flag {
+                    "--url" => &mut parsed.url,
+                    "--command" => &mut parsed.command,
+                    "--args" => &mut parsed.args,
+                    _ => &mut parsed.env,
+                };
+                *slot = value.clone();
+            }
+            "--force" | "-f" => parsed.force = true,
+            "-h" | "--help" => return Err(ParseStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(ParseStop::Usage(format!("Unknown flag: {flag}")));
+            }
+            positional if parsed.server.is_empty() => parsed.server = positional.to_string(),
+            positional => {
+                return Err(ParseStop::Usage(format!(
+                    "Unexpected argument: {positional}"
+                )));
+            }
+        }
+    }
+    if parsed.server.is_empty() {
+        return Err(ParseStop::Usage("missing <server> for mcp".into()));
+    }
+    Ok(parsed)
+}
+
+/// Why `--url` and `--command` together name no single transport.
+fn transport_refusal(url: &str, command: &str) -> Option<ParseStop> {
+    match (url.is_empty(), command.is_empty()) {
+        (true, true) => Some(ParseStop::Usage(
+            "one of --url or --command is required.".into(),
+        )),
+        (false, false) => Some(ParseStop::Error(
+            "--url and --command are mutually exclusive.".into(),
+        )),
+        _ => None,
+    }
+}
+
+fn report_stop(
+    stop: ParseStop,
+    style: &Style,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<u8, Error> {
+    match stop {
+        ParseStop::Help => {
+            put(out, HELP.render(style).as_bytes())?;
+            Ok(0)
+        }
+        ParseStop::Usage(message) => {
+            usage(&message, style, err)?;
+            Ok(1)
+        }
+        ParseStop::Error(message) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            Ok(1)
+        }
+    }
+}
+
 /// `cmd_add_mcp`.
 fn add_mcp(
     args: &[String],
@@ -652,74 +717,22 @@ fn add_mcp(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut server = String::new();
-    let mut url = String::new();
-    let mut command = String::new();
-    let mut args_str = String::new();
-    let mut env_str = String::new();
-    let mut force = false;
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        match arg {
-            "--url" | "--command" | "--args" | "--env" => {
-                let Some(value) = args.get(i + 1) else {
-                    usage(&format!("{arg} requires a value."), style, err)?;
-                    return Ok(1);
-                };
-                match arg {
-                    "--url" => url = value.clone(),
-                    "--command" => command = value.clone(),
-                    "--args" => args_str = value.clone(),
-                    _ => env_str = value.clone(),
-                }
-                i += 2;
-            }
-            "--force" | "-f" => {
-                force = true;
-                i += 1;
-            }
-            "-h" | "--help" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                usage(&format!("Unknown flag: {flag}"), style, err)?;
-                return Ok(1);
-            }
-            positional => {
-                if server.is_empty() {
-                    server = positional.to_string();
-                    i += 1;
-                } else {
-                    usage(&format!("Unexpected argument: {positional}"), style, err)?;
-                    return Ok(1);
-                }
-            }
-        }
+    let McpArgs {
+        server,
+        url,
+        command,
+        args: args_str,
+        env: env_str,
+        force,
+    } = match parse_mcp(args) {
+        Ok(parsed) => parsed,
+        Err(stop) => return report_stop(stop, style, out, err),
+    };
+    if let Some(message) = validate_name(&server) {
+        return report_stop(ParseStop::Error(message), style, out, err);
     }
-    if server.is_empty() {
-        usage("missing <server> for mcp", style, err)?;
-        return Ok(1);
-    }
-    if let Some(refusal) = validate_name(&server, style) {
-        put(err, refusal.as_bytes())?;
-        return Ok(1);
-    }
-    if url.is_empty() && command.is_empty() {
-        usage("one of --url or --command is required.", style, err)?;
-        return Ok(1);
-    }
-    if !url.is_empty() && !command.is_empty() {
-        put(
-            err,
-            format!(
-                "{}: --url and --command are mutually exclusive.\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+    if let Some(stop) = transport_refusal(&url, &command) {
+        return report_stop(stop, style, out, err);
     }
     let mcp_file = PathBuf::from(format!("{root}/.ai/src/mcp.json"));
     let mut created = false;
@@ -808,8 +821,19 @@ mod tests {
 
     #[test]
     fn names_are_refused_like_add_validate_name() {
-        let style = Style::plain();
-        let refusal = |name: &str| validate_name(name, &style).unwrap_or_default();
+        let refusal = |name: &str| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            if let Some(message) = validate_name(name) {
+                report_stop(
+                    ParseStop::Error(message),
+                    &Style::plain(),
+                    &mut out,
+                    &mut err,
+                )
+                .unwrap();
+            }
+            String::from_utf8(err).unwrap()
+        };
         assert_eq!(refusal(""), "Error: Name is empty.\n");
         assert_eq!(
             refusal("sub/dir"),
