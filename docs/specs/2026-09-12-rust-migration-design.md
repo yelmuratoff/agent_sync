@@ -564,8 +564,8 @@ decision to make once rather than a bug to find twice.
     was reachable only for a file inside a rules directory.
 34. *Fixed after 0.42.0.* `adopt --all` printed one `✓ adopted` line per
     destination, so two identical edits of one source named it twice.
-35. `migrate --apply --yes` prints `removed .agent/ (pre-v0.6 layout)` with no
-    blank line before `Planned moves:`.
+35. *Fixed after 0.42.0.* `migrate --apply --yes` printed `removed .agent/
+    (pre-v0.6 layout)` with no blank line before `Planned moves:`.
 36. A legacy file without an extension, such as `.ai/src/settings/README`, moves
     to `.ai/src/tools/README/settings.README`.
 37. Off a terminal without `--yes`, `migrate --apply` consolidates identical MCP

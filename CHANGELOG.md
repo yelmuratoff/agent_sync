@@ -42,6 +42,7 @@
 - **Removing a key keeps the blank line that separated its neighbours.** `simplify --apply`, `resolve` and `profile remove` joined the key before a removed block to the one after it.
 - **`profile add` writes the profile's tools as `[a, b]`,** with the space every other flow list in the config has.
 - **`adopt --all` names each adopted source once.** The same edit in two tools' copies of a skill printed `✓ adopted` twice for one file and counted it twice in the total.
+- **`migrate --apply --yes` separates `removed .agent/` from the planned moves** with a blank line, as every other block of its report is.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 
