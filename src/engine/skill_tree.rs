@@ -43,6 +43,29 @@ impl Tree {
     }
 }
 
+/// Paths of `parent` skills a `child` skill of the same name replaces from
+/// another path; a skill at the same path merges file by file instead.
+pub fn shadowed(child: &Tree, parent: &Tree) -> Vec<String> {
+    parent
+        .skills
+        .iter()
+        .filter(|skill| {
+            child
+                .find(&skill.name)
+                .is_some_and(|own| own.rel != skill.rel)
+        })
+        .map(|skill| skill.rel.clone())
+        .collect()
+}
+
+/// Whether the source path `rel` lies inside one of the skill paths in `skills`.
+pub fn is_inside(rel: &str, skills: &[String]) -> bool {
+    skills.iter().any(|skill| {
+        rel.strip_prefix(skill.as_str())
+            .is_some_and(|rest| rest.starts_with('/'))
+    })
+}
+
 /// Every name more than one skill claims, with the paths that claim it.
 pub fn collisions(skills: &[Skill]) -> Vec<(&str, Vec<&str>)> {
     let mut by_name: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -166,6 +189,18 @@ mod tests {
         assert_eq!(found.skills, [skill("e", "a/b/c/d/e")]);
         assert_eq!(found.too_deep, ["a/b/c/d/f"]);
         assert!(found.empty_categories.is_empty());
+    }
+
+    #[test]
+    fn a_child_skill_shadows_a_parent_skill_of_its_name_at_another_path() {
+        let child = tree(&["meta/agentsync/SKILL.md", "a/SKILL.md"]);
+        let parent = tree(&["agentsync/SKILL.md", "a/SKILL.md", "b/SKILL.md"]);
+        let shadowed = shadowed(&child, &parent);
+        assert_eq!(shadowed, ["agentsync"]);
+        assert!(is_inside("agentsync/SKILL.md", &shadowed));
+        assert!(is_inside("agentsync/references/r.md", &shadowed));
+        assert!(!is_inside("agentsync-extra/SKILL.md", &shadowed));
+        assert!(!is_inside("agentsync", &shadowed));
     }
 
     #[test]
