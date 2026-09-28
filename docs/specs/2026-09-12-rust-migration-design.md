@@ -575,9 +575,11 @@ decision to make once rather than a bug to find twice.
     `init` refuse at the backup step with `Backup target parent is not a
     directory`. Cline no longer writes below `.clinerules`, and the refusal
     that remains for any other such file names it and says to move it.
-42. `init` drops every space inside a `--tools` or `--content` token, so
-    `cla ude` reads as `claude`; `--tools=` and `--content ''` skip the wizard
-    while contributing nothing.
+42. *Fixed after 0.42.0.* `init` dropped every space inside a `--tools` or
+    `--content` token, so `cla ude` read as `claude`; `--tools=` and
+    `--content ''` skipped the wizard while contributing nothing. Tokens are
+    now trimmed, a tool name with a space inside is refused, and an empty
+    value is refused as a missing one.
 43. `init` heals `.ai/.template-manifest` before it adopts existing outputs, so
     an adopted `AGENTS.md` carries the template's hash and `refresh` treats it
     as a silently kept edit.

@@ -271,6 +271,16 @@ fn initial_choices(
         return Ok(Err(1));
     }
     let from_flag = normalize_csv(options.tools.as_deref().unwrap_or(""));
+    if let Some(token) = from_flag
+        .iter()
+        .find(|token| token.contains(char::is_whitespace))
+    {
+        run.tell(&format!(
+            "{}: Invalid tool name in --tools: {token}\n",
+            run.style.red("Error")
+        ))?;
+        return Ok(Err(1));
+    }
     let from_detect = if options.no_detect {
         Vec::new()
     } else {

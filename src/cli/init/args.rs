@@ -175,15 +175,27 @@ pub(super) fn parse_args(args: &[String], run: &mut Run) -> Result<Result<Option
             }
         }
     }
+    for (flag, value) in [("--tools", &options.tools), ("--content", &options.content)] {
+        if value
+            .as_deref()
+            .is_some_and(|csv| normalize_csv(csv).is_empty())
+        {
+            run.tell(&format!(
+                "{}: {flag} requires a value\n",
+                style.red("Error")
+            ))?;
+            return Ok(Err(1));
+        }
+    }
     Ok(Ok(options))
 }
 
-/// `_init_normalize_csv`: spaces dropped inside each token, empties skipped,
-/// first occurrence kept.
+/// `_init_normalize_csv`: each token trimmed, empties skipped, first
+/// occurrence kept.
 pub(super) fn normalize_csv(csv: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for token in csv.split(',') {
-        let token: String = token.chars().filter(|c| *c != ' ').collect();
+        let token = token.trim().to_string();
         if token.is_empty() || out.contains(&token) {
             continue;
         }
@@ -223,7 +235,23 @@ mod tests {
     #[test]
     fn arguments_and_validation_are_refused_like_bash() {
         let (_dir, root) = project(&[]);
-        let cases: [(&[&str], u8, &str); 9] = [
+        let cases: [(&[&str], u8, &str); 13] = [
+            (&["--tools="], 1, "Error: --tools requires a value\n"),
+            (
+                &["--content", " "],
+                1,
+                "Error: --content requires a value\n",
+            ),
+            (
+                &["--tools", "claude,cla ude"],
+                1,
+                "Error: Invalid tool name in --tools: cla ude\n",
+            ),
+            (
+                &["--tools", "claude", "--content", " agents , rul es"],
+                1,
+                "Error: Unknown --content section: rul es\nValid sections: agents rules skills commands subagents\n",
+            ),
             (
                 &["--bogus"],
                 1,
