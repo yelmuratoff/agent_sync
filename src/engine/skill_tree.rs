@@ -18,6 +18,14 @@ pub struct Skill {
 }
 
 impl Skill {
+    /// The skill at source path `rel`, named after its last segment.
+    pub fn at(rel: &str) -> Self {
+        Self {
+            name: paths::leaf(rel).to_string(),
+            rel: rel.to_string(),
+        }
+    }
+
     /// The category path, empty for a skill at the root.
     pub fn category(&self) -> &str {
         self.rel
@@ -79,44 +87,53 @@ pub fn collisions(skills: &[Skill]) -> Vec<(&str, Vec<&str>)> {
 }
 
 pub fn discover(ws: &Workspace, root: &str) -> Tree {
-    let mut tree = Tree::default();
+    let mut walk = Walk {
+        ws,
+        root,
+        tree: Tree::default(),
+    };
     for name in ws.glob(root) {
         let path = format!("{root}/{name}");
         if ws.is_dir(&path) {
-            walk(ws, root, &name, 0, &mut tree);
+            walk.dir(&name, 0);
         } else if ws.is_file(&path) {
-            tree.files.push(name);
+            walk.tree.files.push(name);
         }
     }
-    tree
+    walk.tree
 }
 
-/// Whether `rel` holds a skill or a too-deep directory, so its parent is not
-/// reported empty as well.
-fn walk(ws: &Workspace, root: &str, rel: &str, depth: usize, tree: &mut Tree) -> bool {
-    let dir = format!("{root}/{rel}");
-    if ws.is_file(&format!("{dir}/SKILL.md")) {
-        tree.skills.push(Skill {
-            name: paths::leaf(rel).to_string(),
-            rel: rel.to_string(),
-        });
-        return true;
-    }
-    if depth >= MAX_CATEGORY_DEPTH {
-        tree.too_deep.push(rel.to_string());
-        return true;
-    }
-    let mut occupied = false;
-    for child in ws.glob(&dir) {
-        let child_rel = format!("{rel}/{child}");
-        if ws.is_dir(&format!("{root}/{child_rel}")) {
-            occupied |= walk(ws, root, &child_rel, depth + 1, tree);
+struct Walk<'a> {
+    ws: &'a Workspace,
+    root: &'a str,
+    tree: Tree,
+}
+
+impl Walk<'_> {
+    /// Whether `rel` holds a skill or a too-deep directory, so its parent is
+    /// not reported empty as well.
+    fn dir(&mut self, rel: &str, depth: usize) -> bool {
+        let dir = format!("{}/{rel}", self.root);
+        if self.ws.is_file(&format!("{dir}/SKILL.md")) {
+            self.tree.skills.push(Skill::at(rel));
+            return true;
         }
+        if depth >= MAX_CATEGORY_DEPTH {
+            self.tree.too_deep.push(rel.to_string());
+            return true;
+        }
+        let mut occupied = false;
+        for child in self.ws.glob(&dir) {
+            let child_rel = format!("{rel}/{child}");
+            if self.ws.is_dir(&format!("{}/{child_rel}", self.root)) {
+                occupied |= self.dir(&child_rel, depth + 1);
+            }
+        }
+        if !occupied {
+            self.tree.empty_categories.push(rel.to_string());
+        }
+        occupied
     }
-    if !occupied {
-        tree.empty_categories.push(rel.to_string());
-    }
-    occupied
 }
 
 #[cfg(test)]

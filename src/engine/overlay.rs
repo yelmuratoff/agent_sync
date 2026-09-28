@@ -127,7 +127,14 @@ fn fill_parent(
         if !ws.is_dir(&parent_dir) {
             continue;
         }
-        let shadowed = shadowed_skills(ws, category, &format!("{src}/{category}"), ws, &parent_dir);
+        let shadowed = if *category == "skills" {
+            skill_tree::shadowed(
+                &skill_tree::discover(ws, &format!("{src}/skills")),
+                &skill_tree::discover(ws, &parent_dir),
+            )
+        } else {
+            Vec::new()
+        };
         for file in ws.files_under(&parent_dir) {
             let rel = &file[parent_dir.len() + 1..];
             let target = format!("{src}/{category}/{rel}");
@@ -139,23 +146,6 @@ fn fill_parent(
         }
     }
     Ok(())
-}
-
-/// Parent skills a child skill of the same name replaces; none outside `skills`.
-fn shadowed_skills(
-    child_ws: &Workspace,
-    category: &str,
-    child_dir: &str,
-    parent_ws: &Workspace,
-    parent_dir: &str,
-) -> Vec<String> {
-    if category != "skills" {
-        return Vec::new();
-    }
-    skill_tree::shadowed(
-        &skill_tree::discover(child_ws, child_dir),
-        &skill_tree::discover(parent_ws, parent_dir),
-    )
 }
 
 /// `_overlay_rewrite_sources`: only the paths the overlay materialised.
@@ -352,13 +342,17 @@ pub fn merge_shared_parent(
         if !parent_dir.is_dir() {
             continue;
         }
-        let shadowed = shadowed_skills(
-            ws,
-            category,
-            &format!("{child_src}/{category}"),
-            &Workspace::on_disk(parent_src),
-            &format!("{parent_src}/{category}"),
-        );
+        let shadowed = if *category == "skills" {
+            skill_tree::shadowed(
+                &skill_tree::discover(ws, &format!("{child_src}/skills")),
+                &skill_tree::discover(
+                    &Workspace::on_disk(parent_src),
+                    &format!("{parent_src}/skills"),
+                ),
+            )
+        } else {
+            Vec::new()
+        };
         let mut files = Vec::new();
         collect_regular_files(&parent_dir, "", &mut files);
         for (rel, disk) in files {

@@ -2,7 +2,8 @@
 //! prune an extraneous entry only when `Session::may_prune` allows it.
 
 use crate::engine::session::Session;
-use crate::{Error, engine::filters, engine::skill_tree, paths};
+use crate::engine::skill_tree::{self, Skill};
+use crate::{Error, engine::filters, paths};
 
 /// `cleanup_path`: removes `target` when it exists; true when something went.
 /// A failed removal is not an error: Bash calls it inside an `if`, where
@@ -81,20 +82,20 @@ pub fn sync_skills_dir(
     let entries = tree
         .skills
         .iter()
-        .map(|skill| (skill.name.clone(), skill.rel.clone()))
-        .chain(tree.files.iter().map(|file| (file.clone(), file.clone())));
+        .cloned()
+        .chain(tree.files.iter().map(|file| Skill::at(file)));
     let mut source_items: Vec<String> = Vec::new();
-    for (name, rel) in entries {
-        if !filters::matches_skill(&name, &rel, include, exclude) {
+    for entry in entries {
+        if !filters::matches_skill(&entry, include, exclude) {
             continue;
         }
-        source_items.push(name.clone());
+        source_items.push(entry.name.clone());
         if s.dry_run {
             continue;
         }
-        let target = format!("{dest}/{name}");
+        let target = format!("{dest}/{}", entry.name);
         let _ = s.ws.remove(&target);
-        s.ws.copy(&format!("{src}/{rel}"), &target)?;
+        s.ws.copy(&format!("{src}/{}", entry.rel), &target)?;
         if s.ws.is_dir(&target) {
             s.record_tree(&target);
         } else {
@@ -104,8 +105,11 @@ pub fn sync_skills_dir(
 
     let mut cleaned = 0usize;
     for name in s.ws.glob(dest) {
-        let rel = tree.find(&name).map_or(name.as_str(), |skill| &skill.rel);
-        if source_items.contains(&name) || !filters::matches_skill(&name, rel, include, exclude) {
+        let entry = tree
+            .find(&name)
+            .cloned()
+            .unwrap_or_else(|| Skill::at(&name));
+        if source_items.contains(&name) || !filters::matches_skill(&entry, include, exclude) {
             continue;
         }
         let item = format!("{dest}/{name}");

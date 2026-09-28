@@ -128,18 +128,24 @@ fn category_refusal(category: &str) -> Option<String> {
     })
 }
 
-/// Where a skill named `name` already lives, when not at `category/name`.
-fn skill_elsewhere(root: &str, category: &str, name: &str) -> Option<String> {
-    let skills = format!("{root}/.ai/src/skills");
+/// Why a skill named `name` cannot land in `category`, or nothing: a bad
+/// category path, or the name already taken at another path.
+fn skill_place_refusal(root: &str, category: &str, name: &str) -> Option<String> {
+    if let Some(refusal) = category_refusal(category) {
+        return Some(refusal);
+    }
     let wanted = if category.is_empty() {
         name.to_string()
     } else {
         format!("{category}/{name}")
     };
-    skill_tree::discover(&Workspace::on_disk(root), &skills)
-        .find(name)
-        .filter(|skill| skill.rel != wanted)
-        .map(|skill| skill.rel.clone())
+    let skills = format!("{root}/.ai/src/skills");
+    let tree = skill_tree::discover(&Workspace::on_disk(root), &skills);
+    let taken = tree.find(name).filter(|skill| skill.rel != wanted)?;
+    Some(format!(
+        "Skill '{name}' already exists at .ai/src/skills/{}/\n\nSkill names are unique across categories — every tool installs skills flat by name.",
+        taken.rel
+    ))
 }
 
 /// `_add_resolve_dest`, below `.ai/src/`.
@@ -268,35 +274,21 @@ pub fn add(
         )?;
         return Ok(1);
     }
-    let category = match (kind.as_str(), category) {
-        (_, None) => String::new(),
-        ("skill", Some(category)) => category.trim_end_matches('/').to_string(),
-        (_, Some(_)) => {
-            usage(
-                &format!("--category applies to skills, not {kind}"),
-                style,
-                err,
-            )?;
-            return Ok(1);
-        }
-    };
-    if let Some(refusal) = category_refusal(&category) {
-        put(
+    if kind != "skill" && category.is_some() {
+        usage(
+            &format!("--category applies to skills, not {kind}"),
+            style,
             err,
-            format!("{}: {refusal}\n", style.red("Error")).as_bytes(),
         )?;
         return Ok(1);
     }
+    let category = category.map_or_else(String::new, |c| c.trim_end_matches('/').to_string());
     if kind == "skill"
-        && let Some(taken) = skill_elsewhere(root, &category, &name)
+        && let Some(refusal) = skill_place_refusal(root, &category, &name)
     {
         put(
             err,
-            format!(
-                "{}: Skill '{name}' already exists at .ai/src/skills/{taken}/\n\nSkill names are unique across categories — every tool installs skills flat by name.\n",
-                style.red("Error")
-            )
-            .as_bytes(),
+            format!("{}: {refusal}\n", style.red("Error")).as_bytes(),
         )?;
         return Ok(1);
     }

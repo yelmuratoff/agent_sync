@@ -187,7 +187,7 @@ fn inline_skills_into_file(
     let mut skills: Vec<_> = skill_tree::discover(&s.ws, src_skills)
         .skills
         .into_iter()
-        .filter(|skill| filters::matches_skill(&skill.name, &skill.rel, include, exclude))
+        .filter(|skill| filters::matches_skill(skill, include, exclude))
         .collect();
     skills.sort_by(|a, b| a.category().cmp(b.category()));
     let mut entries = Vec::new();
@@ -229,7 +229,7 @@ fn refuse_skill_collisions(s: &mut Session, src: &str, include: &str, exclude: &
     let filtered: Vec<_> = skill_tree::discover(&s.ws, src)
         .skills
         .into_iter()
-        .filter(|skill| filters::matches_skill(&skill.name, &skill.rel, include, exclude))
+        .filter(|skill| filters::matches_skill(skill, include, exclude))
         .collect();
     let collisions = skill_tree::collisions(&filtered);
     if collisions.is_empty() {

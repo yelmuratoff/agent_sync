@@ -1,10 +1,11 @@
 use std::io::Write;
 
 use crate::config::skill_metadata;
+use crate::engine::filters;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
+use crate::engine::skill_tree::{self, Tree};
 use crate::engine::workspace::Workspace;
-use crate::engine::{filters, skill_tree};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::paths::Paths;
@@ -123,7 +124,7 @@ pub fn run(
             continue;
         }
         if matches!(parsed.action, Action::List)
-            && !filters::matches_skill(name, rel, &parsed.include, &parsed.exclude)
+            && !filters::matches_skill(skill, &parsed.include, &parsed.exclude)
         {
             continue;
         }
@@ -210,37 +211,7 @@ pub fn run(
         }
     }
     if matches!(parsed.action, Action::Check) {
-        let shown_dir = |rel: &str| {
-            let dir = source
-                .origins
-                .iter()
-                .map(|origin| format!("{origin}/{rel}"))
-                .find(|dir| session.ws.is_dir(dir))
-                .unwrap_or_else(|| format!("{}/{rel}", source.effective));
-            cell(&session.display(&dir))
-        };
-        let mut findings = Vec::new();
-        for (name, rels) in skill_tree::collisions(&tree.skills) {
-            let claims: Vec<_> = rels.iter().map(|rel| shown_dir(rel)).collect();
-            findings.push(format!(
-                "{}: name claimed by {} — tools install skills flat by name",
-                cell(name),
-                claims.join(", ")
-            ));
-        }
-        for rel in &tree.empty_categories {
-            findings.push(format!(
-                "{}/: no SKILL.md here or in any subdirectory",
-                shown_dir(rel)
-            ));
-        }
-        for rel in &tree.too_deep {
-            findings.push(format!(
-                "{}/: deeper than {} categories — not synced",
-                shown_dir(rel),
-                skill_tree::MAX_CATEGORY_DEPTH
-            ));
-        }
+        let findings = layout_findings(&session, &source, &tree);
         issues += findings.len();
         for finding in findings {
             write(out, &format!("{finding}\n"))?;
@@ -254,6 +225,42 @@ pub fn run(
         return Ok(1);
     }
     Ok(u8::from(issues > 0))
+}
+
+/// `check`'s findings about the tree itself: shared names, empty and too-deep categories.
+fn layout_findings(session: &Session, source: &render::SkillSource, tree: &Tree) -> Vec<String> {
+    let shown_dir = |rel: &str| {
+        let dir = source
+            .origins
+            .iter()
+            .map(|origin| format!("{origin}/{rel}"))
+            .find(|dir| session.ws.is_dir(dir))
+            .unwrap_or_else(|| format!("{}/{rel}", source.effective));
+        cell(&session.display(&dir))
+    };
+    let mut findings = Vec::new();
+    for (name, rels) in skill_tree::collisions(&tree.skills) {
+        let claims: Vec<_> = rels.iter().map(|rel| shown_dir(rel)).collect();
+        findings.push(format!(
+            "{}: name claimed by {} — tools install skills flat by name",
+            cell(name),
+            claims.join(", ")
+        ));
+    }
+    for rel in &tree.empty_categories {
+        findings.push(format!(
+            "{}/: no SKILL.md here or in any subdirectory",
+            shown_dir(rel)
+        ));
+    }
+    for rel in &tree.too_deep {
+        findings.push(format!(
+            "{}/: deeper than {} categories — not synced",
+            shown_dir(rel),
+            skill_tree::MAX_CATEGORY_DEPTH
+        ));
+    }
+    findings
 }
 
 fn parse(args: &[String]) -> Result<Args, String> {

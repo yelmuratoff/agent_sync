@@ -1,5 +1,7 @@
 //! Include/exclude filters, mirroring `matches_filter` in `lib/helpers/filters.sh`.
 
+use crate::engine::skill_tree::Skill;
+
 /// Whether `filename` passes the space-separated glob lists: any exclude match
 /// rejects, an empty include accepts everything, otherwise any include match accepts.
 pub fn matches(filename: &str, include: &str, exclude: &str) -> bool {
@@ -14,8 +16,8 @@ pub fn matches(filename: &str, include: &str, exclude: &str) -> bool {
 
 /// `matches` for a skill: a pattern names either the skill or its path below
 /// the skills root, so `cloudflare/*` filters a whole category.
-pub fn matches_skill(name: &str, rel: &str, include: &str, exclude: &str) -> bool {
-    let hit = |pat: &str| glob_match(pat, name) || glob_match(pat, rel);
+pub fn matches_skill(skill: &Skill, include: &str, exclude: &str) -> bool {
+    let hit = |pat: &str| glob_match(pat, &skill.name) || glob_match(pat, &skill.rel);
     if split_patterns(exclude).any(hit) {
         return false;
     }
@@ -123,27 +125,21 @@ mod tests {
 
     #[test]
     fn a_skill_pattern_names_the_skill_or_its_category_path() {
-        assert!(!matches_skill(
-            "wrangler",
-            "cloudflare/wrangler",
+        let wrangler = Skill::at("cloudflare/wrangler");
+        assert!(!matches_skill(&wrangler, "", "cloudflare/*"));
+        assert!(!matches_skill(&wrangler, "", "wrangler"));
+        assert!(matches_skill(
+            &Skill::at("flutter/bloc"),
             "",
             "cloudflare/*"
         ));
-        assert!(!matches_skill(
-            "wrangler",
-            "cloudflare/wrangler",
-            "",
-            "wrangler"
-        ));
-        assert!(matches_skill("bloc", "flutter/bloc", "", "cloudflare/*"));
         assert!(matches_skill(
-            "slivers",
-            "flutter/ui/slivers",
+            &Skill::at("flutter/ui/slivers"),
             "flutter/*",
             ""
         ));
-        assert!(!matches_skill("auth", "backend/auth", "flutter/*", ""));
-        assert!(matches_skill("commit", "commit", "flutter/* commit", ""));
+        assert!(!matches_skill(&Skill::at("backend/auth"), "flutter/*", ""));
+        assert!(matches_skill(&Skill::at("commit"), "flutter/* commit", ""));
     }
 
     #[test]
