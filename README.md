@@ -1041,9 +1041,10 @@ subagents, settings, hooks, and MCP are separate targets and are untouched.
 
 Delete the file as well as disabling the target. A `CLAUDE.md` left from an
 earlier sync keeps being read by Claude Code, and because nothing regenerates
-it, it quietly ages while `agentsync check` still reports the project as
-synced. Once it is gone, the next sync drops it from the manifest and `check`
-stays green.
+it, it quietly ages. Sync leaves it in place, so a file you froze on purpose
+survives; `agentsync check` and `agentsync doctor` name it as left from a
+disabled target without failing. Once it is gone, the next sync drops it from
+the manifest.
 
 ## Workspaces — nested AgentSync projects
 

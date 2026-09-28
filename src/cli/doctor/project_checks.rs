@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::Doctor;
 use super::json::json_valid;
 use super::secrets::scan_secrets;
+use crate::cli::stale_targets::{self, Stale};
 use crate::cli::{files_below, sorted_entries};
 use crate::engine::{skill_tree, workspace::Workspace};
 use crate::paths::{self, DiskText};
@@ -266,6 +267,16 @@ impl Doctor<'_> {
                 ))?;
                 found += 1;
             }
+        }
+        let recorded: Vec<String> = Manifest::load(&self.root)?
+            .map(|manifest| manifest.paths().into_iter().collect())
+            .unwrap_or_default();
+        for stale in stale_targets::left_by_disabled_targets(self.project, &recorded)? {
+            let Stale { rel, slug, key } = stale;
+            self.advise(&format!(
+                "{rel} — left from {slug} targets.{key}, which is disabled (delete it, or set targets.{key}.enabled back to true)"
+            ))?;
+            found += 1;
         }
         if found == 0 {
             self.ok("No orphan tool-output directories")?;

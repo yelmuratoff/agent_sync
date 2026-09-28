@@ -24,6 +24,7 @@ pub mod shell_init;
 pub mod show;
 pub mod simplify;
 pub mod skills;
+mod stale_targets;
 pub mod sync;
 pub mod update;
 pub mod upgrade_config;
