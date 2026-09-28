@@ -482,8 +482,10 @@ was never a quirk. The rest stand, and 21 of them have no test pinning them,
 which the plan puts first. Nothing here is a regression: each item is a
 decision to make once rather than a bug to find twice.
 
-1. `parse_yaml_list` on an empty block key keeps scanning and returns the next
-   dash list anywhere later in the file (`yaml.sh:180-197`).
+1. *Fixed after 0.42.0.* `parse_yaml_list` on an empty block key kept scanning
+   and returned the next dash list anywhere later in the file
+   (`yaml.sh:180-197`); the first line under the key that is not a list item
+   now ends the list.
 2. *Kept and documented after 0.42.0.* An unquoted scalar is cut at the first
    `#`, even without a preceding space. Changing it would lengthen every
    existing unquoted value holding a `#` without a migration, so the README
@@ -517,10 +519,11 @@ decision to make once rather than a bug to find twice.
 12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last
     project that failed as "max exit code" and exited with it
     (`bin/agentsync.sh`, `cmd_workspace_fanout`).
-13. `version_pin: warn` followed later by a `version_pin:` mapping with
-    `mode: strict` reads as `warn`: the reader answers the first `version_pin`
-    key, so the nested lookup is empty and the scalar wins (`version.sh`,
-    `version_pin_mode`).
+13. *Fixed after 0.42.0.* `version_pin: warn` followed later by a
+    `version_pin:` mapping with `mode: strict` read as `warn`: the reader
+    answered the first `version_pin` key, so the nested lookup was empty and
+    the scalar won (`version.sh`, `version_pin_mode`). A key holding a value
+    no longer opens a section, so the later mapping answers.
 14. *Fixed after 0.42.0.* `enable` and `disable` edited `.ai/agent_sync.yaml`,
     or a root `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selected
     another file, while "already enabled" read the selected one.

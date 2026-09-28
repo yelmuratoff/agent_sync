@@ -97,6 +97,9 @@ pub fn found(text: &str, key_path: &str) -> Option<String> {
         if level + 1 == keys.len() {
             return Some(normalize_scalar(rest));
         }
+        if !normalize_scalar(rest).is_empty() {
+            continue;
+        }
         in_section = true;
         section_indent = indent;
         level += 1;
@@ -125,6 +128,7 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
     let mut section_indent = 0usize;
     let mut in_section = false;
     let mut collecting = false;
+    let mut key_indent = 0usize;
     let mut list_indent: Option<usize> = None;
 
     for line in text.lines() {
@@ -134,7 +138,11 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
         let (indent, stripped) = strip_indent(line);
 
         if collecting {
-            if let Some(item) = stripped.strip_prefix('-') {
+            let dash = stripped.strip_prefix('-');
+            if list_indent.is_none() && (dash.is_none() || indent < key_indent) {
+                return items;
+            }
+            if let Some(item) = dash {
                 let expected = *list_indent.get_or_insert(indent);
                 if indent == expected {
                     let item = normalize_scalar(item);
@@ -150,7 +158,7 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
             continue;
         }
 
-        let Some((key, _)) = split_key(stripped) else {
+        let Some((key, rest)) = split_key(stripped) else {
             continue;
         };
         if !in_section {
@@ -167,6 +175,10 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
         }
         if level + 1 == keys.len() {
             collecting = true;
+            key_indent = indent;
+            continue;
+        }
+        if !normalize_scalar(rest).is_empty() {
             continue;
         }
         in_section = true;
@@ -281,11 +293,23 @@ url: http://example.com/x#frag
         assert_eq!(list(text, "tools.enabled"), ["claude"]);
     }
 
-    // Design spec, "Known quirks", item 1: reproduced on purpose until cutover.
     #[test]
-    fn an_empty_block_key_takes_the_next_dash_list_like_bash_does() {
+    fn an_empty_block_key_ends_at_the_next_key() {
         let text = "tools:\n  enabled:\nother:\n  - stolen\n";
-        assert_eq!(list(text, "tools.enabled"), ["stolen"]);
+        assert!(list(text, "tools.enabled").is_empty());
+        let text = "tools:\n  enabled:\n  other: x\n  list:\n    - stolen\n";
+        assert!(list(text, "tools.enabled").is_empty());
+        let compact = "tools:\n  enabled:\n  - claude\n";
+        assert_eq!(list(compact, "tools.enabled"), ["claude"]);
+    }
+
+    #[test]
+    fn a_key_holding_a_scalar_is_not_the_section_of_a_later_mapping() {
+        let text = "pin: warn\npin:\n  mode: strict\n";
+        assert_eq!(value(text, "pin.mode"), "strict");
+        assert_eq!(value(text, "pin"), "warn");
+        let text = "tools: x\ntools:\n  enabled:\n    - a\n";
+        assert_eq!(list(text, "tools.enabled"), ["a"]);
     }
 
     #[test]
