@@ -131,7 +131,7 @@ pub(super) fn scaffold(
     let templates = catalog::template_files();
     manifest.heal_from_match(
         templates.iter().map(|(rel, bytes)| (rel.as_str(), *bytes)),
-        Path::new(&src),
+        |rel| Path::new(&src).join(rel),
     );
     manifest.write(Path::new(s.target))?;
     checkpoint(interrupt)?;

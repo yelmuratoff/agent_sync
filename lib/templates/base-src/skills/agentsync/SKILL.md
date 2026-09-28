@@ -37,7 +37,7 @@ Create and maintain AI agent instructions in the AgentSync format.
 
 After editing, run `agentsync sync` to distribute to all tools.
 
-Group many skills into category directories — a directory without `SKILL.md` is a category, up to four levels deep. No tool reads categories the same way (Claude Code, VS Code Copilot, and Gemini CLI skip nested skills), so sync lands every skill flat at `<dest>/<name>/`. Leaf names stay unique across categories: two skills sharing a name stop sync. Filter a whole category with a path glob — `exclude: cloudflare/*` in a tool's `targets.skills` — and inspect the layout with `agentsync skills check`.
+Group many skills into category directories — a directory without `SKILL.md` is a category, up to four levels deep. No tool reads categories the same way (Claude Code, VS Code Copilot, and Gemini CLI skip nested skills), so sync lands every skill flat at `<dest>/<name>/`. Leaf names stay unique across categories: two skills sharing a name stop sync. Filter a whole category with a path glob — `exclude: cloudflare/*` in a tool's `targets.skills` — and inspect the layout with `agentsync skills check`. A shipped skill moved into a category still receives `agentsync refresh` updates there.
 
 Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in (`agentsync enable`, `agentsync customize`, `agentsync add mcp`). When absent, AgentSync falls back to its shipped base templates. The flat `settings/`, `mcp/`, and `hooks/` directories from older layouts still work but are deprecated — preview their move with `agentsync migrate --legacy` and apply it with `agentsync migrate --apply`.
 

@@ -1,17 +1,44 @@
 //! The three-way classification of each template against the manifest, the
 //! project file, and the `agent_sync.yaml` overrides.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::template_manifest::{self, TemplateManifest};
 use crate::config::yaml_subset;
+use crate::engine::skill_tree::{self, Tree};
+use crate::engine::workspace::Workspace;
 use crate::transaction::manifest::sha256_hex;
 
-/// One `<rel>|<template>|<hash>` entry of the `*_FILES` arrays.
+/// One `<rel>|<template>|<hash>` entry of the `*_FILES` arrays, and where its
+/// project copy lives.
 pub(super) struct Candidate {
     pub(super) rel: String,
     pub(super) bytes: &'static [u8],
     pub(super) hash: String,
+    pub(super) dest: PathBuf,
+}
+
+/// Where a template's project copy lives: at the template's own path, except
+/// inside a skill the project keeps in a category, which the copy follows.
+pub(super) struct Locator {
+    base: PathBuf,
+    skills: Tree,
+}
+
+impl Locator {
+    pub(super) fn new(base: &str) -> Self {
+        Self {
+            base: PathBuf::from(base),
+            skills: skill_tree::discover(&Workspace::on_disk(base), &format!("{base}/skills")),
+        }
+    }
+
+    pub(super) fn path(&self, rel: &str) -> PathBuf {
+        match rel.strip_prefix("skills/") {
+            Some(inside) => self.base.join("skills").join(self.skills.locate(inside)),
+            None => self.base.join(rel),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -25,7 +52,7 @@ pub(super) struct Changes {
 }
 
 struct Classifier<'a> {
-    user_base: &'a Path,
+    locator: &'a Locator,
     manifest: &'a TemplateManifest,
     declined: &'a [String],
     pinned: &'a [String],
@@ -41,12 +68,13 @@ impl Classifier<'_> {
         }
         let t_new = sha256_hex(bytes);
         let t_old = self.manifest.lookup(rel);
+        let dest = self.locator.path(rel);
         let candidate = || Candidate {
             rel: rel.to_string(),
             bytes,
             hash: t_new.clone(),
+            dest: dest.clone(),
         };
-        let dest = self.user_base.join(rel);
         if !dest.is_file() {
             if t_old.is_some() {
                 self.changes.deleted.push(candidate());
@@ -113,7 +141,7 @@ pub(super) fn load_overrides(root: &str) -> (Vec<String>, Vec<String>) {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn collect(
     templates: &[(String, &'static [u8])],
-    user_base: &Path,
+    locator: &Locator,
     categories: &[String],
     include_agents_md: bool,
     manifest: &TemplateManifest,
@@ -122,7 +150,7 @@ pub(super) fn collect(
     review: bool,
 ) -> Changes {
     let mut classifier = Classifier {
-        user_base,
+        locator,
         manifest,
         declined,
         pinned,

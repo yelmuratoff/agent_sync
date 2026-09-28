@@ -184,6 +184,56 @@ fn refresh_user_edited_no_change_is_silent() {
     assert_eq!(project.read(".ai/src/rules/core.md"), before);
 }
 
+// ── skills kept in a category ────────────────────────────────────────────────
+
+fn move_skill_into_category(project: &Project, name: &str, category: &str) {
+    std::fs::create_dir_all(project.join(&format!(".ai/src/skills/{category}"))).unwrap();
+    std::fs::rename(
+        project.join(&format!(".ai/src/skills/{name}")),
+        project.join(&format!(".ai/src/skills/{category}/{name}")),
+    )
+    .unwrap();
+}
+
+#[test]
+fn refresh_follows_a_template_skill_into_its_category() {
+    let project = seeded();
+    move_skill_into_category(&project, "comments", "meta");
+    project
+        .agentsync()
+        .args(["refresh", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Already up to date"))
+        .stdout(predicate::str::contains("Locally declined").not());
+    assert!(!project.exists(".ai/src/skills/comments"));
+}
+
+#[test]
+fn refresh_auto_updates_a_template_skill_kept_in_a_category() {
+    let project = seeded();
+    let shipped = project.read(".ai/src/skills/comments/SKILL.md");
+    move_skill_into_category(&project, "comments", "meta");
+    project.write(".ai/src/skills/meta/comments/SKILL.md", "OLD TEMPLATE\n");
+    drop_manifest_entry(&project, "skills/comments/SKILL.md");
+    let old = project.sha256(".ai/src/skills/meta/comments/SKILL.md");
+    project.append(
+        ".ai/.template-manifest",
+        &format!("skills/comments/SKILL.md\t{old}\n"),
+    );
+
+    project
+        .agentsync()
+        .args(["refresh", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(
+        project.read(".ai/src/skills/meta/comments/SKILL.md"),
+        shipped
+    );
+    assert!(!project.exists(".ai/src/skills/comments"));
+}
+
 // ── deleted (skip-as-decline + restore) ──────────────────────────────────────
 
 #[test]

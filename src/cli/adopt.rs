@@ -478,14 +478,8 @@ impl<'a> Resolver<'a> {
             .unwrap_or(&found.dest_abs)
             .to_string();
         if key == "skills" {
-            let (name, rest) = match rel_inside.split_once('/') {
-                Some((name, rest)) => (name, format!("/{rest}")),
-                None => (rel_inside.as_str(), String::new()),
-            };
-            let tree = skill_tree::discover(&Workspace::on_disk(&src_root), &src_root);
-            if let Some(skill) = tree.find(name) {
-                rel_inside = format!("{}{rest}", skill.rel);
-            }
+            rel_inside =
+                skill_tree::discover(&Workspace::on_disk(&src_root), &src_root).locate(&rel_inside);
         } else {
             let ext = value(&format!("targets.{key}.extension"));
             if !ext.is_empty()

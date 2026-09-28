@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::Env;
-use super::classify::{Candidate, Changes};
+use super::classify::{Candidate, Changes, Locator};
 use crate::Error;
 use crate::cli::put;
 use crate::config::template_manifest::TemplateManifest;
@@ -15,7 +15,7 @@ use crate::output::style::Style;
 pub(super) struct Run<'a, 'b> {
     pub(super) style: &'a Style,
     pub(super) env: &'a mut Env<'b>,
-    pub(super) user_base: PathBuf,
+    pub(super) locator: Locator,
     pub(super) manifest: TemplateManifest,
     pub(super) out: &'a mut dyn Write,
     pub(super) err: &'a mut dyn Write,
@@ -34,13 +34,13 @@ impl Run<'_, '_> {
     pub(super) fn heal(&mut self, templates: &[(String, &'static [u8])]) {
         self.manifest.heal_from_match(
             templates.iter().map(|(rel, bytes)| (rel.as_str(), *bytes)),
-            &self.user_base,
+            |rel| self.locator.path(rel),
         );
     }
 
     /// `_refresh_copy` followed by `template_manifest_record`.
     pub(super) fn copy(&mut self, entry: &Candidate) -> Result<(), Error> {
-        write_template(&self.user_base.join(&entry.rel), entry.bytes)?;
+        write_template(&entry.dest, entry.bytes)?;
         self.manifest.record(&entry.rel, &entry.hash);
         Ok(())
     }
@@ -197,10 +197,7 @@ impl Run<'_, '_> {
             match self.answer().as_str() {
                 "u" | "update" => return Ok('u'),
                 "s" | "skip" => return Ok('s'),
-                "v" | "view" => {
-                    let dest = self.user_base.join(&entry.rel);
-                    self.show_diff(&dest, entry.bytes)?;
-                }
+                "v" | "view" => self.show_diff(&entry.dest, entry.bytes)?,
                 "q" | "quit" => return Ok('q'),
                 _ => self.tell(&format!(
                     "    {}\n",

@@ -49,6 +49,17 @@ impl Tree {
     pub fn find(&self, name: &str) -> Option<&Skill> {
         self.skills.iter().find(|skill| skill.name == name)
     }
+
+    /// `rel` below the skills root as a flat `<name>/…` path, moved into the
+    /// category that holds the skill of that name; unchanged when none does.
+    pub fn locate(&self, rel: &str) -> String {
+        let (name, rest) = rel.split_once('/').unwrap_or((rel, ""));
+        match self.find(name) {
+            Some(skill) if rest.is_empty() => skill.rel.clone(),
+            Some(skill) => format!("{}/{rest}", skill.rel),
+            None => rel.to_string(),
+        }
+    }
 }
 
 /// Paths of `parent` skills a `child` skill of the same name replaces from
@@ -218,6 +229,19 @@ mod tests {
         assert!(is_inside("agentsync/references/r.md", &shadowed));
         assert!(!is_inside("agentsync-extra/SKILL.md", &shadowed));
         assert!(!is_inside("agentsync", &shadowed));
+    }
+
+    #[test]
+    fn a_flat_path_is_located_in_the_category_holding_its_skill() {
+        let found = tree(&["git/commit/SKILL.md", "debug/SKILL.md"]);
+        assert_eq!(found.locate("commit/SKILL.md"), "git/commit/SKILL.md");
+        assert_eq!(
+            found.locate("commit/references/r.md"),
+            "git/commit/references/r.md"
+        );
+        assert_eq!(found.locate("commit"), "git/commit");
+        assert_eq!(found.locate("debug/SKILL.md"), "debug/SKILL.md");
+        assert_eq!(found.locate("gone/SKILL.md"), "gone/SKILL.md");
     }
 
     #[test]

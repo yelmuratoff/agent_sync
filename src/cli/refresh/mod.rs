@@ -8,7 +8,7 @@ mod classify;
 mod session;
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::put;
 use crate::config::template_manifest::TemplateManifest;
@@ -17,7 +17,7 @@ use crate::{Error, config::catalog};
 
 pub use args::HELP;
 use args::{parse_args, resolve_scope};
-use classify::{collect, load_overrides};
+use classify::{Locator, collect, load_overrides};
 use session::Run;
 pub(crate) use session::write_template;
 
@@ -65,7 +65,7 @@ pub fn refresh(
         return Ok(1);
     };
     let user_base_shown = format!("{root}/{src_base}");
-    let user_base = PathBuf::from(&user_base_shown);
+    let locator = Locator::new(&user_base_shown);
 
     let categories = match resolve_scope(&options.only, &user_base_shown, style, err)? {
         Ok(categories) => categories,
@@ -78,7 +78,7 @@ pub fn refresh(
     let templates = catalog::template_files();
     let changes = collect(
         &templates,
-        &user_base,
+        &locator,
         &categories,
         options.include_agents_md,
         &manifest,
@@ -90,7 +90,7 @@ pub fn refresh(
     let mut run = Run {
         style,
         env,
-        user_base,
+        locator,
         manifest,
         out,
         err,
