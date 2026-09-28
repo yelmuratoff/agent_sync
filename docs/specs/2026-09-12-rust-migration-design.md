@@ -495,8 +495,10 @@ decision to make once rather than a bug to find twice.
 6. *Fixed after 0.42.0.* Bash `printf '%-Ns'` padded styled strings including
    their escape bytes, so coloured `list` columns drifted; `pad_right` now
    counts only the cells a terminal shows.
-7. `outputs` absent means `local`, except when `gitignore.update: false`, which
-   means `committed`; the rule is duplicated in three files.
+7. *Kept, de-duplicated after 0.42.0.* `outputs` absent means `local`, except
+   when `gitignore.update: false`, which means `committed`. The rule stands:
+   dropping it would flip a project relying on it to local outputs. It lived
+   in three files and now lives in `project_config::outputs_mode`.
 8. *Struck 2026-09-20: not a quirk.* Locale-ordered tool listings were
    ratified as an accepted deviation, below; the numbering stays as it is
    because source comments and tests cite these items by number.

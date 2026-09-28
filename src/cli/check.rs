@@ -217,11 +217,7 @@ fn version_pin_mismatch(
             )]);
         }
     };
-    let mut outputs = yaml_subset::value(config, "outputs").replace('"', "");
-    if outputs.is_empty() && yaml_subset::value(config, "gitignore.update") == "false" {
-        outputs = "committed".to_string();
-    }
-    let committed = outputs == "committed";
+    let committed = project_config::outputs_mode(config) == Ok("committed");
     if !committed && mode != version::Mode::Strict {
         return None;
     }
