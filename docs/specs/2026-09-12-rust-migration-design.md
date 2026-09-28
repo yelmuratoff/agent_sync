@@ -515,8 +515,8 @@ decision to make once rather than a bug to find twice.
 15. `disable` creates `.ai/agent_sync.yaml` when the project has none.
 16. `enable` under a `tools:` block without `enabled:` appends a second `tools:`
     block at the end of the file.
-17. `disable` lists every argument that is not enabled afterwards, unknown slugs
-    and repeated ones included.
+17. *Fixed after 0.42.0.* `disable` listed every argument that was not
+    enabled afterwards, unknown slugs and repeated ones included.
 18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
     0 when no tool had an override, whatever the slug.
 19. *Fixed after 0.42.0.* `show <slug> <resource>` labelled an override
