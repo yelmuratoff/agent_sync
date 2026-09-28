@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use super::scaffold::Scaffold;
 use crate::config::catalog;
 use crate::output::style::Style;
 use crate::paths::DiskText;
@@ -98,17 +99,16 @@ fn count_dirs(dir: &Path) -> usize {
 }
 
 /// `_init_print_summary`.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn summary(
-    style: &Style,
-    ai_dir: &str,
-    tools: &[String],
-    payload_lines: &[String],
-    detect_source: &str,
-    no_templates: bool,
-    outputs: &str,
-    run_sync: bool,
-) -> String {
+pub(super) fn summary(style: &Style, scaffold: &Scaffold, payload_lines: &[String]) -> String {
+    let Scaffold {
+        ai_dir,
+        tools,
+        detect_source,
+        no_templates,
+        outputs,
+        run_sync,
+        ..
+    } = *scaffold;
     let src = Path::new(ai_dir).join("src");
     let mut text = String::from("\n");
     if outputs == "committed" {
