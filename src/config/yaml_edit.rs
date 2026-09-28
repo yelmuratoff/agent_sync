@@ -230,17 +230,29 @@ pub fn remove_key_text(text: &str, key_path: &str) -> Option<String> {
     let (key_lineno, key_indent) = find_key_line(text, key_path)?;
     let mut out = String::new();
     let mut skipping = false;
+    let mut blanks = 0;
+    let mut sibling_before = false;
     for (index, line) in lines(text).into_iter().enumerate() {
         if index + 1 == key_lineno {
             skipping = true;
             continue;
         }
+        let (indent, stripped) = split_indent(line);
         if skipping {
-            let (indent, stripped) = split_indent(line);
-            if stripped.is_empty() || indent > key_indent {
+            if stripped.is_empty() {
+                blanks += 1;
+                continue;
+            }
+            if indent > key_indent {
+                blanks = 0;
                 continue;
             }
             skipping = false;
+            if sibling_before {
+                out.push_str(&"\n".repeat(blanks));
+            }
+        } else if index + 1 < key_lineno {
+            sibling_before = !stripped.is_empty() && indent >= key_indent;
         }
         out.push_str(line);
         out.push('\n');
@@ -453,8 +465,18 @@ mod tests {
     }
 
     #[test]
-    fn remove_key_drops_the_block_and_the_blank_lines_right_after_it() {
-        let cases: [(&str, &str, &str); 4] = [
+    fn remove_key_drops_the_block_and_keeps_one_separator_after_a_sibling() {
+        let cases: [(&str, &str, &str); 6] = [
+            (
+                "a: 1\nprofiles:\n  x: 1\n\nb: 2\n",
+                "profiles",
+                "a: 1\n\nb: 2\n",
+            ),
+            (
+                "a: 1\n\nprofiles:\n  x: 1\n\nb: 2\n",
+                "profiles",
+                "a: 1\n\nb: 2\n",
+            ),
             (
                 "name: \"X\"\nenabled: true\n\ntargets:\n  rules:\n    dest: \".r\"\n    # note\n\n    extension: \".md\"\n  skills:\n    dest: \".s\"\n",
                 "targets.rules.dest",

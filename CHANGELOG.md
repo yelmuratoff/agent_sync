@@ -39,6 +39,7 @@
 - **`check` and `doctor` name the file a disabled target left behind.** With `targets.agents.enabled: false`, an earlier `CLAUDE.md` stayed on disk and in the manifest, nothing updated it, and `check` reported the project as synced. Both commands now say `CLAUDE.md is left from claude targets.agents, which is disabled` with the way out; neither changes its exit status, and sync still leaves the file alone.
 - **`list` columns line up on a colour terminal.** Padding counted the escape bytes of a coloured cell, so every column after one drifted.
 - **`diff <slug> <resource>` refuses an unknown resource before it looks for the project,** as `show` and `customize` do.
+- **Removing a key keeps the blank line that separated its neighbours.** `simplify --apply`, `resolve` and `profile remove` joined the key before a removed block to the one after it.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 
