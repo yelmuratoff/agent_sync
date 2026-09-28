@@ -129,9 +129,11 @@ fn dispatch(command: Command, rest: &[String], style: &Style) -> Result<u8, Erro
         }
         Command::Init => init_command(rest, style),
         Command::Refresh => {
+            let config = path_var("AGENTSYNC_CONFIG_PATH");
             let mut env = cli::refresh::Env {
                 interactive: prompts::is_tty(),
                 read_line: &mut prompts::read_terminal,
+                config_path: config.as_deref(),
             };
             cli::refresh::refresh(rest, &supplied_root()?, style, &mut env, stdout, stderr)
         }

@@ -573,8 +573,9 @@ decision to make once rather than a bug to find twice.
     because the TTY gate looks only at new files and conflicts; with
     `--include-deleted` and nothing else pending it prints each RESTORE prompt
     on stderr and declines it.
-40. `refresh` reads `template_overrides` from `.ai/agent_sync.yaml`, else a
-    root `agent_sync.yaml`, ignoring `AGENTSYNC_CONFIG_PATH`.
+40. *Fixed after 0.42.0.* `refresh` read `template_overrides` from
+    `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`, ignoring
+    `AGENTSYNC_CONFIG_PATH`.
 41. *Fixed after 0.42.0.* A detected tool whose destination had a file where a
     directory was expected, such as a legacy single-file `.clinerules`, made
     `init` refuse at the backup step with `Backup target parent is not a

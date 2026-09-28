@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::config::project_config::{self, Selection};
 use crate::config::template_manifest::{self, TemplateManifest};
 use crate::config::yaml_subset;
 use crate::engine::skill_tree::{self, Tree};
@@ -164,27 +165,29 @@ impl Classifier<'_> {
 }
 
 /// `_refresh_load_overrides`: `template_overrides.declined` and `.pinned` from
-/// `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`.
-pub(super) fn load_overrides(root: &str) -> Overrides {
-    let text = [
-        format!("{root}/.ai/agent_sync.yaml"),
-        format!("{root}/agent_sync.yaml"),
-    ]
-    .into_iter()
-    .find(|path| Path::new(path).is_file())
-    .and_then(|path| std::fs::read(path).ok())
-    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-    .unwrap_or_default();
+/// the project config `explicit` or the default search selects; `Err` names a
+/// missing explicit config.
+pub(super) fn load_overrides(root: &str, explicit: Option<&str>) -> Result<Overrides, String> {
+    let is_file = |path: &str| Path::new(path).is_file();
+    let config = match project_config::select(root, explicit, &is_file) {
+        Selection::Found(path) => Some(path),
+        Selection::None => None,
+        Selection::Missing(path) => return Err(project_config::missing_message(&path)),
+    };
+    let text = config
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
     let list = |key: &str| -> Vec<String> {
         yaml_subset::list(&text, key)
             .into_iter()
             .filter(|item| !item.is_empty())
             .collect()
     };
-    Overrides {
+    Ok(Overrides {
         declined: list("template_overrides.declined"),
         pinned: list("template_overrides.pinned"),
-    }
+    })
 }
 
 #[cfg(all(test, unix))]
