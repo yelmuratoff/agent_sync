@@ -144,7 +144,7 @@ mod tests {
         write(dir.path(), ".ai/src/tools/windsurf/mcp.json", "{}");
         assert_eq!(
             block(&project, &windsurf, &Style::plain()),
-            "\n  Windsurf\n    Hooks:         agentsync customize windsurf hooks\n    Edit mcp:      .ai/src/tools/windsurf/mcp.json\n"
+            "\n  Devin Desktop (Windsurf)\n    Hooks:         agentsync customize windsurf hooks\n    Edit mcp:      .ai/src/tools/windsurf/mcp.json\n"
         );
         let amp = Tool::load(&project, "no-such-tool").unwrap();
         assert_eq!(block(&project, &amp, &Style::plain()), "");

@@ -169,7 +169,7 @@ fn sync_windsurf_agents_md_exists_at_root() {
 #[test]
 fn sync_windsurf_rules_have_trigger_frontmatter() {
     let project = synced_project();
-    let first = first_file(&project, ".windsurf/rules", "md");
+    let first = first_file(&project, ".devin/rules", "md");
     assert!(contains(&first, "trigger: always_on"));
 }
 
@@ -343,7 +343,7 @@ fn sync_copilot_hooks_json_exists() {
 
 #[test]
 fn sync_windsurf_hooks_json_exists() {
-    assert!(synced_project().exists(".windsurf/hooks.json"));
+    assert!(synced_project().exists(".devin/hooks.json"));
 }
 
 // ── MCP / settings (per-tool) ────────────────────────────────────────────
@@ -452,7 +452,7 @@ fn sync_cursor_mcp_json_exists() {
 
 #[test]
 fn sync_windsurf_mcp_config_json_exists() {
-    assert!(synced_project().exists(".windsurf/mcp_config.json"));
+    assert!(synced_project().exists(".devin/mcp_config.json"));
 }
 
 #[test]
@@ -536,7 +536,7 @@ fn sync_path_scoped_rule_becomes_copilot_applyto_glob() {
 #[test]
 fn sync_path_scoped_rule_becomes_windsurf_glob_trigger() {
     let project = synced_project();
-    let content = project.read(".windsurf/rules/scoped-fixture.md");
+    let content = project.read(".devin/rules/scoped-fixture.md");
     assert!(content.contains("trigger: glob"));
     assert!(content.contains("globs: '**/*.dart'"));
 }
@@ -597,6 +597,60 @@ fn sync_re_sync_emits_no_churn_for_shared_dest_command_or_nested_agents() {
         .success()
         .stderr(predicate::str::contains("Kept .agents/skills/command-").not())
         .stdout(predicate::str::contains("Removed: .amazonq/rules/00-context.md").not());
+}
+
+// ── Moved destinations ───────────────────────────────────────────────────
+
+#[test]
+fn sync_removes_what_it_generated_at_a_moved_destination_and_keeps_the_rest() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n  skills:\n    dest: \".windsurf/skills\"\n  hooks:\n    dest: \".windsurf/hooks.json\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".windsurf/rules/core.md"));
+    assert!(project.exists(".windsurf/hooks.json"));
+    project.write(".windsurf/rules/mine.md", "hand-written\n");
+
+    std::fs::remove_file(project.join(".ai/src/tools/windsurf.yaml")).unwrap();
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "earlier output(s) from .windsurf/rules/ (targets.rules moved)",
+        ));
+    assert!(project.exists(".devin/rules/core.md"));
+    assert!(!project.exists(".windsurf/rules/core.md"));
+    assert!(!project.exists(".windsurf/skills"));
+    assert!(!project.exists(".windsurf/hooks.json"));
+    assert_eq!(project.read(".windsurf/rules/mine.md"), "hand-written\n");
+    project.agentsync().arg("check").assert().success();
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".windsurf/rules/mine.md"), "hand-written\n");
+}
+
+#[test]
+fn a_failed_sync_restores_what_it_removed_at_a_moved_destination() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.write(".ai/src/tools/windsurf.yaml", "post_sync: \"false\"\n");
+    project
+        .agentsync()
+        .env("AGENTSYNC_ALLOW_POST_SYNC", "true")
+        .arg("sync")
+        .assert()
+        .failure();
+    assert!(project.exists(".windsurf/rules/core.md"));
+    assert!(!project.exists(".devin/rules/core.md"));
 }
 
 // ── Command filters ──────────────────────────────────────────────────────

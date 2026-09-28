@@ -31,7 +31,7 @@ const DETECTORS: [(&str, &[&str]); 13] = [
         "opencode",
         &[".opencode", "opencode.json", "opencode.jsonc"],
     ),
-    ("windsurf", &[".windsurf", ".windsurfrules"]),
+    ("windsurf", &[".devin", ".windsurf", ".windsurfrules"]),
     ("junie", &[".junie"]),
     ("cline", &[".clinerules"]),
     ("amazonq", &[".amazonq"]),

@@ -14,13 +14,14 @@ use crate::{
 };
 
 /// `_DOCTOR_OUTPUT_DIR_MAP`.
-const OUTPUT_DIRS: [(&str, &str); 12] = [
+const OUTPUT_DIRS: [(&str, &str); 13] = [
     (".claude", "claude"),
     (".cursor", "cursor"),
     (".codex", "codex"),
     (".kimi-code", "kimi"),
     (".opencode", "opencode"),
     (".windsurf", "windsurf"),
+    (".devin", "windsurf"),
     (".gemini", "gemini"),
     (".junie", "junie"),
     (".cline", "cline"),

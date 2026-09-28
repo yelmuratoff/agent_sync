@@ -1,25 +1,32 @@
-name: "Windsurf"
+name: "Devin Desktop (Windsurf)"
 enabled: false
 
+# Devin Desktop (formerly Windsurf) prefers .devin/ and still reads the
+# .windsurf/ paths as a fallback: https://docs.devin.ai/desktop/devin-desktop-faq
 targets:
   agents:
     dest: "AGENTS.md"
 
   rules:
-    dest: ".windsurf/rules"
+    dest: ".devin/rules"
+    legacy_dest: ".windsurf/rules"
     header: "---\ntrigger: always_on\n---"
     scoped_header: "---\ntrigger: glob\nglobs: '{globs}'\n---"
 
   skills:
-    dest: ".windsurf/skills"
+    dest: ".devin/skills"
+    legacy_dest: ".windsurf/skills"
 
   commands:
-    dest: ".windsurf/workflows"
+    dest: ".devin/workflows"
+    legacy_dest: ".windsurf/workflows"
 
   mcp:
     source: ".ai/src/mcp/windsurf.json"
-    dest: ".windsurf/mcp_config.json"
+    dest: ".devin/mcp_config.json"
+    legacy_dest: ".windsurf/mcp_config.json"
 
   hooks:
     source: ".ai/src/hooks/windsurf.json"
-    dest: ".windsurf/hooks.json"
+    dest: ".devin/hooks.json"
+    legacy_dest: ".windsurf/hooks.json"

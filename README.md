@@ -21,13 +21,13 @@
 
 ## The problem
 
-Every AI coding tool wants instructions in its own format and directory: `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`...
+Every AI coding tool wants instructions in its own format and directory: `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.devin/rules/`...
 
 Use more than one tool — or work on a team where different people use different tools? You end up maintaining the same rules in 5+ formats. They drift. They go stale. You copy-paste forever.
 
 ## The solution
 
-AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Windsurf, JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
+AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Devin Desktop (Windsurf), JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
@@ -37,7 +37,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 ├── .claude/rules/testing.md              # + @rules/testing.md import in CLAUDE.md
 ├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
 ├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
-├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
+├── .devin/rules/testing.md               # + trigger: always_on frontmatter
 ├── .amazonq/rules/testing.md
 ├── AGENTS.md                             # inlined rule reference (Codex, Gemini, Junie, Kimi, MiniMax, OpenCode)
 └── .rules                                # merged into single file (Zed)
@@ -192,7 +192,7 @@ agentsync sync                        # 5. Re-distribute after any change to .ai
 
 5. **`agentsync sync`** — Reads each enabled tool's config (user override + shipped base — see [How Resources Resolve](#how-resources-resolve)), then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also manages the `.gitignore` block that matches your `outputs:` mode — see [Where generated files live](#where-generated-files-live).
 
-After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
+After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.devin/`, etc.), each with instructions in that tool's expected format.
 
 > **Important:** `agentsync sync` **overwrites** generated tool directories entirely. `agentsync init` adopts the config a project already has, and `agentsync adopt <file>` promotes a single file at any time — but a sync you run against untouched tool directories replaces them from `.ai/src/`. See [Migrating Existing Configurations](#migrating-existing-configurations).
 
@@ -450,6 +450,7 @@ always skips it.
 | `format: "opencode_md"`         | Convert portable subagent frontmatter to safe OpenCode Markdown (OpenCode subagents)                                  |
 | `format: "opencode_json"`       | Compose canonical `mcpServers` into OpenCode's top-level `mcp` settings map                                            |
 | `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
+| `legacy_dest`                   | Where an earlier config wrote the target; sync removes the files there the manifest records once it moves (Windsurf)   |
 | `guard` (target)                | Copy the tool's write-guard script to `dest` and mark it executable; override the base at `.ai/src/tools/<tool>/guard.sh` and register it from the tool's settings (Claude) |
 | `profile_scoped: false`         | On any target: `agentsync profile add` keeps the base `dest` instead of rewriting it into the profile's config home     |
 | `profile_supported: false`      | Refuse config-home profiles for a client that reads only project-root files                                             |
@@ -470,7 +471,7 @@ documents every option, including the ones this table leaves out.
 | **Kimi Code**          | `kimi.yaml`        | .kimi-code/AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), mcp.json                         |
 | **MiniMax Code**       | `minimax.yaml`     | AGENTS.md (+inlined rule references), project .mcp.json                                                          |
 | **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
-| **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
+| **Devin Desktop (Windsurf)** | `windsurf.yaml` | AGENTS.md and `.devin/` rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json; removes its old `.windsurf/` outputs |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
 | **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
 | **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index, mcp.json, cli-agents (MD→JSON) |
