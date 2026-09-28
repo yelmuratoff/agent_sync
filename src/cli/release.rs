@@ -239,6 +239,91 @@ fn refuse(err: &mut dyn Write, style: &Style, message: &str) -> Result<u8, Error
 }
 
 /// `cmd_release`.
+/// The bump and `--no-push`; `Err(None)` asks for the help, `Err(Some(arg))`
+/// names an argument that is no bump type.
+fn release_flags(args: &[String]) -> Result<(Bump, bool), Option<String>> {
+    let (mut bump, mut skip_push) = (Bump::Patch, false);
+    for arg in args {
+        match (arg.as_str(), Bump::parse(arg)) {
+            ("--help" | "-h", _) => return Err(None),
+            ("--no-push", _) => skip_push = true,
+            (_, Some(named)) => bump = named,
+            (other, None) => return Err(Some(other.to_string())),
+        }
+    }
+    Ok((bump, skip_push))
+}
+
+/// The AgentSync checkout to release: the working directory when it is one,
+/// else the install directory.
+fn release_repo(env: &Env) -> Option<PathBuf> {
+    let cwd = Path::new(&env.cwd);
+    if cwd.join("VERSION").is_file() && cwd.join("Cargo.toml").is_file() {
+        return Some(cwd.to_path_buf());
+    }
+    env.install_dir
+        .as_deref()
+        .filter(|dir| Path::new(dir).join("VERSION").is_file())
+        .map(PathBuf::from)
+}
+
+/// Each crate manifest with its text; `Err` names the first without an
+/// agentsync version.
+fn crate_files(repo: &Path) -> Result<Vec<(&'static str, String)>, &'static str> {
+    CRATE_FILES
+        .iter()
+        .map(|name| {
+            std::fs::read_to_string(repo.join(name))
+                .ok()
+                .filter(|text| crate_version(text).is_some())
+                .map(|text| (*name, text))
+                .ok_or(*name)
+        })
+        .collect()
+}
+
+/// Commits the version bump and tags it with its CHANGELOG section: a failed
+/// git step's exit status, or `None`.
+fn commit_and_tag(
+    repo: &Path,
+    new_version: &str,
+    style: &Style,
+    out: &mut dyn Write,
+) -> Result<Option<u8>, Error> {
+    let subject = format!("release: v{new_version}");
+    for step in [
+        &["add", "VERSION", "Cargo.toml", "Cargo.lock"][..],
+        &["commit", "-m", &subject, "--quiet"][..],
+    ] {
+        let status = git(repo, step, None, out)?;
+        if !status.success() {
+            return Ok(Some(shell_status(status)));
+        }
+    }
+    put(
+        out,
+        format!("  Created commit: {}\n", style.dim(&subject)).as_bytes(),
+    )?;
+    let changelog_file = repo.join("CHANGELOG.md");
+    let changelog =
+        std::fs::read_to_string(&changelog_file).map_err(|e| Error::io(&changelog_file, e))?;
+    let message = tag_message(new_version, &changelog_section(&changelog, new_version));
+    let status = git(
+        repo,
+        &["tag", "-a", new_version, "-F", "-"],
+        Some(&message),
+        out,
+    )?;
+    if !status.success() {
+        return Ok(Some(shell_status(status)));
+    }
+    put(
+        out,
+        format!("  Created tag: {}\n", style.cyan(new_version)).as_bytes(),
+    )?;
+    Ok(None)
+}
+
 pub fn release(
     args: &[String],
     style: &Style,
@@ -246,38 +331,19 @@ pub fn release(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut bump = Bump::Patch;
-    let mut skip_push = false;
-    for arg in args {
-        match (arg.as_str(), Bump::parse(arg)) {
-            ("--help" | "-h", _) => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            ("--no-push", _) => skip_push = true,
-            (_, Some(named)) => bump = named,
-            (other, None) => {
-                return refuse(
-                    err,
-                    style,
-                    &format!(
-                        "Unknown bump type: {other}\nUsage: {}",
-                        HELP.synopsis_line()
-                    ),
-                );
-            }
+    let (bump, skip_push) = match release_flags(args) {
+        Ok(flags) => flags,
+        Err(None) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-    let cwd = Path::new(&env.cwd);
-    let install_dir = env
-        .install_dir
-        .as_deref()
-        .filter(|dir| Path::new(dir).join("VERSION").is_file());
-    let repo: PathBuf = if cwd.join("VERSION").is_file() && cwd.join("Cargo.toml").is_file() {
-        cwd.to_path_buf()
-    } else if let Some(dir) = install_dir {
-        PathBuf::from(dir)
-    } else {
+        Err(Some(other)) => {
+            let usage = HELP.synopsis_line();
+            let message = format!("Unknown bump type: {other}\nUsage: {usage}");
+            return refuse(err, style, &message);
+        }
+    };
+    let Some(repo) = release_repo(env) else {
         return refuse(err, style, "Must be run from the AgentSync repository.");
     };
     if tree_is_dirty(&repo)? {
@@ -294,20 +360,13 @@ pub fn release(
     let Some(parts) = parse_version(current) else {
         return refuse(err, style, &format!("Cannot parse VERSION: {current}"));
     };
-    let mut crate_texts = Vec::new();
-    for name in CRATE_FILES {
-        let text = std::fs::read_to_string(repo.join(name))
-            .ok()
-            .filter(|text| crate_version(text).is_some());
-        let Some(text) = text else {
-            return refuse(
-                err,
-                style,
-                &format!("Cannot find the agentsync crate version in {name}"),
-            );
-        };
-        crate_texts.push((name, text));
-    }
+    let crate_texts = match crate_files(&repo) {
+        Ok(texts) => texts,
+        Err(name) => {
+            let message = format!("Cannot find the agentsync crate version in {name}");
+            return refuse(err, style, &message);
+        }
+    };
     let (major, minor, patch) = bump.apply(parts);
     let new_version = format!("{major}.{minor}.{patch}");
     put(
@@ -332,52 +391,21 @@ pub fn release(
         put(out, b"  Cancelled.\n")?;
         return Ok(0);
     }
-    std::fs::write(&version_file, format!("{new_version}\n"))
-        .map_err(|e| Error::io(&version_file, e))?;
-    put(
-        out,
-        format!("  Updated {} → {new_version}\n", style.cyan("VERSION")).as_bytes(),
-    )?;
+    let mut files = vec![("VERSION", format!("{new_version}\n"))];
     for (name, text) in &crate_texts {
+        files.push((name, set_crate_version(text, &new_version)));
+    }
+    for (name, text) in files {
         let path = repo.join(name);
-        std::fs::write(&path, set_crate_version(text, &new_version))
-            .map_err(|e| Error::io(&path, e))?;
+        std::fs::write(&path, text).map_err(|e| Error::io(&path, e))?;
         put(
             out,
             format!("  Updated {} → {new_version}\n", style.cyan(name)).as_bytes(),
         )?;
     }
-    let subject = format!("release: v{new_version}");
-    for step in [
-        &["add", "VERSION", "Cargo.toml", "Cargo.lock"][..],
-        &["commit", "-m", &subject, "--quiet"][..],
-    ] {
-        let status = git(&repo, step, None, out)?;
-        if !status.success() {
-            return Ok(shell_status(status));
-        }
+    if let Some(status) = commit_and_tag(&repo, &new_version, style, out)? {
+        return Ok(status);
     }
-    put(
-        out,
-        format!("  Created commit: {}\n", style.dim(&subject)).as_bytes(),
-    )?;
-    let changelog_file = repo.join("CHANGELOG.md");
-    let changelog =
-        std::fs::read_to_string(&changelog_file).map_err(|e| Error::io(&changelog_file, e))?;
-    let message = tag_message(&new_version, &changelog_section(&changelog, &new_version));
-    let status = git(
-        &repo,
-        &["tag", "-a", &new_version, "-F", "-"],
-        Some(&message),
-        out,
-    )?;
-    if !status.success() {
-        return Ok(shell_status(status));
-    }
-    put(
-        out,
-        format!("  Created tag: {}\n", style.cyan(&new_version)).as_bytes(),
-    )?;
     let released = style.green(&format!("Released v{new_version}!"));
     if skip_push {
         put(
@@ -389,9 +417,14 @@ pub fn release(
         )?;
         return Ok(0);
     }
+    push(&repo, &new_version, &released, out)
+}
+
+/// Pushes `main` and the tag, then announces the release.
+fn push(repo: &Path, new_version: &str, released: &str, out: &mut dyn Write) -> Result<u8, Error> {
     put(out, b"\n  Pushing to origin...\n")?;
-    for refname in ["main", new_version.as_str()] {
-        let status = git(&repo, &["push", "--quiet", "origin", refname], None, out)?;
+    for refname in ["main", new_version] {
+        let status = git(repo, &["push", "--quiet", "origin", refname], None, out)?;
         if !status.success() {
             return Ok(shell_status(status));
         }
