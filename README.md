@@ -4,7 +4,7 @@
     <img src="https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/assets/agent_sync_light.svg" alt="AgentSync" width="400">
   </picture>
 
-  <h3>One source → 14 AI tools. Stop copy-pasting rules.</h3>
+  <h3>One source → 15 AI tools. Stop copy-pasting rules.</h3>
 
   <p>
     <a href="https://github.com/yelmuratoff/agent_sync">
@@ -27,7 +27,7 @@ Use more than one tool — or work on a team where different people use differen
 
 ## The solution
 
-AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Devin Desktop (Windsurf), JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
+AgentSync syncs from a single source (`.ai/src/`) into **15 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Devin Desktop (Windsurf), JetBrains Junie, Cline, Kiro, Amazon Q, Zed, Google Antigravity.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
@@ -437,7 +437,7 @@ always skips it.
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `extension`                     | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`)                                          |
 | `header`                        | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                             |
-| `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs (Cursor, Copilot, Windsurf, Antigravity) |
+| `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs, `{globs_list}` a quoted YAML list (Cursor, Copilot, Windsurf, Antigravity, Kiro) |
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
 | `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode) |
@@ -448,6 +448,7 @@ always skips it.
 | `format: "toml"`                | Auto-convert MD→TOML (Gemini commands, Codex subagents)                                                                |
 | `format: "amazonq_json"`        | Auto-convert subagent MD→Amazon Q CLI custom-agent JSON (Amazon Q subagents)                                           |
 | `format: "opencode_md"`         | Convert portable subagent frontmatter to safe OpenCode Markdown (OpenCode subagents)                                  |
+| `format: "kiro_md"`             | Convert portable subagent frontmatter to a Kiro Markdown agent, tools mapped to Kiro's tags (Kiro subagents)           |
 | `format: "opencode_json"`       | Compose canonical `mcpServers` into OpenCode's top-level `mcp` settings map                                            |
 | `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
 | `legacy_dest`                   | Where an earlier config wrote the target; sync removes the files there the manifest records once it moves (Windsurf)   |
@@ -474,6 +475,7 @@ documents every option, including the ones this table leaves out.
 | **Devin Desktop (Windsurf)** | `windsurf.yaml` | AGENTS.md and `.devin/` rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json; removes its old `.windsurf/` outputs |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
 | **Cline**              | `cline.yaml`       | AGENTS.md, `.cline/` rules, skills, workflows (commands); removes its old `.clinerules/` outputs           |
+| **Kiro**               | `kiro.yaml`        | AGENTS.md, `.kiro/steering/` (inclusion frontmatter), skills, commands as `command-*` skills, agents (MD→Kiro MD), settings/mcp.json |
 | **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index, mcp.json, cli-agents (MD→JSON) |
 | **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index, +inlined commands index, settings.json   |
 | **Google Antigravity** | `antigravity.yaml` | GEMINI.md, .agents/rules (trigger frontmatter), .agents/skills, .agents/workflows (commands)               |
@@ -680,7 +682,7 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 
 **Why it matters:**
 
-- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
+- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 15 tools you don't use.
 - **Updates flow through.** Because the base ships with the engine, `agentsync update` improves every project that hasn't locked the file in as an override.
 - **Shared MCP is converted where schemas differ.** One `.ai/src/mcp.json` reaches every enabled MCP target. OpenCode's adapter validates local and remote transports, then atomically composes the result into `opencode.json`.
 - **MiniMax Code MCP uses the project `.mcp.json`.** Claude Code shares that destination. When their effective MCP sources differ, sync stops before writing either version. MiniMax may start a configured server during tool discovery or use, so review an MCP source before syncing it.

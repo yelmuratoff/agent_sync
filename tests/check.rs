@@ -45,6 +45,18 @@ fn check_detects_minimax_mcp_drift() {
 }
 
 #[test]
+fn check_detects_kiro_steering_drift() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["kiro"]);
+    project.agentsync().arg("sync").assert().success();
+    check(&project).success();
+    project.append(".kiro/steering/core.md", "Edited by hand.\n");
+    check(&project)
+        .code(1)
+        .stdout(predicate::str::contains("out of sync"));
+}
+
+#[test]
 fn check_fails_when_generated_file_is_modified() {
     let project = synced_project();
     project.append("CLAUDE.md", "modified\n");

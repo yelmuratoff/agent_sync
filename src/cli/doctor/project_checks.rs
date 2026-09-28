@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// `_DOCTOR_OUTPUT_DIR_MAP`.
-const OUTPUT_DIRS: [(&str, &str); 13] = [
+const OUTPUT_DIRS: [(&str, &str); 14] = [
     (".claude", "claude"),
     (".cursor", "cursor"),
     (".codex", "codex"),
@@ -26,6 +26,7 @@ const OUTPUT_DIRS: [(&str, &str); 13] = [
     (".junie", "junie"),
     (".cline", "cline"),
     (".amazonq", "amazonq"),
+    (".kiro", "kiro"),
     (".zed", "zed"),
     (".agents", "codex"),
 ];

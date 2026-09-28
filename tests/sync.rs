@@ -599,6 +599,45 @@ fn sync_re_sync_emits_no_churn_for_shared_dest_command_or_nested_agents() {
         .stdout(predicate::str::contains("Removed: .amazonq/rules/00-context.md").not());
 }
 
+// ── Kiro ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn sync_kiro_writes_steering_skills_agents_and_mcp() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["kiro"]);
+    project.write(".ai/src/rules/scoped-fixture.md", SCOPED_FIXTURE_RULE);
+    project.write(
+        ".ai/src/agents/reviewer.md",
+        "---\nname: reviewer\ndescription: Reviews\nmodel: sonnet\ntools: [Read, Grep, Bash]\n---\nReview.\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+
+    assert!(project.exists("AGENTS.md"));
+    assert!(
+        project
+            .read(".kiro/steering/core.md")
+            .starts_with("---\ninclusion: always\n---\n")
+    );
+    assert!(
+        project
+            .read(".kiro/steering/scoped-fixture.md")
+            .starts_with("---\ninclusion: fileMatch\nfileMatchPattern: ['**/*.dart']\n---\n")
+    );
+    assert!(project.exists(".kiro/skills/agentsync/SKILL.md"));
+    assert!(project.exists(".kiro/skills/command-review/SKILL.md"));
+    assert_eq!(
+        project.read(".kiro/agents/reviewer.md"),
+        "---\nname: \"reviewer\"\ndescription: \"Reviews\"\ntools: [read, shell]\n---\nReview.\n"
+    );
+    assert!(
+        project
+            .read(".kiro/settings/mcp.json")
+            .contains("\"mcpServers\"")
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.agentsync().arg("check").assert().success();
+}
+
 // ── Moved destinations ───────────────────────────────────────────────────
 
 #[test]

@@ -54,8 +54,9 @@ targets:
 
     # Optional: Scoped header for rules that declare `paths:` frontmatter (a list
     # of globs). The `{globs}` placeholder is replaced with the rule's comma-joined
-    # globs, so the rule loads only when matching files are touched instead of on
-    # every task. Rules without `paths:` fall back to the always-on `header` above.
+    # globs, and `{globs_list}` with a YAML flow list of single-quoted globs, so
+    # the rule loads only when matching files are touched instead of on every
+    # task. Rules without `paths:` fall back to the always-on `header` above.
     # scoped_header: "---\nglobs: '{globs}'\nalwaysApply: false\n---"
 
     # Optional: Filter rules (globs). Each accepts a scalar ("a b c"),
@@ -126,7 +127,7 @@ targets:
   #   dest: ".tool/agents"
   #   # extension: ".agent.md"    # Optional: change file extension
   #   # format: opencode_md       # Optional: convert portable frontmatter —
-  #   #                           # opencode_md, toml, or amazonq_json
+  #   #                           # opencode_md, toml, amazonq_json, or kiro_md
 
   # Settings/permissions (optional, file copy)
   # settings:
