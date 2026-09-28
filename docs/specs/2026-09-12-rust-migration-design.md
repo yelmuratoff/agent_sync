@@ -562,8 +562,8 @@ decision to make once rather than a bug to find twice.
 33. *Fixed after 0.42.0.* `adopt` of a merged rules file such as Zed's
     `.rules` answered that it was not a recognised output; the merge refusal
     was reachable only for a file inside a rules directory.
-34. `adopt --all` prints one `✓ adopted` line per destination, so two identical
-    edits of one source name it twice.
+34. *Fixed after 0.42.0.* `adopt --all` printed one `✓ adopted` line per
+    destination, so two identical edits of one source named it twice.
 35. `migrate --apply --yes` prints `removed .agent/ (pre-v0.6 layout)` with no
     blank line before `Planned moves:`.
 36. A legacy file without an extension, such as `.ai/src/settings/README`, moves

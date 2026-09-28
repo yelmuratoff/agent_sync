@@ -430,6 +430,30 @@ fn adopt_all_promotes_every_drifted_1_to_1_output() {
 }
 
 #[test]
+fn adopt_all_names_a_source_two_outputs_share_once() {
+    let project = synced_project(&["claude", "cursor"]);
+    project.append(".claude/skills/agentsync/SKILL.md", "## Same edit\n");
+    project.append(".cursor/skills/agentsync/SKILL.md", "## Same edit\n");
+
+    let output = project
+        .agentsync()
+        .args(["adopt", "--all", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Adopted 1 file(s)"))
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+    assert_eq!(stdout.matches("✓ adopted").count(), 1, "{stdout}");
+    assert!(
+        project
+            .read(".ai/src/skills/agentsync/SKILL.md")
+            .contains("Same edit")
+    );
+}
+
+#[test]
 fn adopt_all_no_op_when_nothing_drifted() {
     let project = synced_project(&["claude"]);
 
