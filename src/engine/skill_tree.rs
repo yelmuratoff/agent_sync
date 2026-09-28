@@ -3,8 +3,9 @@
 //! installs skills flat by name, so `rel` is where a skill lives in the source
 //! and `name` is the directory it lands in.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::config::skill_metadata;
 use crate::engine::workspace::Workspace;
 use crate::paths;
 
@@ -59,6 +60,31 @@ impl Tree {
             Some(skill) => format!("{}/{rest}", skill.rel),
             None => rel.to_string(),
         }
+    }
+
+    /// Category paths whose last segment breaks the lowercase-kebab naming
+    /// `agentsync add --category` enforces, each reported once.
+    pub fn nonstandard_categories(&self) -> Vec<String> {
+        let categories = self
+            .skills
+            .iter()
+            .map(Skill::category)
+            .chain(self.empty_categories.iter().map(String::as_str));
+        let mut found = BTreeSet::new();
+        for category in categories.filter(|category| !category.is_empty()) {
+            let mut prefix = String::new();
+            for segment in category.split('/') {
+                if !prefix.is_empty() {
+                    prefix.push('/');
+                }
+                prefix.push_str(segment);
+                if !skill_metadata::valid_name(segment) {
+                    found.insert(prefix.clone());
+                    break;
+                }
+            }
+        }
+        found.into_iter().collect()
     }
 }
 
@@ -242,6 +268,22 @@ mod tests {
         assert_eq!(found.locate("commit"), "git/commit");
         assert_eq!(found.locate("debug/SKILL.md"), "debug/SKILL.md");
         assert_eq!(found.locate("gone/SKILL.md"), "gone/SKILL.md");
+    }
+
+    #[test]
+    fn nonstandard_categories_name_the_first_offending_segment_once() {
+        let found = tree(&[
+            "Flutter/bloc/SKILL.md",
+            "Flutter/ui/slivers/SKILL.md",
+            "backend/My_API/auth/SKILL.md",
+            "ok-cat/skill/SKILL.md",
+            "Empty_Dir/notes.md",
+            "root-skill/SKILL.md",
+        ]);
+        assert_eq!(
+            found.nonstandard_categories(),
+            ["Empty_Dir", "Flutter", "backend/My_API"]
+        );
     }
 
     #[test]

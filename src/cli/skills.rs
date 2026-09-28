@@ -253,6 +253,12 @@ fn layout_findings(session: &Session, source: &render::SkillSource, tree: &Tree)
             shown_dir(rel)
         ));
     }
+    for rel in tree.nonstandard_categories() {
+        findings.push(format!(
+            "{}/: category name is not lowercase letters, digits, and single hyphens",
+            shown_dir(&rel)
+        ));
+    }
     for rel in &tree.too_deep {
         findings.push(format!(
             "{}/: deeper than {} categories — not synced",

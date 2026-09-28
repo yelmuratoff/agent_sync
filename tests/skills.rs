@@ -389,6 +389,23 @@ fn check_reports_name_collisions_across_categories() {
 }
 
 #[test]
+fn check_reports_a_category_name_add_would_refuse() {
+    let project = categorized_project();
+    project.write(
+        ".ai/src/skills/Mobile/navigation/SKILL.md",
+        &skill("navigation"),
+    );
+    project
+        .agentsync()
+        .args(["skills", "check"])
+        .assert()
+        .failure()
+        .stdout(
+            ".ai/src/skills/Mobile/: category name is not lowercase letters, digits, and single hyphens\nChecked 5 skills: 1 issue(s)\n",
+        );
+}
+
+#[test]
 fn check_reports_directories_below_the_category_limit() {
     let project = categorized_project();
     project.write(".ai/src/skills/a/b/c/d/e/f/SKILL.md", &skill("f"));

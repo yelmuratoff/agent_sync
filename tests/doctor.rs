@@ -359,6 +359,18 @@ fn doctor_accepts_categories_and_warns_on_a_name_two_skills_share() {
 }
 
 #[test]
+fn doctor_advises_on_a_category_name_add_would_refuse() {
+    let project = Project::seeded(&["--no-detect"]);
+    project.write(
+        ".ai/src/skills/My_Cat/tool/SKILL.md",
+        "---\nname: tool\ndescription: Tool\n---\n",
+    );
+    doctor(&project).success().stdout(predicate::str::contains(
+        "skills/My_Cat/ — category name is not lowercase-kebab",
+    ));
+}
+
+#[test]
 fn doctor_advises_on_legacy_agent_directory() {
     let project = Project::seeded(&["--no-detect"]);
     project.write(".agent/AGENTS.md", "legacy\n");

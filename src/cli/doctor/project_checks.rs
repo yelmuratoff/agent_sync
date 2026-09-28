@@ -185,6 +185,13 @@ impl Doctor<'_> {
                 style.dim("(empty skill — populate or remove)")
             ))?;
         }
+        let nonstandard = tree.nonstandard_categories();
+        for rel in &nonstandard {
+            self.advise(&format!(
+                "skills/{rel}/ — category name is not lowercase-kebab {}",
+                style.dim("(agentsync add --category refuses it — rename)")
+            ))?;
+        }
         if !tree.empty_categories.is_empty() {
             self.info(&format!(
                 "{} {} {}",
@@ -192,7 +199,7 @@ impl Doctor<'_> {
                 style.cyan("agentsync simplify"),
                 style.dim("can prune empty skill dirs.")
             ))
-        } else if collisions.is_empty() && tree.too_deep.is_empty() {
+        } else if collisions.is_empty() && tree.too_deep.is_empty() && nonstandard.is_empty() {
             self.ok("All skill directories contain SKILL.md")
         } else {
             Ok(())
