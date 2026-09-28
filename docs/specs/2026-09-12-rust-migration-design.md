@@ -545,8 +545,10 @@ decision to make once rather than a bug to find twice.
     adopted one included, along with anything the tool itself kept there. It
     now removes the files the manifest records and the directories that
     leaves empty.
-30. `upgrade-config` rewrites every `agentsync_version:` line and ignores
-    `AGENTSYNC_CONFIG_PATH`.
+30. *Fixed after 0.42.0 for `AGENTSYNC_CONFIG_PATH`.* `upgrade-config`
+    rewrote the default config whatever the variable selected. It still
+    rewrites every top-level `agentsync_version:` line: the reader takes the
+    first, and rewriting the others keeps no stale pin behind.
 31. *Fixed after 0.42.0.* `dedupe` removed a top-level source directory it
     emptied, such as `.ai/src/rules/`, not only emptied skill folders. It now
     stops below that directory; an emptied skill category still goes.

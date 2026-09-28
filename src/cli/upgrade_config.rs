@@ -2,8 +2,8 @@
 //! which pins `agentsync_version` to the running engine.
 
 use crate::paths::DiskText;
+use crate::project::Project;
 use std::io::Write;
-use std::path::Path;
 
 use super::put;
 use crate::output::help::{Help, Section};
@@ -66,7 +66,7 @@ pub fn upgrade_text(text: &str, version: &str) -> (String, bool) {
 
 pub fn run(
     args: &[String],
-    root: &Path,
+    discover: &dyn Fn() -> Result<Project, Error>,
     version: &str,
     style: &Style,
     out: &mut dyn Write,
@@ -91,19 +91,14 @@ pub fn run(
             return Ok(2);
         }
     }
-    let config = [
-        root.join(".ai").join("agent_sync.yaml"),
-        root.join("agent_sync.yaml"),
-    ]
-    .into_iter()
-    .find(|path| path.is_file());
-    let Some(config) = config else {
+    let project = discover()?;
+    let Some(config) = project.config_path else {
         put(
             err,
             format!(
                 "{}: No agent_sync.yaml found in {}\nRun {} first.\n",
                 style.red("Error"),
-                root.disk_text(),
+                project.root.disk_text(),
                 style.cyan("agentsync init")
             )
             .as_bytes(),
@@ -140,21 +135,14 @@ mod tests {
         std::fs::write(&config, "agentsync_version: \"0.1.0\"\n").unwrap();
         let style = Style::plain();
         let (mut out, mut err) = (Vec::new(), Vec::new());
+        let discover = || Project::at(dir.path());
         let args = ["--help".to_string()];
-        let status = run(&args, dir.path(), "9.9.9", &style, &mut out, &mut err).unwrap();
+        let status = run(&args, &discover, "9.9.9", &style, &mut out, &mut err).unwrap();
         assert_eq!(status, 0);
         let help = "\n  agentsync upgrade-config — re-pin agentsync_version to the running engine\n\n  USAGE\n    agentsync upgrade-config\n\n  DESCRIPTION\n    Re-pins agentsync_version in agent_sync.yaml to the running engine, after\n    an agentsync update. Re-sync and commit the outputs afterwards.\n\n  OPTIONS\n    -h, --help   Show this help\n\n  EXAMPLES\n    agentsync upgrade-config\n\n";
         assert_eq!(String::from_utf8(out).unwrap(), help);
         let args = ["--bogus".to_string()];
-        let status = run(
-            &args,
-            dir.path(),
-            "9.9.9",
-            &style,
-            &mut Vec::new(),
-            &mut err,
-        )
-        .unwrap();
+        let status = run(&args, &discover, "9.9.9", &style, &mut Vec::new(), &mut err).unwrap();
         assert_eq!(status, 2);
         assert_eq!(
             String::from_utf8(err).unwrap(),
