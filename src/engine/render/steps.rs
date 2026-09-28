@@ -364,6 +364,7 @@ pub(super) fn sync_subagents_step(
         "toml" => convert(s, Conversion::AgentToml),
         "amazonq_json" => convert(s, Conversion::AgentAmazonqJson),
         "opencode_md" => convert(s, Conversion::AgentOpencodeMd),
+        "kiro_md" => convert(s, Conversion::AgentKiroMd),
         _ => {
             let extension = tool.value("targets.subagents.extension");
             let opts = RuleOptions {

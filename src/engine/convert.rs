@@ -336,6 +336,51 @@ pub fn agent_to_opencode_md(stem: &str, source: &[u8]) -> Vec<u8> {
     out
 }
 
+/// A portable subagent as a Kiro Markdown agent: `name`, `description`, and
+/// the declared tools mapped onto Kiro's tool tags. `model` is dropped, since
+/// Kiro names its own models: https://kiro.dev/docs/custom-agents/configuration-reference/
+pub fn agent_to_kiro_md(stem: &str, source: &[u8]) -> Vec<u8> {
+    let fm = parse_frontmatter(source);
+    let name: &[u8] = if fm.name.is_empty() {
+        stem.as_bytes()
+    } else {
+        &fm.name
+    };
+    let mut tags: Vec<&str> = Vec::new();
+    if fm.tools_declared {
+        for tool in &fm.tools {
+            let tag = match tool.as_slice() {
+                b"Read" | b"Grep" | b"Glob" => "read",
+                b"Write" | b"Edit" => "write",
+                b"Bash" => "shell",
+                b"WebFetch" | b"WebSearch" => "web",
+                b"Task" => "subagent",
+                _ => continue,
+            };
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+    } else if fm.readonly == b"true" {
+        tags.push("read");
+    }
+
+    let mut out = b"---\nname: \"".to_vec();
+    out.extend(text::json_escape(name));
+    out.extend_from_slice(b"\"\n");
+    if !fm.description.is_empty() {
+        out.extend_from_slice(b"description: \"");
+        out.extend(text::json_escape(&fm.description));
+        out.extend_from_slice(b"\"\n");
+    }
+    if fm.tools_declared || fm.readonly == b"true" {
+        out.extend_from_slice(format!("tools: [{}]\n", tags.join(", ")).as_bytes());
+    }
+    out.extend_from_slice(b"---\n");
+    out.extend_from_slice(&fm.body);
+    out
+}
+
 /// The generated `SKILL.md` of `sync_commands_as_skills` for `<name>.md`.
 pub fn command_to_skill(name: &str, source: &[u8]) -> Vec<u8> {
     let mut description = read_field(source, "description");
@@ -458,6 +503,29 @@ mod tests {
             readonly,
             "---\ndescription: \"r\"\nmode: subagent\nmodel: \"a/b\"\npermission:\n  edit: deny\n  bash: deny\n---\n"
         );
+    }
+
+    #[test]
+    fn kiro_md_maps_tools_to_kiro_tags_and_drops_the_model() {
+        let out = String::from_utf8(agent_to_kiro_md("code-reviewer", AGENT)).unwrap();
+        assert_eq!(
+            out,
+            "---\nname: \"code-reviewer\"\ndescription: \"Reviews code carefully\"\ntools: [read]\n---\n\nYou review.\n"
+        );
+        let wide = String::from_utf8(agent_to_kiro_md(
+            "w",
+            b"---\ntools: [Bash, Edit, Write, WebFetch, Task, mcp__x]\n---\nGo.\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            wide,
+            "---\nname: \"w\"\ntools: [shell, write, web, subagent]\n---\nGo.\n"
+        );
+        let readonly =
+            String::from_utf8(agent_to_kiro_md("r", b"---\nreadonly: true\n---\n")).unwrap();
+        assert_eq!(readonly, "---\nname: \"r\"\ntools: [read]\n---\n");
+        let open = String::from_utf8(agent_to_kiro_md("o", b"Body.\n")).unwrap();
+        assert_eq!(open, "---\nname: \"o\"\n---\nBody.\n");
     }
 
     #[test]

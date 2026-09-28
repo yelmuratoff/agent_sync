@@ -434,7 +434,7 @@ impl<'a> Resolver<'a> {
             )),
             "subagents" => {
                 let format = value("targets.subagents.format");
-                matches!(format.as_str(), "toml" | "amazonq_json" | "opencode_md").then(|| {
+                matches!(format.as_str(), "toml" | "amazonq_json" | "opencode_md" | "kiro_md").then(|| {
                     format!(
                         "{slug} serializes subagents as {format}. Conversion is not reversible — edit {}/ instead.",
                         self.sources.subagents

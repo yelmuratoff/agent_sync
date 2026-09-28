@@ -83,6 +83,12 @@ pub fn merge_or_prepend_header(file: &[u8], header: &str) -> Vec<u8> {
 /// `_rule_paths_csv`: every list item in the leading frontmatter, joined with
 /// commas, when that frontmatter has a bare `paths:` key.
 pub fn rule_paths_csv(file: &[u8]) -> Vec<u8> {
+    rule_paths(file).join(&b","[..])
+}
+
+/// Every list item in the leading frontmatter, unquoted, when that
+/// frontmatter has a bare `paths:` key.
+fn rule_paths(file: &[u8]) -> Vec<Vec<u8>> {
     let lines = text::lines(file);
     if lines.first().copied() != Some(b"---".as_slice()) {
         return Vec::new();
@@ -122,7 +128,7 @@ pub fn rule_paths_csv(file: &[u8]) -> Vec<u8> {
         }
         items.push(item.to_vec());
     }
-    items.join(&b","[..])
+    items
 }
 
 /// `_strip_frontmatter`: the leading `---` block and the blank lines after it.
@@ -152,15 +158,21 @@ pub fn strip_frontmatter(file: &[u8]) -> Vec<u8> {
 }
 
 /// `apply_rule_header`: a `paths:`-scoped rule takes the scoped header with
-/// `{globs}` filled; otherwise the always-on header is merged in.
+/// `{globs}` filled as a comma-joined string and `{globs_list}` as a YAML
+/// flow list of single-quoted globs; otherwise the always-on header is merged in.
 pub fn apply_rule_header(file: &[u8], header: &str, scoped_header: &str) -> Vec<u8> {
-    let globs = rule_paths_csv(file);
-    if !globs.is_empty() && !scoped_header.is_empty() {
-        let globs = String::from_utf8_lossy(&globs);
-        return add_header(
-            &strip_frontmatter(file),
-            &scoped_header.replace("{globs}", &globs),
-        );
+    let paths = rule_paths(file);
+    if !paths.is_empty() && !scoped_header.is_empty() {
+        let csv = String::from_utf8_lossy(&paths.join(&b","[..])).into_owned();
+        let quoted: Vec<String> = paths
+            .iter()
+            .map(|glob| format!("'{}'", String::from_utf8_lossy(glob).replace('\'', "''")))
+            .collect();
+        let list = format!("[{}]", quoted.join(", "));
+        let scoped = scoped_header
+            .replace("{globs_list}", &list)
+            .replace("{globs}", &csv);
+        return add_header(&strip_frontmatter(file), &scoped);
     }
     if !header.is_empty() {
         return merge_or_prepend_header(file, header);
@@ -473,6 +485,7 @@ pub enum Conversion {
     AgentToml,
     AgentAmazonqJson,
     AgentOpencodeMd,
+    AgentKiroMd,
 }
 
 impl Conversion {
@@ -480,7 +493,7 @@ impl Conversion {
         match self {
             Self::CommandToml | Self::AgentToml => ".toml",
             Self::AgentAmazonqJson => ".json",
-            Self::AgentOpencodeMd => ".md",
+            Self::AgentOpencodeMd | Self::AgentKiroMd => ".md",
         }
     }
 
@@ -490,6 +503,7 @@ impl Conversion {
             Self::AgentToml => "agent md→toml",
             Self::AgentAmazonqJson => "agent md→json",
             Self::AgentOpencodeMd => "agent md→opencode md",
+            Self::AgentKiroMd => "agent md→kiro md",
         }
     }
 
@@ -499,6 +513,7 @@ impl Conversion {
             Self::AgentToml => ("agent", "md→toml"),
             Self::AgentAmazonqJson => ("agent", "md→amazonq json"),
             Self::AgentOpencodeMd => ("agent", "md→opencode md"),
+            Self::AgentKiroMd => ("agent", "md→kiro md"),
         };
         let plural = if count == 1 { "" } else { "s" };
         format!("{count} {noun}{plural}, {format}")
@@ -510,6 +525,7 @@ impl Conversion {
             Self::AgentToml => convert::agent_to_toml(stem, source),
             Self::AgentAmazonqJson => convert::agent_to_amazonq_json(stem, source),
             Self::AgentOpencodeMd => convert::agent_to_opencode_md(stem, source),
+            Self::AgentKiroMd => convert::agent_to_kiro_md(stem, source),
         }
     }
 }
@@ -631,6 +647,16 @@ mod tests {
             "---\nglobs: 'a/*,b,c'\nalwaysApply: false\n---\n\n# T\nbody"
         );
         assert_eq!(rule_paths_csv(b"---\ntags:\n  - x\n---\n"), b"");
+    }
+
+    #[test]
+    fn a_scoped_header_can_take_the_globs_as_a_quoted_flow_list() {
+        let rule = b"---\npaths:\n  - \"src/{a,b}/*.ts\"\n  - it's/*\n---\n# T\n";
+        let scoped = "---\\ninclusion: fileMatch\\nfileMatchPattern: {globs_list}\\n---";
+        assert_eq!(
+            String::from_utf8(apply_rule_header(rule, "", scoped)).unwrap(),
+            "---\ninclusion: fileMatch\nfileMatchPattern: ['src/{a,b}/*.ts', 'it''s/*']\n---\n\n# T\n"
+        );
     }
 
     #[test]
