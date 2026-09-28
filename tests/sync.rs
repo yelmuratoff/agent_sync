@@ -666,6 +666,21 @@ fn sync_filters_a_whole_category_by_its_path() {
 }
 
 #[test]
+fn sync_ignores_a_shared_name_every_skills_consumer_filters_out() {
+    let project = categorized_project();
+    project.enable_tools(&["minimax"]);
+    project.write(".ai/src/skills/backend/bloc/SKILL.md", &skill("bloc"));
+    for tool in ["claude", "codex"] {
+        project.write(
+            &format!(".ai/src/tools/{tool}.yaml"),
+            "targets:\n  skills:\n    exclude:\n      - backend/*\n",
+        );
+    }
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".claude/skills/bloc/SKILL.md"), skill("bloc"));
+}
+
+#[test]
 fn sync_refuses_two_skills_sharing_a_name_and_changes_nothing() {
     let project = categorized_project();
     project.agentsync().arg("sync").assert().success();

@@ -259,9 +259,9 @@ pub(super) fn sync_skills_step(
     let src_skills = tool_source(s, tool, "skills", &run.sources.skills, display)?;
     let include = tool.filter("targets.skills.include");
     let exclude = tool.filter("targets.skills.exclude");
-    refuse_skill_collisions(s, &src_skills, &include, &exclude)?;
 
     if !dests.skills.is_empty() {
+        refuse_skill_collisions(s, &src_skills, &include, &exclude)?;
         let effective = if exclude.is_empty() {
             "command-*".to_string()
         } else {
@@ -271,6 +271,7 @@ pub(super) fn sync_skills_step(
             .map_err(|e| io(s, e));
     }
     if tool.value("targets.skills.inline_into_agents") == "true" && s.ws.is_dir(&src_skills) {
+        refuse_skill_collisions(s, &src_skills, &include, &exclude)?;
         let target = if !dests.agents.is_empty() {
             dests.agents.clone()
         } else if tool.value("targets.rules.merge_to_file") == "true" && s.ws.is_file(&dests.rules)
