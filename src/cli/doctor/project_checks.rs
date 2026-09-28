@@ -6,6 +6,7 @@ use super::Doctor;
 use super::json::json_valid;
 use super::secrets::scan_secrets;
 use crate::cli::{files_below, sorted_entries};
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::paths::{self, DiskText};
 use crate::transaction::manifest::{self, Manifest};
 use crate::{
@@ -159,26 +160,42 @@ impl Doctor<'_> {
         if !skills.is_dir() {
             return self.info("No .ai/src/skills/ — nothing to scan.");
         }
-        let mut found = 0;
-        for dir in sorted_entries(&skills).into_iter().filter(|p| p.is_dir()) {
-            if !dir.join("SKILL.md").is_file() {
-                let name = dir.file_name().unwrap_or_default().disk_text();
-                self.advise(&format!(
-                    "skills/{name}/ — missing SKILL.md {}",
-                    style.dim("(empty skill — populate or remove)")
-                ))?;
-                found += 1;
-            }
+        let tree = skill_tree::discover(
+            &Workspace::on_disk(&self.root),
+            &format!("{}/.ai/src/skills", self.root),
+        );
+        let collisions = skill_tree::collisions(&tree.skills);
+        for (name, rels) in &collisions {
+            let claims: Vec<_> = rels.iter().map(|rel| format!("skills/{rel}/")).collect();
+            self.warn(&format!(
+                "skill name '{name}' is claimed by {} — agentsync sync refuses it; rename one",
+                claims.join(", ")
+            ))?;
         }
-        if found == 0 {
-            self.ok("All skill directories contain SKILL.md")
-        } else {
+        for rel in &tree.too_deep {
+            self.advise(&format!(
+                "skills/{rel}/ — deeper than {} categories {}",
+                skill_tree::MAX_CATEGORY_DEPTH,
+                style.dim("(not synced — move it up)")
+            ))?;
+        }
+        for rel in &tree.empty_categories {
+            self.advise(&format!(
+                "skills/{rel}/ — missing SKILL.md {}",
+                style.dim("(empty skill — populate or remove)")
+            ))?;
+        }
+        if !tree.empty_categories.is_empty() {
             self.info(&format!(
                 "{} {} {}",
                 style.dim("Tip:"),
                 style.cyan("agentsync simplify"),
                 style.dim("can prune empty skill dirs.")
             ))
+        } else if collisions.is_empty() && tree.too_deep.is_empty() {
+            self.ok("All skill directories contain SKILL.md")
+        } else {
+            Ok(())
         }
     }
 

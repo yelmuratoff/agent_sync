@@ -341,6 +341,24 @@ fn doctor_advises_on_empty_skill_directory_no_skill_md() {
 }
 
 #[test]
+fn doctor_accepts_categories_and_warns_on_a_name_two_skills_share() {
+    let project = Project::seeded(&["--no-detect"]);
+    let skill = "---\nname: auth\ndescription: Auth\n---\n";
+    project.write(".ai/src/skills/backend/auth/SKILL.md", skill);
+    doctor(&project)
+        .success()
+        .stdout(predicate::str::contains("backend/ — missing SKILL.md").not())
+        .stdout(predicate::str::contains(
+            "All skill directories contain SKILL.md",
+        ));
+
+    project.write(".ai/src/skills/flutter/auth/SKILL.md", skill);
+    doctor(&project).stdout(predicate::str::contains(
+        "skill name 'auth' is claimed by skills/backend/auth/, skills/flutter/auth/ — agentsync sync refuses it; rename one",
+    ));
+}
+
+#[test]
 fn doctor_advises_on_legacy_agent_directory() {
     let project = Project::seeded(&["--no-detect"]);
     project.write(".agent/AGENTS.md", "legacy\n");
