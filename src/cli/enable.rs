@@ -3,7 +3,7 @@
 
 use crate::paths::DiskText;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::put;
 use crate::config::tool::Tool;
@@ -65,16 +65,12 @@ enum Scaffold {
 }
 
 /// `_enable_resolve_or_create_config`.
-fn resolve_or_create_config(root: &Path) -> Result<PathBuf, Error> {
-    let config = root.join(".ai").join("agent_sync.yaml");
-    if config.is_file() {
-        return Ok(config);
+fn resolve_or_create_config(project: &Project) -> Result<PathBuf, Error> {
+    if let Some(config) = &project.config_path {
+        return Ok(config.clone());
     }
-    let legacy = root.join("agent_sync.yaml");
-    if legacy.is_file() {
-        return Ok(legacy);
-    }
-    let ai = root.join(".ai");
+    let ai = project.root.join(".ai");
+    let config = ai.join("agent_sync.yaml");
     std::fs::create_dir_all(&ai).map_err(|e| Error::io(&ai, e))?;
     std::fs::write(
         &config,
@@ -222,7 +218,7 @@ pub fn enable(
         }
         scaffold = Scaffold::Never;
     }
-    let config = resolve_or_create_config(&project.root)?;
+    let config = resolve_or_create_config(&project)?;
 
     let mut enabled = Enabled::default();
     for slug in &tools {
@@ -295,15 +291,15 @@ pub fn disable(
             }
         }
     }
-    let config = resolve_or_create_config(&project.root)?;
-
     let (mut disabled, mut not_enabled) = (Vec::new(), 0usize);
     for slug in args {
         if !project.enabled_tools()?.contains(slug) {
             not_enabled += 1;
             continue;
         }
-        yaml_edit::list_remove(&config, "tools.enabled", slug)?;
+        if let Some(config) = &project.config_path {
+            yaml_edit::list_remove(config, "tools.enabled", slug)?;
+        }
         let user_file = project.user_tool_file(slug);
         if user_file.is_file() && Tool::load(&project, slug)?.user_value("enabled") == "true" {
             yaml_edit::set_scalar(&user_file, "enabled", "false")?;
