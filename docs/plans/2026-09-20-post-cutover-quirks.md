@@ -146,6 +146,11 @@ Do not schedule these; attach them to a major when one is cut for another reason
   behaviour for anyone who disabled a target in order to freeze its output, so
   it needs the same major-versus-minor judgement as the rest of this list. The
   README documents the deletion step in the meantime.
+  *Decided 2026-09-28:* sync still leaves the file, and `check` and `doctor`
+  name it without changing their exit status (`src/cli/stale_targets.rs`).
+- **Group C, 2026-09-28.** 14, 30, 32 and 40 route through the project's
+  config resolution, and 15 rides along, ratified for a minor release. 30
+  keeps rewriting every top-level `agentsync_version:` line on purpose.
 - **Group B status, 2026-09-28.** 12, 17, 18, 19, 21, 26, 28, 29, 31, 33, 41,
   42, 45 (its `<…>` half), 49 and 50 are fixed; the spec strikes each. Two
   items were left on purpose:
