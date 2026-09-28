@@ -111,89 +111,58 @@ pub fn simplify(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let (mut apply, mut auto_yes, mut filter) = (false, false, String::new());
-    for arg in args {
-        match arg.as_str() {
-            "--apply" => apply = true,
-            "-y" | "--yes" => auto_yes = true,
-            "-h" | "--help" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: Unknown flag: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            value if filter.is_empty() => filter = value.to_string(),
-            _ => {
-                put(
-                    err,
-                    format!("{}: Only one tool at a time.\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
+    let (apply, auto_yes, filter) = match simplify_flags(args) {
+        Ok(flags) => flags,
+        Err(None) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-
+        Err(Some(message)) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     let project = discover()?;
     if apply && !project.tools_dir_in_project() {
         return super::refuse_outside_tools_dir(&project, style, err);
     }
+    let mut pass = Pass {
+        project: &project,
+        apply,
+        auto_yes,
+        interactive,
+        style,
+        ask,
+        out,
+    };
     let mut matched = false;
     for slug in project.user_override_tools()? {
         if !filter.is_empty() && slug != filter {
             continue;
         }
         matched = true;
-        simplify_tool(
-            &project,
-            &slug,
-            apply,
-            auto_yes,
-            interactive,
-            style,
-            ask,
-            out,
-        )?;
+        pass.tool(&slug)?;
     }
-    if payload_overrides(
-        &project,
-        apply,
-        auto_yes,
-        &filter,
-        interactive,
-        style,
-        ask,
-        out,
-    )? {
+    if pass.payloads(&filter)? {
         matched = true;
     }
-    if !matched {
-        if !filter.is_empty() {
-            put(
-                err,
-                format!(
-                    "{}: No override found for '{filter}'.\n",
-                    style.red("Error")
-                )
-                .as_bytes(),
-            )?;
-            return Ok(1);
-        }
-        put(
-            out,
-            format!(
-                "\n  {}\n\n",
-                style.dim("No user overrides — nothing to simplify.")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(0);
+    if !matched && !filter.is_empty() {
+        let text = format!(
+            "{}: No override found for '{filter}'.\n",
+            style.red("Error")
+        );
+        put(err, text.as_bytes())?;
+        return Ok(1);
     }
-    let footer = if apply {
+    let footer = if !matched {
+        format!(
+            "\n  {}\n\n",
+            style.dim("No user overrides — nothing to simplify.")
+        )
+    } else if apply {
         format!(
             "\n{}\n  Run {} to verify outputs are unchanged.\n\n",
             style.green("Done."),
@@ -202,206 +171,149 @@ pub fn simplify(
     } else {
         format!("\n{}\n\n", style.dim("Dry run — pass --apply to persist."))
     };
-    put(out, footer.as_bytes())?;
+    put(pass.out, footer.as_bytes())?;
     Ok(0)
 }
 
-/// `_simplify_one_tool`.
-#[allow(clippy::too_many_arguments)]
-fn simplify_tool(
-    project: &Project,
-    slug: &str,
+/// `--apply`, `--yes`, and the tool filter; `Err(None)` asks for the help,
+/// `Err(Some(message))` refuses the command line.
+fn simplify_flags(args: &[String]) -> Result<(bool, bool, String), Option<String>> {
+    let (mut apply, mut auto_yes, mut filter) = (false, false, String::new());
+    for arg in args {
+        match arg.as_str() {
+            "--apply" => apply = true,
+            "-y" | "--yes" => auto_yes = true,
+            "-h" | "--help" => return Err(None),
+            flag if flag.starts_with('-') => return Err(Some(format!("Unknown flag: {flag}"))),
+            value if filter.is_empty() => filter = value.to_string(),
+            _ => return Err(Some("Only one tool at a time.".into())),
+        }
+    }
+    Ok((apply, auto_yes, filter))
+}
+
+/// One `simplify` run: the project, the flags, and the streams it reports to.
+struct Pass<'a> {
+    project: &'a Project,
     apply: bool,
     auto_yes: bool,
     interactive: bool,
-    style: &Style,
-    ask: Ask,
-    out: &mut dyn Write,
-) -> Result<(), Error> {
-    let user_file = project.user_tool_file(slug);
-    if !user_file.is_file() {
-        return Ok(());
-    }
-    let base = catalog::base_tool_yaml(slug);
-    let rel = relative(project, &user_file);
-    put(
-        out,
-        format!(
-            "\n{}\n{}\n",
-            style.bold(&format!("  {}", Tool::load(project, slug)?.display_name())),
-            style.dim(&format!("  override: {rel}"))
-        )
-        .as_bytes(),
-    )?;
-    let user_text = read_text(&user_file);
-    let (mut redundant, mut kept, mut user_only) = (Vec::new(), Vec::new(), Vec::new());
-    for key in KEYS {
-        let user = yaml_subset::value(&user_text, key);
-        if user.is_empty() {
-            continue;
+    style: &'a Style,
+    ask: Ask<'a>,
+    out: &'a mut dyn Write,
+}
+
+/// A tool override's fields: equal to the shipped value, different from it,
+/// and absent from it.
+#[derive(Default)]
+struct Fields {
+    redundant: Vec<(&'static str, String)>,
+    kept: Vec<(&'static str, String)>,
+    user_only: Vec<(&'static str, String)>,
+}
+
+impl Fields {
+    fn of(user_text: &str, base: Option<&str>) -> Self {
+        let mut fields = Self::default();
+        for key in KEYS {
+            let user = yaml_subset::value(user_text, key);
+            if user.is_empty() {
+                continue;
+            }
+            let shipped = base.map(|t| yaml_subset::value(t, key)).unwrap_or_default();
+            if !shipped.is_empty() && user == shipped {
+                fields.redundant.push((key, user));
+            } else if shipped.is_empty() {
+                fields.user_only.push((key, user));
+            } else {
+                fields.kept.push((key, user));
+            }
         }
-        let shipped = base.map(|t| yaml_subset::value(t, key)).unwrap_or_default();
-        if !shipped.is_empty() && user == shipped {
-            redundant.push((key, user));
-        } else if shipped.is_empty() {
-            user_only.push((key, user));
-        } else {
-            kept.push((key, user));
-        }
+        fields
     }
-    if redundant.is_empty() {
-        put(
-            out,
-            format!(
-                "{}\n",
-                style.dim("  No redundant fields — already minimal.")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(());
-    }
-    let mut text = format!("  {}\n", style.yellow("Redundant (match base):"));
-    for (key, value) in &redundant {
-        text.push_str(&format!("    {} {key:<42}  {value}\n", style.dim("-")));
-    }
-    text.push('\n');
-    for (title, list) in [
-        ("  Kept (diverge from base):", &kept),
-        ("  Kept (no base value):", &user_only),
-    ] {
-        if list.is_empty() {
-            continue;
-        }
-        text.push_str(&format!("{}\n", style.dim(title)));
-        for (key, value) in list {
-            text.push_str(&format!("    {} {key:<42}  {value}\n", style.dim("=")));
+
+    fn report(&self, style: &Style) -> String {
+        let mut text = format!("  {}\n", style.yellow("Redundant (match base):"));
+        for (key, value) in &self.redundant {
+            text.push_str(&format!("    {} {key:<42}  {value}\n", style.dim("-")));
         }
         text.push('\n');
-    }
-    if !apply {
-        let hint = if kept.len() + user_only.len() == 0 {
-            "  → would delete the override file (all fields match base).".to_string()
-        } else {
-            format!("  → would remove {} field(s).", redundant.len())
-        };
-        text.push_str(&format!("{}\n\n", style.dim(&hint)));
-        return put(out, text.as_bytes());
-    }
-    put(out, text.as_bytes())?;
-    for (key, _) in &redundant {
-        yaml_edit::remove_key(&user_file, key)?;
-    }
-    put(
-        out,
-        format!(
-            "  {} {} field(s).\n",
-            style.green("Removed"),
-            redundant.len()
-        )
-        .as_bytes(),
-    )?;
-    if !has_content(&user_file) {
-        let delete = auto_yes
-            || (interactive && yes(&ask(&style.bold("Delete empty override file? [y/N]"), out)));
-        if delete {
-            std::fs::remove_file(&user_file).map_err(|e| Error::io(&user_file, e))?;
-            put(
-                out,
-                format!("  {} {rel}\n", style.green("Deleted")).as_bytes(),
-            )?;
-        } else {
-            put(
-                out,
-                format!(
-                    "{}\n",
-                    style.dim("  Kept empty file — remove manually if desired.")
-                )
-                .as_bytes(),
-            )?;
+        for (title, list) in [
+            ("  Kept (diverge from base):", &self.kept),
+            ("  Kept (no base value):", &self.user_only),
+        ] {
+            if list.is_empty() {
+                continue;
+            }
+            text.push_str(&format!("{}\n", style.dim(title)));
+            for (key, value) in list {
+                text.push_str(&format!("    {} {key:<42}  {value}\n", style.dim("=")));
+            }
+            text.push('\n');
         }
+        text
     }
-    put(out, b"\n")
 }
 
-fn sorted_entries(dir: &Path) -> Vec<(String, PathBuf)> {
-    let mut entries: Vec<(String, PathBuf)> = std::fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .map(|e| (e.file_name().disk_text(), e.path()))
-                .filter(|(name, _)| !name.starts_with('.'))
-                .collect()
-        })
-        .unwrap_or_default();
-    entries.sort();
-    entries
+/// The payload overrides a pass considers: byte-identical to base, diverging
+/// or without base, and still in the flat legacy layout.
+#[derive(Default)]
+struct Payloads {
+    redundant: Vec<PathBuf>,
+    kept: Vec<PathBuf>,
+    legacy: Vec<PathBuf>,
+    matched: bool,
 }
 
-/// `_simplify_payload_overrides`: whether any payload was considered.
-#[allow(clippy::too_many_arguments)]
-fn payload_overrides(
-    project: &Project,
-    apply: bool,
-    auto_yes: bool,
-    filter: &str,
-    interactive: bool,
-    style: &Style,
-    ask: Ask,
-    out: &mut dyn Write,
-) -> Result<bool, Error> {
-    let src = project.root.join(".ai").join("src");
-    let (mut redundant, mut kept, mut legacy) = (Vec::new(), Vec::new(), Vec::new());
-    let mut matched = false;
-    for (tool, dir) in sorted_entries(&src.join("tools")) {
-        if !dir.is_dir() || (!filter.is_empty() && tool != filter) {
-            continue;
+impl Payloads {
+    fn of(project: &Project, filter: &str) -> Result<Self, Error> {
+        let src = project.root.join(".ai").join("src");
+        let mut payloads = Self::default();
+        for (tool, dir) in sorted_entries(&src.join("tools")) {
+            if !dir.is_dir() || (!filter.is_empty() && tool != filter) {
+                continue;
+            }
+            let loaded = Tool::load(project, &tool)?;
+            for resource in ["hooks", "mcp", "settings"] {
+                for (name, file) in sorted_entries(&dir) {
+                    if !name.starts_with(&format!("{resource}.")) || !file.is_file() {
+                        continue;
+                    }
+                    payloads.matched = true;
+                    let identical = loaded.base_payload(resource).is_some_and(|base| {
+                        std::fs::read(&file).is_ok_and(|bytes| bytes == base.contents())
+                    });
+                    if identical {
+                        payloads.redundant.push(file);
+                    } else {
+                        payloads.kept.push(file);
+                    }
+                }
+            }
         }
-        let loaded = Tool::load(project, &tool)?;
         for resource in ["hooks", "mcp", "settings"] {
-            for (name, file) in sorted_entries(&dir) {
-                if !name.starts_with(&format!("{resource}.")) || !file.is_file() {
+            for (name, file) in sorted_entries(&src.join(resource)) {
+                let tool = name
+                    .rsplit_once('.')
+                    .map_or(name.as_str(), |(stem, _)| stem);
+                if !file.is_file() || (!filter.is_empty() && tool != filter) {
                     continue;
                 }
-                matched = true;
-                let identical = loaded.base_payload(resource).is_some_and(|base| {
-                    std::fs::read(&file).is_ok_and(|bytes| bytes == base.contents())
-                });
-                if identical {
-                    redundant.push(file);
-                } else {
-                    kept.push(file);
-                }
+                payloads.matched = true;
+                payloads.legacy.push(file);
             }
         }
-    }
-    for resource in ["hooks", "mcp", "settings"] {
-        for (name, file) in sorted_entries(&src.join(resource)) {
-            if !file.is_file() {
-                continue;
-            }
-            let tool = name
-                .rsplit_once('.')
-                .map_or(name.as_str(), |(stem, _)| stem);
-            if !filter.is_empty() && tool != filter {
-                continue;
-            }
-            matched = true;
-            legacy.push(file);
-        }
-    }
-    if redundant.is_empty() && kept.is_empty() && legacy.is_empty() {
-        return Ok(matched);
+        Ok(payloads)
     }
 
-    let mut text = format!("\n{}\n\n", style.bold("  Payload overrides"));
-    if !legacy.is_empty() {
-        text.push_str(&format!(
+    fn legacy_report(&self, project: &Project, style: &Style) -> String {
+        let mut text = format!(
             "  {}\n",
             style.yellow(
                 "Legacy layout — move into .ai/src/tools/<tool>/ (flat layout is deprecated):"
             )
-        ));
-        for file in &legacy {
+        );
+        for file in &self.legacy {
             text.push_str(&format!(
                 "    {} {}\n",
                 style.dim("·"),
@@ -419,89 +331,179 @@ fn payload_overrides(
                 style.cyan("agentsync migrate --apply")
             ))
         ));
+        text
     }
-    if redundant.is_empty() && kept.is_empty() {
-        put(out, text.as_bytes())?;
-        return Ok(matched);
-    }
-    if redundant.is_empty() {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!(
-                "  No byte-identical payload overrides — {} real customization(s).",
-                kept.len()
-            ))
-        ));
-        put(out, text.as_bytes())?;
-        return Ok(matched);
-    }
-    text.push_str(&format!(
-        "  {}\n",
-        style.yellow("Byte-identical to base (safe to delete):")
-    ));
-    for file in &redundant {
-        text.push_str(&format!(
-            "    {} {}\n",
-            style.dim("-"),
-            relative(project, file)
-        ));
-    }
-    text.push('\n');
-    if !kept.is_empty() {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!(
+
+    fn redundant_report(&self, project: &Project, style: &Style) -> String {
+        let mut text = format!(
+            "  {}\n",
+            style.yellow("Byte-identical to base (safe to delete):")
+        );
+        for file in &self.redundant {
+            text.push_str(&format!(
+                "    {} {}\n",
+                style.dim("-"),
+                relative(project, file)
+            ));
+        }
+        text.push('\n');
+        if !self.kept.is_empty() {
+            let kept = format!(
                 "  Kept (diverge from base or no base): {} file(s)",
-                kept.len()
-            ))
-        ));
+                self.kept.len()
+            );
+            text.push_str(&format!("{}\n", style.dim(&kept)));
+        }
+        text
     }
-    if !apply {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!(
+}
+
+impl Pass<'_> {
+    fn say(&mut self, text: &str) -> Result<(), Error> {
+        put(self.out, text.as_bytes())
+    }
+
+    fn confirmed(&mut self, question: &str) -> bool {
+        let prompt = self.style.bold(question);
+        yes(&(self.ask)(&prompt, self.out))
+    }
+
+    /// `_simplify_one_tool`.
+    fn tool(&mut self, slug: &str) -> Result<(), Error> {
+        let style = self.style;
+        let user_file = self.project.user_tool_file(slug);
+        if !user_file.is_file() {
+            return Ok(());
+        }
+        let rel = relative(self.project, &user_file);
+        let display = Tool::load(self.project, slug)?.display_name();
+        self.say(&format!(
+            "\n{}\n{}\n",
+            style.bold(&format!("  {display}")),
+            style.dim(&format!("  override: {rel}"))
+        ))?;
+        let fields = Fields::of(&read_text(&user_file), catalog::base_tool_yaml(slug));
+        if fields.redundant.is_empty() {
+            return self.say(&format!(
+                "{}\n",
+                style.dim("  No redundant fields — already minimal.")
+            ));
+        }
+        let mut text = fields.report(style);
+        if !self.apply {
+            let hint = if fields.kept.len() + fields.user_only.len() == 0 {
+                "  → would delete the override file (all fields match base).".to_string()
+            } else {
+                format!("  → would remove {} field(s).", fields.redundant.len())
+            };
+            text.push_str(&format!("{}\n\n", style.dim(&hint)));
+            return self.say(&text);
+        }
+        self.say(&text)?;
+        for (key, _) in &fields.redundant {
+            yaml_edit::remove_key(&user_file, key)?;
+        }
+        self.say(&format!(
+            "  {} {} field(s).\n",
+            style.green("Removed"),
+            fields.redundant.len()
+        ))?;
+        if !has_content(&user_file) {
+            self.drop_empty_override(&user_file, &rel)?;
+        }
+        self.say("\n")
+    }
+
+    fn drop_empty_override(&mut self, user_file: &Path, rel: &str) -> Result<(), Error> {
+        let style = self.style;
+        let delete = self.auto_yes
+            || (self.interactive && self.confirmed("Delete empty override file? [y/N]"));
+        if !delete {
+            let kept = style.dim("  Kept empty file — remove manually if desired.");
+            return self.say(&format!("{kept}\n"));
+        }
+        std::fs::remove_file(user_file).map_err(|e| Error::io(user_file, e))?;
+        self.say(&format!("  {} {rel}\n", style.green("Deleted")))
+    }
+
+    /// `_simplify_payload_overrides`: whether any payload was considered.
+    fn payloads(&mut self, filter: &str) -> Result<bool, Error> {
+        let style = self.style;
+        let payloads = Payloads::of(self.project, filter)?;
+        if payloads.redundant.is_empty() && payloads.kept.is_empty() && payloads.legacy.is_empty() {
+            return Ok(payloads.matched);
+        }
+        let mut text = format!("\n{}\n\n", style.bold("  Payload overrides"));
+        if !payloads.legacy.is_empty() {
+            text.push_str(&payloads.legacy_report(self.project, style));
+        }
+        if payloads.redundant.is_empty() {
+            if !payloads.kept.is_empty() {
+                let note = format!(
+                    "  No byte-identical payload overrides — {} real customization(s).",
+                    payloads.kept.len()
+                );
+                text.push_str(&format!("{}\n", style.dim(&note)));
+            }
+            self.say(&text)?;
+            return Ok(payloads.matched);
+        }
+        text.push_str(&payloads.redundant_report(self.project, style));
+        if !self.apply {
+            let note = format!(
                 "  → would delete {} payload override(s).",
-                redundant.len()
-            ))
-        ));
-        put(out, text.as_bytes())?;
-        return Ok(matched);
+                payloads.redundant.len()
+            );
+            text.push_str(&format!("{}\n", style.dim(&note)));
+            self.say(&text)?;
+            return Ok(payloads.matched);
+        }
+        self.say(&text)?;
+        self.delete_payloads(&payloads.redundant)?;
+        Ok(payloads.matched)
     }
-    put(out, text.as_bytes())?;
-    let (mut deleted, mut skipped) = (0usize, 0usize);
-    for file in &redundant {
-        let rel = relative(project, file);
-        let delete = auto_yes
-            || !interactive
-            || yes(&ask(&style.bold(&format!("Delete {rel}? [y/N]")), out));
-        if delete {
+
+    fn delete_payloads(&mut self, redundant: &[PathBuf]) -> Result<(), Error> {
+        let style = self.style;
+        let (mut deleted, mut skipped) = (0usize, 0usize);
+        for file in redundant {
+            let rel = relative(self.project, file);
+            let delete = self.auto_yes
+                || !self.interactive
+                || self.confirmed(&format!("Delete {rel}? [y/N]"));
+            if !delete {
+                self.say(&format!("{}\n", style.dim(&format!("  Kept {rel}"))))?;
+                skipped += 1;
+                continue;
+            }
             std::fs::remove_file(file).map_err(|e| Error::io(file, e))?;
             if let Some(dir) = file.parent() {
                 let _ = std::fs::remove_dir(dir);
             }
-            put(
-                out,
-                format!("  {} {rel}\n", style.green("Deleted")).as_bytes(),
-            )?;
+            self.say(&format!("  {} {rel}\n", style.green("Deleted")))?;
             deleted += 1;
-        } else {
-            put(
-                out,
-                format!("{}\n", style.dim(&format!("  Kept {rel}"))).as_bytes(),
-            )?;
-            skipped += 1;
         }
-    }
-    put(
-        out,
-        format!(
+        self.say(&format!(
             "\n{}\n",
             style.dim(&format!("  Removed {deleted}, kept {skipped}."))
-        )
-        .as_bytes(),
-    )?;
-    Ok(matched)
+        ))
+    }
 }
+
+fn sorted_entries(dir: &Path) -> Vec<(String, PathBuf)> {
+    let mut entries: Vec<(String, PathBuf)> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .map(|e| (e.file_name().disk_text(), e.path()))
+                .filter(|(name, _)| !name.starts_with('.'))
+                .collect()
+        })
+        .unwrap_or_default();
+    entries.sort();
+    entries
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
