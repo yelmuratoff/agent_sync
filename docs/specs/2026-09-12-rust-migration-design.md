@@ -494,8 +494,10 @@ decision to make once rather than a bug to find twice.
    `printf '%b'` at write time. The only place it shows is `show`, which then
    prints a header on one line; unescaping in the reader would make the writer
    interpret the backslashes twice.
-4. `get_tool_value` cannot override a base value with an empty string, and
-   never consults `base:` when a shipped file exists for the slug.
+4. *Fixed after 0.42.0.* `get_tool_value` could not override a base value
+   with an empty string, and never consulted `base:` when a shipped file
+   existed for the slug. A key the user file writes now wins even empty, and
+   a declared `base:` fills what the shipped file leaves empty.
 5. *Fixed after 0.42.0.* `defaults.enabled` in `agent_sync.yaml` and the
    `defaults:` block in `lib/config.yaml` were never read. `init` no longer
    writes the key and the shipped block is gone; `defaults.cleanup` in the
