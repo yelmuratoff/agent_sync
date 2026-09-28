@@ -146,3 +146,15 @@ Do not schedule these; attach them to a major when one is cut for another reason
   behaviour for anyone who disabled a target in order to freeze its output, so
   it needs the same major-versus-minor judgement as the rest of this list. The
   README documents the deletion step in the meantime.
+- **Group B status, 2026-09-28.** 12, 17, 18, 19, 21, 26, 28, 29, 31, 33, 41,
+  42, 45 (its `<…>` half), 49 and 50 are fixed; the spec strikes each. Two
+  items were left on purpose:
+  - **47 waits for 46.** Finding only a top-level `mcpServers` turns a file
+    whose only `mcpServers` is nested from today's `Malformed` refusal into
+    the "no key" branch, which replaces the file and drops its other members.
+    Today's refusal is the safer of the two until 46 keeps those members.
+  - **51 is a design change, not a copy.** `plan_import` reads every section
+    from `<source>/.ai/src/<section>` for archives and directories alike, so
+    no import honours `source.*`, and the imported `agent_sync.yaml` keeps
+    `source.*` paths the target project does not have. A fix has to choose
+    between rewriting those keys and recreating the declared paths.
