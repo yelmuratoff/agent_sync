@@ -123,7 +123,7 @@ pub fn diff(
     }
 
     let overrides = project.user_override_tools()?;
-    if overrides.is_empty() {
+    if overrides.is_empty() && slug.is_empty() {
         put(
             out,
             format!(
@@ -378,6 +378,14 @@ mod tests {
         assert_eq!(
             call(&root, &[]).1,
             "\n  No user overrides — all tools inherit fully from base.\n\n"
+        );
+        assert_eq!(
+            call(&root, &["cursro"]),
+            (
+                1,
+                String::new(),
+                "Error: No override found for 'cursro'.\n".to_string()
+            )
         );
         std::fs::write(
             format!("{root}/.ai/src/tools/cursor.yaml"),

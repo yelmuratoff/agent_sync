@@ -517,8 +517,8 @@ decision to make once rather than a bug to find twice.
     block at the end of the file.
 17. `disable` lists every argument that is not enabled afterwards, unknown slugs
     and repeated ones included.
-18. `diff <slug>` prints "No user overrides" and exits 0 when no tool has an
-    override, whatever the slug.
+18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
+    0 when no tool had an override, whatever the slug.
 19. `show <slug> <resource>` labels an override `base` when its extension
     differs from the shipped template's.
 20. `diff` selects the project config before it validates the resource;

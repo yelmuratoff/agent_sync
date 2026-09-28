@@ -22,6 +22,7 @@
 - **`simplify` finds payload overrides under `source.tools`.** With the tool override directory moved, it looked in `.ai/src/tools` and reported no payloads to remove.
 - **`import https://github.com/user/repo.git/` downloads `repo`.** The trailing `/` hid the `.git` suffix, so the download asked for a repository named `repo.git`.
 - **`profile add --tools` trims names and refuses an unknown tool.** `--tools 'claude, nope'` wrote a variant named ` nope-hub`, space included, for a tool that does not exist; it now stops with `unknown tool: nope.` and exit status 2. A `--tools` with no value says so instead of exiting 1 in silence.
+- **`diff <slug>` no longer answers "No user overrides" for any slug.** In a project without overrides, a mistyped slug read as nothing to diff; it now fails with `No override found for '<slug>'`, as it already did when other tools had overrides.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 
