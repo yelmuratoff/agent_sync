@@ -524,8 +524,8 @@ decision to make once rather than a bug to find twice.
     0 when no tool had an override, whatever the slug.
 19. *Fixed after 0.42.0.* `show <slug> <resource>` labelled an override
     `base` when its extension differed from the shipped template's.
-20. `diff` selects the project config before it validates the resource;
-    `customize` and `show` validate first.
+20. *Fixed after 0.42.0.* `diff` selected the project config before it
+    validated the resource; `customize` and `show` validate first.
 21. *Fixed after 0.42.0.* `simplify`'s payload pass scanned `.ai/src/tools` even when `source.tools`
     moves the tool override directory.
 22. *Fixed in 0.38.0.* `resolve` without a terminal ignored its tool filter

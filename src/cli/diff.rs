@@ -102,7 +102,6 @@ pub fn diff(
             }
         }
     }
-    let project = discover()?;
     let resource = if resource.is_empty() {
         "tool".to_string()
     } else {
@@ -111,6 +110,7 @@ pub fn diff(
     if !VALID_RESOURCES.contains(&resource.as_str()) {
         return unknown_resource(style, &resource, err);
     }
+    let project = discover()?;
     if resource != "tool" {
         if slug.is_empty() {
             put(
@@ -360,6 +360,19 @@ mod tests {
             String::from_utf8(out).unwrap(),
             String::from_utf8(err).unwrap(),
         )
+    }
+
+    #[test]
+    fn an_unknown_resource_is_refused_before_the_project_is_looked_up() {
+        let args = ["cursor".to_string(), "nope".to_string()];
+        let discover = || Project::at("/nonexistent-agentsync-root");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = diff(&args, &discover, &Style::plain(), &mut out, &mut err).unwrap();
+        assert_eq!(status, 1);
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "Error: Unknown resource 'nope'.\nValid: tool hooks mcp settings\n"
+        );
     }
 
     #[test]
