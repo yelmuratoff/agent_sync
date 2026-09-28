@@ -20,6 +20,8 @@
 - **Frontmatter fields read the first occurrence and whole quoted values.** A field written twice in a command took its last value, and `description: "use # with care"` was cut at the `#`; the generated `command-*` skills and the inlined command index now carry the first value, quoted text intact.
 - **A rule's globs come only from `paths:`.** A rule with `paths:` also took every other list in its frontmatter, such as `tags:`, into the globs of Cursor's `.mdc`, Copilot's `applyTo`, and the other scoped headers. `paths: ["src/**"]` and `paths: src/**` now scope a rule too, where they used to leave it always on.
 - **The inlined skill index shows a folded description whole.** A skill whose `description:` is a `>-` block was indexed as `-`, and a `>` block showed only its first line; the index now carries the description `skills show` prints.
+- **`enable` adds `enabled:` inside an existing `tools:` block.** A config whose `tools:` had other keys but no `enabled:` got a second `tools:` block at the end of the file, which the reader then ignored.
+- **A nested config key matches only at its own level.** `tools.enabled` also matched an `enabled:` nested deeper, such as `tools.foo.enabled`, when reading or editing a config; a key one level further in no longer answers for it.
 
 ### Fixed
 

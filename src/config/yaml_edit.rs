@@ -42,6 +42,7 @@ pub fn find_key_line(text: &str, key_path: &str) -> Option<(usize, usize)> {
     let mut looking = 0;
     let mut in_section = false;
     let mut section_indent = 0;
+    let mut child_indent: Option<usize> = None;
     for (index, line) in lines(text).into_iter().enumerate() {
         if line.is_empty() || is_comment(line) {
             continue;
@@ -53,12 +54,18 @@ pub fn find_key_line(text: &str, key_path: &str) -> Option<(usize, usize)> {
         if in_section && indent <= section_indent {
             return None;
         }
-        if (in_section || indent == 0) && key == keys[looking] {
+        let at_level = if in_section {
+            indent == *child_indent.get_or_insert(indent)
+        } else {
+            indent == 0
+        };
+        if at_level && key == keys[looking] {
             if looking + 1 == keys.len() {
                 return Some((index + 1, indent));
             }
             in_section = true;
             section_indent = indent;
+            child_indent = None;
             looking += 1;
         }
     }
@@ -92,6 +99,37 @@ pub fn set_scalar_text(text: Option<&str>, key: &str, value: &str) -> String {
     out
 }
 
+/// `text` with the missing tail of `key_path` and a one-item list added right
+/// under the deepest ancestor that exists as a section; `None` when none does.
+fn insert_under_ancestor(text: &str, key_path: &str, value: &str) -> Option<String> {
+    let segments: Vec<&str> = key_path.split('.').collect();
+    let all = lines(text);
+    let (depth, lineno, indent) = (1..segments.len()).rev().find_map(|depth| {
+        let (lineno, indent) = find_key_line(text, &segments[..depth].join("."))?;
+        let (_, rest) = split_indent(all[lineno - 1]).1.split_once(':')?;
+        let rest = rest.trim_matches(is_space);
+        (rest.is_empty() || rest.starts_with('#')).then_some((depth, lineno, indent))
+    })?;
+    let mut out = String::new();
+    for line in &all[..lineno] {
+        out.push_str(line);
+        out.push('\n');
+    }
+    for (step, segment) in segments[depth..].iter().enumerate() {
+        out.push_str(&format!(
+            "{}{segment}:\n",
+            " ".repeat(indent + 2 * (step + 1))
+        ));
+    }
+    let item_indent = indent + 2 * (segments.len() - depth + 1);
+    out.push_str(&format!("{}- {value}\n", " ".repeat(item_indent)));
+    for line in &all[lineno..] {
+        out.push_str(line);
+        out.push('\n');
+    }
+    Some(out)
+}
+
 /// `yaml_list_append` on text.
 pub fn list_append_text(text: Option<&str>, key_path: &str, value: &str) -> Option<String> {
     if yaml_subset::list(text.unwrap_or(""), key_path)
@@ -101,6 +139,11 @@ pub fn list_append_text(text: Option<&str>, key_path: &str, value: &str) -> Opti
         return None;
     }
     let found = text.and_then(|text| find_key_line(text, key_path));
+    if found.is_none()
+        && let Some(inserted) = text.and_then(|text| insert_under_ancestor(text, key_path, value))
+    {
+        return Some(inserted);
+    }
     let (Some(text), Some((key_lineno, key_indent))) = (text, found) else {
         let mut out = String::new();
         let existing = text.unwrap_or("").trim_end_matches('\n');
@@ -325,7 +368,7 @@ mod tests {
 
     #[test]
     fn append_follows_the_last_item_or_builds_the_path_like_yaml_list_append() {
-        let cases: [(&str, Option<&str>); 7] = [
+        let cases: [(&str, Option<&str>); 8] = [
             (
                 "# AgentSync — Project Configuration\ntools:\n  enabled: []\n",
                 Some("# AgentSync — Project Configuration\ntools:\n  enabled:\n    - claude\n"),
@@ -339,7 +382,7 @@ mod tests {
             ("tools:\n  enabled: [claude, cursor]", None),
             (
                 "format: 2\ntools:\n  other: x\n\n\n",
-                Some("format: 2\ntools:\n  other: x\n\ntools:\n  enabled:\n    - claude\n"),
+                Some("format: 2\ntools:\n  enabled:\n    - claude\n  other: x\n\n\n"),
             ),
             ("", Some("tools:\n  enabled:\n    - claude\n")),
             (
@@ -348,7 +391,11 @@ mod tests {
             ),
             (
                 "tools:\n  foo:\n    enabled: x\n",
-                Some("tools:\n  foo:\n    enabled:\n      - claude\n"),
+                Some("tools:\n  enabled:\n    - claude\n  foo:\n    enabled: x\n"),
+            ),
+            (
+                "tools: x\n",
+                Some("tools: x\n\ntools:\n  enabled:\n    - claude\n"),
             ),
         ];
         for (text, expected) in cases {

@@ -72,6 +72,7 @@ pub fn found(text: &str, key_path: &str) -> Option<String> {
     let keys: Vec<&str> = key_path.split('.').collect();
     let mut level = 0usize;
     let mut section_indent = 0usize;
+    let mut child_indent: Option<usize> = None;
     let mut in_section = false;
 
     for line in text.lines() {
@@ -90,7 +91,7 @@ pub fn found(text: &str, key_path: &str) -> Option<String> {
             if indent <= section_indent {
                 return None;
             }
-            if key != keys[level] {
+            if indent != *child_indent.get_or_insert(indent) || key != keys[level] {
                 continue;
             }
         }
@@ -102,6 +103,7 @@ pub fn found(text: &str, key_path: &str) -> Option<String> {
         }
         in_section = true;
         section_indent = indent;
+        child_indent = None;
         level += 1;
     }
     None
@@ -126,6 +128,7 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
     let mut items = Vec::new();
     let mut level = 0usize;
     let mut section_indent = 0usize;
+    let mut child_indent: Option<usize> = None;
     let mut in_section = false;
     let mut collecting = false;
     let mut key_indent = 0usize;
@@ -169,7 +172,7 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
             if indent <= section_indent {
                 return items;
             }
-            if key != keys[level] {
+            if indent != *child_indent.get_or_insert(indent) || key != keys[level] {
                 continue;
             }
         }
@@ -183,6 +186,7 @@ fn block_list(text: &str, key_path: &str) -> Vec<String> {
         }
         in_section = true;
         section_indent = indent;
+        child_indent = None;
         level += 1;
     }
     items
@@ -301,6 +305,15 @@ url: http://example.com/x#frag
         assert!(list(text, "tools.enabled").is_empty());
         let compact = "tools:\n  enabled:\n  - claude\n";
         assert_eq!(list(compact, "tools.enabled"), ["claude"]);
+    }
+
+    #[test]
+    fn a_nested_key_matches_only_a_direct_child() {
+        let text = "tools:\n  foo:\n    enabled: x\n    list:\n      - a\n";
+        assert_eq!(found(text, "tools.enabled"), None);
+        assert!(list(text, "tools.list").is_empty());
+        let text = "tools:\n  foo:\n    enabled: x\n  enabled: y\n";
+        assert_eq!(value(text, "tools.enabled"), "y");
     }
 
     #[test]

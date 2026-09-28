@@ -536,8 +536,11 @@ decision to make once rather than a bug to find twice.
     another file, while "already enabled" read the selected one.
 15. *Fixed after 0.42.0.* `disable` created `.ai/agent_sync.yaml` when the
     project had none.
-16. `enable` under a `tools:` block without `enabled:` appends a second `tools:`
-    block at the end of the file.
+16. *Fixed after 0.42.0.* `enable` under a `tools:` block without `enabled:`
+    appended a second `tools:` block at the end of the file; it now adds
+    `enabled:` inside the existing block. The same change makes a nested key
+    match only a direct child, where `tools.enabled` used to find
+    `tools.foo.enabled` in both the reader and the editor.
 17. *Fixed after 0.42.0.* `disable` listed every argument that was not
     enabled afterwards, unknown slugs and repeated ones included.
 18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
