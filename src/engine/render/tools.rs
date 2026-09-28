@@ -81,6 +81,9 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
             let dests = collect_tool_dests(s, run, &tool, false);
             if run.selection.includes(slug) {
                 run.backup_targets.extend(dests);
+                let legacy = legacy_dests(s, &tool);
+                run.backup_targets
+                    .extend(legacy.into_iter().map(|(_, abs)| abs));
             }
         } else if run.cleanup == "true" {
             for key in TARGET_KEYS {
@@ -102,6 +105,23 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
             run.backup_targets.extend(dests);
         }
     }
+}
+
+/// Each target's resolved `legacy_dest`: where an earlier release of the tool
+/// config wrote that target, keyed by the target.
+pub(super) fn legacy_dests(s: &mut Session, tool: &Tool) -> Vec<(&'static str, String)> {
+    let mut found = Vec::new();
+    for key in TARGET_KEYS {
+        let raw = tool.value(&format!("targets.{key}.legacy_dest"));
+        if raw.is_empty() {
+            continue;
+        }
+        let label = format!("targets.{key}.legacy_dest for {}", tool.slug);
+        if let Some(abs) = s.paths.clone().resolve_dest(&raw, &label, &mut s.log) {
+            found.push((key, abs));
+        }
+    }
+    found
 }
 
 pub(super) fn keyed(s: &Session, tool: &Tool, resource: &str) -> bool {

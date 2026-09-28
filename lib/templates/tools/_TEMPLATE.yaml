@@ -66,6 +66,11 @@ targets:
     # Optional: Override source directory (default is .ai/src/rules)
     # source: ".ai/src/my-rules"
 
+    # Optional, any target: where an earlier release of this config wrote the
+    # target. Sync removes the files there the manifest records (never
+    # hand-written ones) once the target moves to `dest`.
+    # legacy_dest: ".tool/old-rules"
+
     # Optional: Append imports to the main AGENTS file (Claude-specific)
     # append_imports: false
 

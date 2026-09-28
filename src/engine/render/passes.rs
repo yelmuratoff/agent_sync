@@ -3,7 +3,7 @@
 use super::steps::{
     sync_commands_step, sync_payloads_step, sync_rules_step, sync_skills_step, sync_subagents_step,
 };
-use super::tools::load_tool;
+use super::tools::{self, load_tool};
 use super::{Run, Step, Stop, TARGET_KEYS, checkpoint, io};
 use crate::config::tool::Tool;
 use crate::engine::session::Session;
@@ -267,6 +267,10 @@ fn sync_tool(s: &mut Session, run: &mut Run, slug: &str) -> Step {
     checkpoint(s)?;
     sync_payloads_step(s, &tool, &dests)?;
     checkpoint(s)?;
+    if !run.profile_tools.contains(slug) {
+        remove_legacy_outputs(s, &tool)?;
+        checkpoint(s)?;
+    }
 
     let post_sync = tool.value("post_sync");
     if !s.dry_run && !run_post_sync_hook(s, run, &display, &post_sync)? {
@@ -313,6 +317,23 @@ fn run_post_sync_hook(
         s.log.warning("Post-sync hook failed");
     }
     Ok(succeeded)
+}
+
+/// Removes what an earlier run generated at a target's `legacy_dest`, so a
+/// tool that reads both its old and new paths does not load it twice.
+fn remove_legacy_outputs(s: &mut Session, tool: &Tool) -> Step {
+    for (key, abs) in tools::legacy_dests(s, tool) {
+        let removed = file_ops::remove_recorded(s, &abs).map_err(|e| io(s, e))?;
+        if removed == 0 {
+            continue;
+        }
+        let verb = if s.dry_run { "Would remove" } else { "Removed" };
+        s.log.step(&format!(
+            "{verb} {removed} earlier output(s) from {}/ (targets.{key} moved)",
+            s.display(&abs)
+        ));
+    }
+    Ok(())
 }
 
 /// `cleanup_tool`: remove a disabled tool's unprotected outputs.

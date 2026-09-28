@@ -85,6 +85,17 @@ impl Session {
         })
     }
 
+    /// Whether the previous run's manifest records the file `abs`; false
+    /// without a manifest, so nothing unrecorded ever counts as generated.
+    pub fn recorded(&self, abs: &str) -> bool {
+        let Some(manifest) = &self.manifest else {
+            return false;
+        };
+        self.paths
+            .to_repo_relative(abs)
+            .is_some_and(|rel| manifest.contains(&rel))
+    }
+
     /// `sync_note_preserved`.
     pub fn note_preserved(&mut self, shown: &str) {
         if self.dry_run {

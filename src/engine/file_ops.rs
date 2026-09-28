@@ -143,6 +143,49 @@ pub fn sync_skills_dir(
     Ok(())
 }
 
+/// Removes `path`, or every file below it, that the previous manifest records
+/// and this run did not write, then the directories that leaves empty; files
+/// nothing recorded stay. Returns how many files went, or would under
+/// `--dry-run`.
+pub fn remove_recorded(s: &mut Session, path: &str) -> Result<usize, Error> {
+    let files = if s.ws.is_dir(path) {
+        s.ws.files_under(path)
+    } else if s.ws.is_file(path) {
+        vec![path.to_string()]
+    } else {
+        return Ok(0);
+    };
+    let mut removed = 0;
+    for file in files {
+        if !s.recorded(&file) || s.was_touched(&file) {
+            continue;
+        }
+        if !s.dry_run {
+            s.ws.remove(&file)?;
+        }
+        removed += 1;
+    }
+    if !s.dry_run && s.ws.is_dir(path) {
+        remove_empty_dirs(s, path)?;
+    }
+    Ok(removed)
+}
+
+/// Whether `dir` ended up removed, being empty once its empty children went.
+fn remove_empty_dirs(s: &mut Session, dir: &str) -> Result<bool, Error> {
+    let mut empty = true;
+    for name in s.ws.list(dir) {
+        let child = format!("{dir}/{name}");
+        if !s.ws.is_dir(&child) || !remove_empty_dirs(s, &child)? {
+            empty = false;
+        }
+    }
+    if empty {
+        s.ws.remove(dir)?;
+    }
+    Ok(empty)
+}
+
 /// The tally a directory sync ends with: `(N updated)`, and `, M removed`
 /// only once a prune happened.
 pub fn counts(updated: usize, removed: usize) -> String {
@@ -287,6 +330,33 @@ mod tests {
             s.log.tail(1),
             ["   .ai/src/skills/ → .claude/skills/ (2 updated)"]
         );
+    }
+
+    #[test]
+    fn remove_recorded_takes_only_what_the_manifest_recorded() {
+        let mut s = test_session();
+        file(&mut s, "/proj/.windsurf/rules/core.md", "c");
+        file(&mut s, "/proj/.windsurf/skills/a/SKILL.md", "a");
+        file(&mut s, "/proj/.windsurf/skills/a/references/r.md", "r");
+        file(&mut s, "/proj/.windsurf/rules/mine.md", "m");
+        s.activate_manifest(BTreeSet::from([
+            ".windsurf/rules/core.md".to_string(),
+            ".windsurf/skills/a/SKILL.md".to_string(),
+            ".windsurf/skills/a/references/r.md".to_string(),
+        ]));
+        assert_eq!(remove_recorded(&mut s, "/proj/.windsurf").unwrap(), 3);
+        assert!(!s.ws.exists("/proj/.windsurf/skills"));
+        assert!(!s.ws.exists("/proj/.windsurf/rules/core.md"));
+        assert_eq!(s.ws.read("/proj/.windsurf/rules/mine.md").unwrap(), b"m");
+        assert_eq!(remove_recorded(&mut s, "/proj/.nope").unwrap(), 0);
+    }
+
+    #[test]
+    fn remove_recorded_keeps_everything_without_a_manifest() {
+        let mut s = test_session();
+        file(&mut s, "/proj/.windsurf/rules/core.md", "c");
+        assert_eq!(remove_recorded(&mut s, "/proj/.windsurf").unwrap(), 0);
+        assert!(s.ws.exists("/proj/.windsurf/rules/core.md"));
     }
 
     #[test]
