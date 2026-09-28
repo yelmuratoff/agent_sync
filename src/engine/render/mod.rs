@@ -15,7 +15,7 @@ pub use prepare::{
     banner, check_version_pin, prepare, refuse_configless_cleanup, refuse_escaping_source_links,
     setup_overlays,
 };
-pub use tools::build_catalog;
+pub use tools::{build_catalog, collect_legacy_targets};
 
 use crate::Error;
 use crate::engine::session::Session;

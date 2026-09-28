@@ -673,6 +673,24 @@ fn sync_removes_what_it_generated_at_a_moved_destination_and_keeps_the_rest() {
 }
 
 #[test]
+fn rollback_restores_what_a_moved_destination_removed() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    let generated = project.read(".windsurf/rules/core.md");
+    std::fs::remove_file(project.join(".ai/src/tools/windsurf.yaml")).unwrap();
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".windsurf/rules/core.md"));
+
+    project.agentsync().args(["rollback", "--yes"]).assert().success();
+    assert_eq!(project.read(".windsurf/rules/core.md"), generated);
+}
+
+#[test]
 fn sync_cline_writes_native_skills_and_moves_off_clinerules() {
     let project = Project::seeded(&["--outputs", "local"]);
     project.enable_tools(&["cline"]);
@@ -700,6 +718,16 @@ fn sync_cline_writes_native_skills_and_moves_off_clinerules() {
     assert_eq!(project.read(".clinerules/team.md"), "hand-written\n");
     assert!(!project.read("AGENTS.md").contains("## Skills"));
     project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_cline_leaves_a_single_file_clinerules_alone() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["cline"]);
+    project.write(".clinerules", "# hand-written Cline rules\n");
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".cline/rules/core.md"));
+    assert_eq!(project.read(".clinerules"), "# hand-written Cline rules\n");
 }
 
 #[test]

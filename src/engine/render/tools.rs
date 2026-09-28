@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use super::{Run, TARGET_KEYS};
 use crate::config::tool::Tool;
+use crate::engine::file_ops;
 use crate::engine::session::Session;
 use crate::{config::catalog, config::profiles, config::yaml_subset};
 
@@ -81,9 +82,6 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
             let dests = collect_tool_dests(s, run, &tool, false);
             if run.selection.includes(slug) {
                 run.backup_targets.extend(dests);
-                let legacy = legacy_dests(s, &tool);
-                run.backup_targets
-                    .extend(legacy.into_iter().map(|(_, abs)| abs));
             }
         } else if run.cleanup == "true" {
             for key in TARGET_KEYS {
@@ -103,6 +101,24 @@ fn collect_protected_dests(s: &mut Session, run: &mut Run) {
         let dests = collect_tool_dests(s, run, &tool, true);
         if selected_profile_tools.contains(&slug) && run.selection.includes(&slug) {
             run.backup_targets.extend(dests);
+        }
+    }
+}
+
+/// The files the previous manifest records at each selected tool's
+/// `legacy_dest`, which the transaction snapshots before the pass removes
+/// them. Needs the manifest active; a path nothing recorded stays untouched.
+pub fn collect_legacy_targets(s: &mut Session, run: &mut Run) {
+    for slug in run.tools.clone() {
+        if run.profile_tools.contains(&slug)
+            || !run.enabled.contains(&slug)
+            || !run.selection.includes(&slug)
+        {
+            continue;
+        }
+        let tool = load_tool(s, &slug);
+        for (_, abs) in legacy_dests(s, &tool) {
+            run.backup_targets.extend(file_ops::recorded_under(s, &abs));
         }
     }
 }

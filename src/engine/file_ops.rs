@@ -148,16 +148,9 @@ pub fn sync_skills_dir(
 /// nothing recorded stay. Returns how many files went, or would under
 /// `--dry-run`.
 pub fn remove_recorded(s: &mut Session, path: &str) -> Result<usize, Error> {
-    let files = if s.ws.is_dir(path) {
-        s.ws.files_under(path)
-    } else if s.ws.is_file(path) {
-        vec![path.to_string()]
-    } else {
-        return Ok(0);
-    };
     let mut removed = 0;
-    for file in files {
-        if !s.recorded(&file) || s.was_touched(&file) {
+    for file in recorded_under(s, path) {
+        if s.was_touched(&file) {
             continue;
         }
         if !s.dry_run {
@@ -165,10 +158,22 @@ pub fn remove_recorded(s: &mut Session, path: &str) -> Result<usize, Error> {
         }
         removed += 1;
     }
-    if !s.dry_run && s.ws.is_dir(path) {
+    if removed > 0 && !s.dry_run && s.ws.is_dir(path) {
         remove_empty_dirs(s, path)?;
     }
     Ok(removed)
+}
+
+/// The files at or below `path` the manifest records.
+pub fn recorded_under(s: &Session, path: &str) -> Vec<String> {
+    let files = if s.ws.is_dir(path) {
+        s.ws.files_under(path)
+    } else if s.ws.is_file(path) {
+        vec![path.to_string()]
+    } else {
+        Vec::new()
+    };
+    files.into_iter().filter(|file| s.recorded(file)).collect()
 }
 
 /// Whether `dir` ended up removed, being empty once its empty children went.
