@@ -742,6 +742,24 @@ impl Importer<'_, '_> {
         if src_dir.join(".ai").is_dir() {
             copy_tree(&src_dir.join(".ai"), &tmp.join(".ai"))?;
         }
+        for (rel, _) in export_items(&shown, &resolve_sources(&shown), self.style) {
+            let outside_ai = !rel.starts_with(".ai/")
+                && !crate::paths::is_absolute(&rel)
+                && !rel.split('/').any(|segment| segment == "..");
+            let from = src_dir.join(&rel);
+            if !outside_ai {
+                continue;
+            }
+            if from.is_dir() {
+                copy_tree(&from, &tmp.join(&rel))?;
+            } else if from.is_file() {
+                let to = tmp.join(&rel);
+                if let Some(parent) = to.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+                }
+                std::fs::copy(&from, &to).map_err(|e| Error::io(&from, e))?;
+            }
+        }
         if !tmp.join(CONFIG).is_file() && src_dir.join(CONFIG_LEGACY).is_file() {
             std::fs::create_dir_all(tmp.join(".ai")).map_err(|e| Error::io(tmp, e))?;
             std::fs::copy(src_dir.join(CONFIG_LEGACY), tmp.join(CONFIG))
@@ -753,14 +771,73 @@ impl Importer<'_, '_> {
 
 /// What importing `src_root` over the project writes.
 struct ImportPlan {
-    targets: Vec<&'static str>,
-    src_root: PathBuf,
+    /// Where each target is read from in the imported tree.
+    sources: Vec<(&'static str, PathBuf)>,
     dest_base: PathBuf,
     dest_base_rel: String,
     diff: Diff,
-    imported_config: Option<PathBuf>,
+    /// The imported `agent_sync.yaml` without its `source:` block.
+    imported_config: Option<String>,
     config_dest: PathBuf,
     config_action: &'static str,
+}
+
+/// The imported project's copy of `target`: the path its `source.*` declares
+/// when that is relative, stays inside the project, and exists; else the
+/// standard place under `src_root`.
+fn imported_source(src_root: &Path, project: &Path, declared: &Sources, target: &str) -> PathBuf {
+    let rel = if target == "AGENTS.md" {
+        declared.agents.as_str()
+    } else {
+        declared
+            .dirs
+            .iter()
+            .find(|(name, _)| *name == target)
+            .map_or("", |(_, path)| path.as_str())
+    };
+    let inside = !rel.is_empty()
+        && !crate::paths::is_absolute(rel)
+        && !rel.split('/').any(|segment| segment == "..");
+    if inside && project.join(rel).exists() {
+        return project.join(rel);
+    }
+    src_root.join(target)
+}
+
+/// Each `source.<key>` with the target the import writes it to.
+const SOURCE_KEYS: [(&str, &str); 6] = [
+    ("agents", "AGENTS.md"),
+    ("rules", "rules"),
+    ("skills", "skills"),
+    ("commands", "commands"),
+    ("subagents", "agents"),
+    ("tools", "tools"),
+];
+
+/// The imported config's text without the `source.*` paths that name another
+/// place than `<dest_base_rel>/<target>`, where the import writes each target,
+/// and without a `source:` those removals empty; `None` when nothing is left.
+fn imported_config_text(project: &Path, dest_base_rel: &str) -> Option<String> {
+    use crate::config::{yaml_edit::remove_key_text, yaml_subset};
+    let path = [CONFIG, CONFIG_LEGACY]
+        .iter()
+        .map(|rel| project.join(rel))
+        .find(|path| path.is_file())?;
+    let mut text = String::from_utf8_lossy(&std::fs::read(&path).ok()?).into_owned();
+    for (key, target) in SOURCE_KEYS {
+        let key_path = format!("source.{key}");
+        let value = yaml_subset::value(&text, &key_path);
+        if !value.is_empty() && value != format!("{dest_base_rel}/{target}") {
+            text = remove_key_text(&text, &key_path).unwrap_or(text);
+        }
+    }
+    let emptied = SOURCE_KEYS
+        .iter()
+        .all(|(key, _)| yaml_subset::found(&text, &format!("source.{key}")).is_none());
+    if emptied && yaml_subset::found(&text, "source") == Some(String::new()) {
+        text = remove_key_text(&text, "source").unwrap_or(text);
+    }
+    (!text.trim().is_empty()).then_some(text)
 }
 
 fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
@@ -770,10 +847,7 @@ fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
         src_root.parent()
     }
     .map_or_else(|| src_root.clone(), Path::to_path_buf);
-    let imported_config = [CONFIG, CONFIG_LEGACY]
-        .iter()
-        .map(|rel| src_project_root.join(rel))
-        .find(|path| path.is_file());
+    let declared = resolve_sources(&src_project_root.disk_text());
 
     let local = resolve_sources(root);
     let dest_base_rel = if local.base.is_empty() {
@@ -781,6 +855,7 @@ fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
     } else {
         local.base.clone()
     };
+    let imported_config = imported_config_text(&src_project_root, &dest_base_rel);
     let dest_base = Path::new(root).join(&dest_base_rel);
 
     let mut targets: Vec<&'static str> = vec!["AGENTS.md"];
@@ -788,20 +863,28 @@ fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
     if !only.is_empty() {
         targets = filter_targets(&targets, only);
     }
+    let sources: Vec<(&'static str, PathBuf)> = targets
+        .iter()
+        .map(|target| {
+            let path = imported_source(&src_root, &src_project_root, &declared, target);
+            (*target, path)
+        })
+        .collect();
     let mut diff = Diff::default();
-    for target in &targets {
-        let src_path = src_root.join(target);
+    for (target, src_path) in &sources {
         let dest_path = dest_base.join(target);
         if src_path.is_file() {
-            diff.file(&src_path, &dest_path, target);
+            diff.file(src_path, &dest_path, target);
         } else if src_path.is_dir() {
-            diff.dir(&src_path, &dest_path, target);
+            diff.dir(src_path, &dest_path, target);
         }
     }
     let config_dest = Path::new(root).join(CONFIG);
     let config_action = match &imported_config {
         Some(_) if !config_dest.is_file() => "new",
-        Some(imported) if !same_bytes(imported, &config_dest) => "update",
+        Some(text) if std::fs::read(&config_dest).ok().as_deref() != Some(text.as_bytes()) => {
+            "update"
+        }
         _ => "",
     };
     match config_action {
@@ -810,8 +893,7 @@ fn plan_import(root: &str, src_root: PathBuf, only: &str) -> ImportPlan {
         _ => {}
     }
     ImportPlan {
-        targets,
-        src_root,
+        sources,
         dest_base,
         dest_base_rel,
         diff,
@@ -870,17 +952,16 @@ fn plan_text(style: &Style, plan: &ImportPlan, dry_run: bool) -> String {
 
 fn apply_import(plan: &ImportPlan) -> Result<(), Error> {
     std::fs::create_dir_all(&plan.dest_base).map_err(|e| Error::io(&plan.dest_base, e))?;
-    for target in &plan.targets {
-        let src_path = plan.src_root.join(target);
+    for (target, src_path) in &plan.sources {
         let dest_path = plan.dest_base.join(target);
         if src_path.is_file() {
-            copy_file(&src_path, &dest_path)?;
+            copy_file(src_path, &dest_path)?;
         } else if src_path.is_dir() {
             std::fs::create_dir_all(&dest_path).map_err(|e| Error::io(&dest_path, e))?;
             let mut files = Vec::new();
-            files_below(&src_path, &mut files);
+            files_below(src_path, &mut files);
             for file in files {
-                let rel = file.strip_prefix(&src_path).unwrap_or(&file);
+                let rel = file.strip_prefix(src_path).unwrap_or(&file);
                 let dest_file = dest_path.join(rel);
                 if let Some(parent) = dest_file.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
@@ -898,7 +979,7 @@ fn apply_import(plan: &ImportPlan) -> Result<(), Error> {
     if let Some(parent) = plan.config_dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
     }
-    copy_file(imported, &plan.config_dest)
+    std::fs::write(&plan.config_dest, imported).map_err(|e| Error::io(&plan.config_dest, e))
 }
 
 /// `cmd_import`.
@@ -1210,6 +1291,25 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn an_imported_config_drops_its_source_paths() {
+        let (_source, source_root) = tiny_project();
+        write(
+            Path::new(&source_root),
+            ".ai/agent_sync.yaml",
+            "tools:\n  enabled: [claude]\n\nsource:\n  commands: custom/cmds\n",
+        );
+        let target = tempfile::tempdir().unwrap();
+        let target_root = std::fs::canonicalize(target.path()).unwrap().disk_text();
+        let (status, _, err) = run_import(&target_root, &[&source_root]);
+        assert_eq!((status, err.as_str()), (0, ""));
+        assert_eq!(
+            std::fs::read_to_string(target.path().join(".ai/agent_sync.yaml")).unwrap(),
+            "tools:\n  enabled: [claude]\n\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_directory_import_copies_then_reports_up_to_date_like_cmd_import() {
         let (_source, source_root) = tiny_project();
         let target = tempfile::tempdir().unwrap();
@@ -1219,14 +1319,18 @@ mod tests {
         assert_eq!(
             out,
             format!(
-                "\n  AgentSync Import\n\n  Reading from {source_root}...\n  Source: Directory: {source_root}\n\n  Changes:\n    + AGENTS.md (new)\n    ↳ rules (1 new)\n    ↳ skills (1 new)\n    + agent_sync.yaml (new)\n\n  Summary: 4 new, 0 updated, 0 unchanged\n\n  Imported! 4 new, 0 updated files.\n\n  Next steps:\n    1. Review imported files in .ai/src\n    2. Run agentsync sync to distribute to all tools\n\n"
+                "\n  AgentSync Import\n\n  Reading from {source_root}...\n  Source: Directory: {source_root}\n\n  Changes:\n    + AGENTS.md (new)\n    ↳ rules (1 new)\n    ↳ skills (1 new)\n    ↳ commands (1 new)\n\n  Summary: 4 new, 0 updated, 0 unchanged\n\n  Imported! 4 new, 0 updated files.\n\n  Next steps:\n    1. Review imported files in .ai/src\n    2. Run agentsync sync to distribute to all tools\n\n"
             )
         );
         assert_eq!(
             std::fs::read_to_string(target.path().join(".ai/src/skills/x/SKILL.md")).unwrap(),
             "# Skill\n"
         );
-        assert!(!target.path().join(".ai/src/commands").exists());
+        assert_eq!(
+            std::fs::read_to_string(target.path().join(".ai/src/commands/c.md")).unwrap(),
+            "# Command\n"
+        );
+        assert!(!target.path().join(".ai/agent_sync.yaml").exists());
         let (status, out, _) = run_import(&target_root, &[&source_root]);
         assert_eq!(status, 0);
         assert!(out.ends_with("  Source: Directory: {source_root}\n\n  Already up to date! Nothing to import.\n\n".replace("{source_root}", &source_root).as_str()));

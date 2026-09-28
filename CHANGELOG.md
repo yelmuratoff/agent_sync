@@ -27,6 +27,7 @@
 - **`refresh` off a terminal changes nothing without `--yes`.** When only auto-updates were pending it applied them silently, and with `--include-deleted` it printed restore prompts it then declined; any pending change now stops with the same `Use --yes` error new files and conflicts gave. CI jobs that ran `refresh` to take auto-updates add `--yes`.
 - **`init` records no template hash for the files it adopts.** The template manifest was written before adoption, so an adopted `AGENTS.md` or rule carried the shipped template's hash and `refresh` treated the project's own text as an edit of the template. A project initialised before this keeps that record until `refresh --review` revisits it.
 - **`add mcp` keeps the rest of `.ai/src/mcp.json`.** Adding a server dropped every top-level key other than `mcpServers`, replaced a file without `mcpServers` wholesale, took an `mcpServers` nested inside another key for the real one, and silently lost servers after an invalid key. Other keys now stay in order, `mcpServers` is added beside them, and a file that is not valid JSON is refused and left as it is.
+- **`import` follows the source project's `source.*` paths.** A project keeping, say, its commands in `custom/cmds` exported them, but no import read them back, and the imported `agent_sync.yaml` then pointed at a `custom/cmds` the new project did not have. Import now reads each section from its declared path, writes it into the project's own `.ai/src/`, and drops the `source.*` entries that would point elsewhere.
 
 ### Fixed
 

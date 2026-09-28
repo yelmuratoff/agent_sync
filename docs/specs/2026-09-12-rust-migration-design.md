@@ -650,8 +650,13 @@ decision to make once rather than a bug to find twice.
 50. *Fixed after 0.42.0.* `import` stripped a `.git` suffix before a trailing
     `/`, so `https://github.com/user/repo.git/` downloaded the repository
     `repo.git`.
-51. A directory `import` copies the source project's `.ai/` alone, so a
-    `source:` override pointing elsewhere in that project is not carried.
+51. *Fixed after 0.42.0.* A directory `import` copied the source project's
+    `.ai/` alone, so a `source:` override pointing elsewhere in that project
+    was not carried; no import read `source.*` at all, and the imported config
+    kept paths the target project lacked. A directory import now copies what
+    `export` would archive, every import reads each section from its declared
+    relative path, and the imported config drops the `source.*` entries that
+    name another place than where the import writes.
 52. *Fixed after 0.42.0.* `generate` ended with status 1 and no message when
     stdin closed before the menu choice or the description was complete. At
     the menu it now says `Cancelled.`; in the description the end of input
