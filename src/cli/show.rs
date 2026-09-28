@@ -97,33 +97,20 @@ pub fn show(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut show_base = false;
-    let (mut slug, mut resource) = (String::new(), String::new());
-    for arg in args {
-        match arg.as_str() {
-            "--base" => show_base = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: Unknown flag: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            value if slug.is_empty() => slug = value.to_string(),
-            value if resource.is_empty() => resource = value.to_string(),
-            _ => {
-                put(
-                    err,
-                    format!("{}: Too many arguments.\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
+    let (show_base, slug, resource) = match show_args(args) {
+        Ok(parsed) => parsed,
+        Err(None) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
+        Err(Some(message)) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     if slug.is_empty() {
         put(
             err,
@@ -146,190 +133,212 @@ pub fn show(
         return unknown_resource(style, &resource, err);
     }
     let project = discover()?;
-    if resource != "tool" {
-        return show_payload(&project, &slug, &resource, show_base, style, out, err);
-    }
-
-    let base = catalog::base_tool_yaml(&slug);
-    let user_file = project.user_tool_file(&slug);
-    if show_base {
-        let Some(base) = base else {
-            put(
-                err,
-                format!("{}: No base template for '{slug}'.\n", style.red("Error")).as_bytes(),
-            )?;
-            return Ok(1);
-        };
-        put(
-            out,
-            format!(
-                "\n{} {}\n\n",
-                style.bold("  Base template"),
-                style.dim(&base_tool_shown(&slug))
-            )
-            .as_bytes(),
-        )?;
-        put(out, &text::sed_indent(base.as_bytes()))?;
-        put(out, b"\n")?;
-        return Ok(0);
-    }
-    let user_text = read_text(&user_file)?;
-    if base.is_none() && user_text.is_none() {
-        put(
-            err,
-            format!(
-                "{}: Unknown tool '{slug}'.\nRun {} to see available tools.\n",
-                style.red("Error"),
-                style.cyan("agentsync list")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
-    let label = if project.enabled_tools()?.contains(&slug) {
-        style.green("enabled")
-    } else {
-        style.dim("disabled")
+    let request = Show {
+        project: &project,
+        slug: &slug,
+        style,
+        show_base,
     };
-    let tool = Tool::load(&project, &slug)?;
-    let mut text = format!(
-        "\n{}  [{label}]\n",
-        style.bold(&format!("  {}", tool.display_name()))
-    );
-    if user_text.is_some() {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!("  override: {}", user_file.disk_text()))
-        ));
+    if resource == "tool" {
+        request.tool(out, err)
+    } else {
+        request.payload(&resource, out, err)
     }
-    if base.is_some() {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!("  base:     {}", base_tool_shown(&slug)))
-        ));
-    }
-    text.push('\n');
-    for key in KEYS {
-        let user = user_text
-            .as_deref()
-            .map(|t| yaml_subset::value(t, key))
-            .unwrap_or_default();
-        let shipped = base.map(|t| yaml_subset::value(t, key)).unwrap_or_default();
-        if !user.is_empty() {
-            text.push_str(&format!(
-                "    {}  {key:<42}  {user}\n",
-                style.yellow("★ user")
-            ));
-        } else if !shipped.is_empty() {
-            text.push_str(&format!(
-                "    {}  {key:<42}  {shipped}\n",
-                style.dim("base  ")
-            ));
-        }
-    }
-    text.push('\n');
-    put(out, text.as_bytes())?;
-    Ok(0)
 }
 
-/// `_show_payload`.
-fn show_payload(
-    project: &Project,
-    slug: &str,
-    resource: &str,
+/// `--base`, the slug, and the resource; `Err(None)` asks for the help,
+/// `Err(Some(message))` refuses the command line.
+fn show_args(args: &[String]) -> Result<(bool, String, String), Option<String>> {
+    let (mut show_base, mut slug, mut resource) = (false, String::new(), String::new());
+    for arg in args {
+        match arg.as_str() {
+            "--base" => show_base = true,
+            "--help" | "-h" => return Err(None),
+            flag if flag.starts_with('-') => return Err(Some(format!("Unknown flag: {flag}"))),
+            value if slug.is_empty() => slug = value.to_string(),
+            value if resource.is_empty() => resource = value.to_string(),
+            _ => return Err(Some("Too many arguments.".into())),
+        }
+    }
+    Ok((show_base, slug, resource))
+}
+
+/// One `show` of a tool's config or payload, base-only under `--base`.
+struct Show<'a> {
+    project: &'a Project,
+    slug: &'a str,
+    style: &'a Style,
     show_base: bool,
-    style: &Style,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> Result<u8, Error> {
-    let tool = Tool::load(project, slug)?;
-    let base = payload::base_source(&tool, resource);
-    let user_file = payload::override_path(project, &tool, resource).filter(|p| p.is_file());
-    let legacy = payload::legacy_override_path(project, &tool, resource).filter(|p| p.is_file());
-    let (effective, warn) = payload::effective_source(project, &tool, resource)?;
-    if let Some(path) = &warn {
+}
+
+impl Show<'_> {
+    fn error(&self, err: &mut dyn Write, message: &str) -> Result<u8, Error> {
         put(
             err,
-            payload::legacy_warning(project, path, style).as_bytes(),
+            format!("{}: {message}\n", self.style.red("Error")).as_bytes(),
         )?;
+        Ok(1)
     }
 
-    if show_base {
-        let Some(base) = base else {
+    /// Prints a heading, then `bytes` indented as `sed 's/^/  /'` does.
+    fn listing(&self, out: &mut dyn Write, heading: &str, bytes: &[u8]) -> Result<u8, Error> {
+        put(out, heading.as_bytes())?;
+        put(out, &text::sed_indent(bytes))?;
+        put(out, b"\n")?;
+        Ok(0)
+    }
+
+    fn tool(&self, out: &mut dyn Write, err: &mut dyn Write) -> Result<u8, Error> {
+        let (style, slug) = (self.style, self.slug);
+        let base = catalog::base_tool_yaml(slug);
+        if self.show_base {
+            let Some(base) = base else {
+                return self.error(err, &format!("No base template for '{slug}'."));
+            };
+            let heading = format!(
+                "\n{} {}\n\n",
+                style.bold("  Base template"),
+                style.dim(&base_tool_shown(slug))
+            );
+            return self.listing(out, &heading, base.as_bytes());
+        }
+        let user_file = self.project.user_tool_file(slug);
+        let user_text = read_text(&user_file)?;
+        if base.is_none() && user_text.is_none() {
             put(
                 err,
                 format!(
-                    "{}: No base {resource} template for '{slug}'.\n",
-                    style.red("Error")
+                    "{}: Unknown tool '{slug}'.\nRun {} to see available tools.\n",
+                    style.red("Error"),
+                    style.cyan("agentsync list")
+                )
+                .as_bytes(),
+            )?;
+            return Ok(1);
+        }
+        let label = if self.project.enabled_tools()?.contains(slug) {
+            style.green("enabled")
+        } else {
+            style.dim("disabled")
+        };
+        let tool = Tool::load(self.project, slug)?;
+        let mut text = format!(
+            "\n{}  [{label}]\n",
+            style.bold(&format!("  {}", tool.display_name()))
+        );
+        if user_text.is_some() {
+            let shown = format!("  override: {}", user_file.disk_text());
+            text.push_str(&format!("{}\n", style.dim(&shown)));
+        }
+        if base.is_some() {
+            let shown = format!("  base:     {}", base_tool_shown(slug));
+            text.push_str(&format!("{}\n", style.dim(&shown)));
+        }
+        text.push('\n');
+        text.push_str(&self.fields(base, user_text.as_deref()));
+        text.push('\n');
+        put(out, text.as_bytes())?;
+        Ok(0)
+    }
+
+    /// Each known key the override or the base sets, the override first.
+    fn fields(&self, base: Option<&str>, user_text: Option<&str>) -> String {
+        let style = self.style;
+        let mut text = String::new();
+        for key in KEYS {
+            let user = user_text
+                .map(|t| yaml_subset::value(t, key))
+                .unwrap_or_default();
+            let shipped = base.map(|t| yaml_subset::value(t, key)).unwrap_or_default();
+            if !user.is_empty() {
+                text.push_str(&format!(
+                    "    {}  {key:<42}  {user}\n",
+                    style.yellow("★ user")
+                ));
+            } else if !shipped.is_empty() {
+                text.push_str(&format!(
+                    "    {}  {key:<42}  {shipped}\n",
+                    style.dim("base  ")
+                ));
+            }
+        }
+        text
+    }
+
+    /// `_show_payload`.
+    fn payload(
+        &self,
+        resource: &str,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) -> Result<u8, Error> {
+        let (style, slug, project) = (self.style, self.slug, self.project);
+        let tool = Tool::load(project, slug)?;
+        let base = payload::base_source(&tool, resource);
+        let user_file = payload::override_path(project, &tool, resource).filter(|p| p.is_file());
+        let legacy =
+            payload::legacy_override_path(project, &tool, resource).filter(|p| p.is_file());
+        let (effective, warn) = payload::effective_source(project, &tool, resource)?;
+        if let Some(path) = &warn {
+            put(
+                err,
+                payload::legacy_warning(project, path, style).as_bytes(),
+            )?;
+        }
+        if self.show_base {
+            let Some(base) = base else {
+                return self.error(err, &format!("No base {resource} template for '{slug}'."));
+            };
+            let heading = format!(
+                "\n{} {}\n\n",
+                style.bold(&format!("  Base {resource}")),
+                style.dim(&base.shown())
+            );
+            return self.listing(out, &heading, &base.bytes()?);
+        }
+        let Some(effective) = effective else {
+            put(
+                err,
+                format!(
+                    "{}: No {resource} source for '{slug}' (neither override nor base).\nRun {} to see available tools.\n",
+                    style.red("Error"),
+                    style.cyan("agentsync list")
                 )
                 .as_bytes(),
             )?;
             return Ok(1);
         };
-        put(
-            out,
-            format!(
-                "\n{} {}\n\n",
-                style.bold(&format!("  Base {resource}")),
-                style.dim(&base.shown())
-            )
-            .as_bytes(),
-        )?;
-        put(out, &text::sed_indent(&base.bytes()?))?;
-        put(out, b"\n")?;
-        return Ok(0);
+        let is = |path: &Option<std::path::PathBuf>| matches!((&effective, path), (Source::Disk(e), Some(p)) if e == p);
+        let label = if is(&user_file) {
+            style.yellow("★ user override")
+        } else if is(&legacy) {
+            style.yellow("★ user override (legacy layout)")
+        } else {
+            style.dim("base")
+        };
+        let mut text = format!(
+            "\n{}\n{}\n",
+            style.bold(&format!(
+                "  {} — {resource}  [{label}]",
+                tool.display_name()
+            )),
+            style.dim(&format!("  effective: {}", effective.shown()))
+        );
+        if let Some(user) = &user_file {
+            let shown = format!("  override:  {}", user.disk_text());
+            text.push_str(&format!("{}\n", style.dim(&shown)));
+        }
+        if let (Some(legacy), None) = (&legacy, &user_file) {
+            let shown = format!("  legacy:    {}", legacy.disk_text());
+            text.push_str(&format!("{}\n", style.dim(&shown)));
+        }
+        if let Some(base) = &base {
+            let shown = format!("  base:      {}", base.shown());
+            text.push_str(&format!("{}\n", style.dim(&shown)));
+        }
+        text.push('\n');
+        self.listing(out, &text, &effective.bytes()?)
     }
-    let Some(effective) = effective else {
-        put(
-            err,
-            format!(
-                "{}: No {resource} source for '{slug}' (neither override nor base).\nRun {} to see available tools.\n",
-                style.red("Error"),
-                style.cyan("agentsync list")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    };
-    let is = |path: &Option<std::path::PathBuf>| matches!((&effective, path), (Source::Disk(e), Some(p)) if e == p);
-    let label = if is(&user_file) {
-        style.yellow("★ user override")
-    } else if is(&legacy) {
-        style.yellow("★ user override (legacy layout)")
-    } else {
-        style.dim("base")
-    };
-    let mut text = format!(
-        "\n{}\n{}\n",
-        style.bold(&format!(
-            "  {} — {resource}  [{label}]",
-            tool.display_name()
-        )),
-        style.dim(&format!("  effective: {}", effective.shown()))
-    );
-    if let Some(user) = &user_file {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!("  override:  {}", user.disk_text()))
-        ));
-    }
-    if let (Some(legacy), None) = (&legacy, &user_file) {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!("  legacy:    {}", legacy.disk_text()))
-        ));
-    }
-    if let Some(base) = &base {
-        text.push_str(&format!(
-            "{}\n",
-            style.dim(&format!("  base:      {}", base.shown()))
-        ));
-    }
-    text.push('\n');
-    put(out, text.as_bytes())?;
-    put(out, &text::sed_indent(&effective.bytes()?))?;
-    put(out, b"\n")?;
-    Ok(0)
 }
 #[cfg(all(test, unix))]
 mod tests {
