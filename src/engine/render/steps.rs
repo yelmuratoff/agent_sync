@@ -243,9 +243,12 @@ fn refuse_skill_collisions(s: &mut Session, src: &str, include: &str, exclude: &
             .collect::<Vec<_>>()
             .join(", ");
         s.log.error(&format!(
-            "Skill name '{name}' is claimed by {claims}. Tools install skills flat by name — rename one."
+            "Skill name '{name}' is claimed by {claims}; every tool installs skills flat by name"
         ));
     }
+    s.log.err(
+        "  • Rename one skill of each pair: skill names are unique across categories".to_string(),
+    );
     Err(Stop(1))
 }
 

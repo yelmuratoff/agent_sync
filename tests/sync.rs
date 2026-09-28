@@ -696,7 +696,7 @@ fn sync_refuses_two_skills_sharing_a_name_and_changes_nothing() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "Skill name 'bloc' is claimed by skills/backend/bloc, skills/flutter/bloc. Tools install skills flat by name — rename one.",
+            "[ERROR] Skill name 'bloc' is claimed by skills/backend/bloc, skills/flutter/bloc; every tool installs skills flat by name\n  • Rename one skill of each pair: skill names are unique across categories\n",
         ));
     assert_eq!(project.sha256(".claude/skills/bloc/SKILL.md"), before);
 }
