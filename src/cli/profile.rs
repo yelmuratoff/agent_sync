@@ -560,7 +560,6 @@ fn list(
 }
 
 /// `_profile_remove`.
-#[allow(clippy::too_many_arguments)]
 fn remove(
     args: &[String],
     discover: Discover,
