@@ -540,8 +540,10 @@ decision to make once rather than a bug to find twice.
 27. `profile add` writes the profile's `tools:` list as `[a,b]`, without spaces.
 28. *Fixed after 0.42.0.* `profile add <name> --tools` with no value exited 1
     without a message.
-29. `profile remove` deletes an adopted config home, whose content was copied
-    into the overlay.
+29. *Fixed after 0.42.0.* `profile remove` deleted the whole config home, an
+    adopted one included, along with anything the tool itself kept there. It
+    now removes the files the manifest records and the directories that
+    leaves empty.
 30. `upgrade-config` rewrites every `agentsync_version:` line and ignores
     `AGENTSYNC_CONFIG_PATH`.
 31. *Fixed after 0.42.0.* `dedupe` removed a top-level source directory it
