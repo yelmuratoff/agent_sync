@@ -515,8 +515,10 @@ decision to make once rather than a bug to find twice.
 9. *Fixed after 0.42.0.* `read_frontmatter_field` returned the last occurrence
    of a key, and read `"x" # note` as `x"`. It now returns the first, and a
    quoted value up to its closing quote.
-10. `_rule_paths_csv` collects every list item in a rule's frontmatter once it
-    has a bare `paths:` key, not only the items under `paths:`.
+10. *Fixed after 0.42.0.* `_rule_paths_csv` collected every list item in a
+    rule's frontmatter once it had a bare `paths:` key, not only the items
+    under `paths:`. It now reads only the `paths:` value, and accepts a flow
+    list or a single glob there as well as a block list.
 11. The inline skill index strips `>` from `description: >-` and indexes the
     skill with the description `-`.
 12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last

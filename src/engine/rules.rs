@@ -86,49 +86,63 @@ pub fn rule_paths_csv(file: &[u8]) -> Vec<u8> {
     rule_paths(file).join(&b","[..])
 }
 
-/// Every list item in the leading frontmatter, unquoted, when that
-/// frontmatter has a bare `paths:` key.
+/// The globs of the leading frontmatter's `paths:` key, unquoted: a flow list
+/// `[a, b]`, a single scalar, or the `- item` lines directly below the key.
 fn rule_paths(file: &[u8]) -> Vec<Vec<u8>> {
     let lines = text::lines(file);
     if lines.first().copied() != Some(b"---".as_slice()) {
         return Vec::new();
     }
-    let mut block: Vec<&[u8]> = Vec::new();
-    for (index, line) in lines.iter().enumerate().skip(1) {
-        block.push(line);
-        if index > 1 && *line == b"---" {
-            break;
-        }
-    }
-    let has_paths = block
+    let block: Vec<&[u8]> = lines
         .iter()
-        .any(|line| text::after_key(line, "paths").is_some_and(<[u8]>::is_empty));
-    if !has_paths {
+        .skip(1)
+        .take_while(|line| **line != b"---")
+        .copied()
+        .collect();
+    let Some(key) = block
+        .iter()
+        .position(|line| text::after_key(line, "paths").is_some())
+    else {
         return Vec::new();
+    };
+    let value = text::trim_end_space(text::after_key(block[key], "paths").unwrap_or_default());
+    if let Some(flow) = value.strip_prefix(b"[").and_then(|v| v.strip_suffix(b"]")) {
+        return flow
+            .split(|b| *b == b',')
+            .map(|item| unquote(text::trim_end_space(text::trim_start_space(item))))
+            .filter(|item| !item.is_empty())
+            .collect();
     }
-    let mut items: Vec<Vec<u8>> = Vec::new();
-    for line in block {
+    if !value.is_empty() {
+        return vec![unquote(value)];
+    }
+    let mut items = Vec::new();
+    for line in &block[key + 1..] {
         let rest = text::trim_start_space(line);
-        let Some(after_dash) = rest.strip_prefix(b"-") else {
-            continue;
+        let Some(after_dash) = rest
+            .strip_prefix(b"-")
+            .filter(|after| after.first().is_some_and(|b| text::is_space(*b)))
+        else {
+            break;
         };
-        if !after_dash.first().is_some_and(|b| text::is_space(*b)) {
-            continue;
-        }
-        let mut item = text::trim_start_space(after_dash);
-        if let Some(first) = item.first()
-            && (*first == b'"' || *first == b'\'')
-        {
-            item = &item[1..];
-        }
-        if let Some(last) = item.last()
-            && (*last == b'"' || *last == b'\'')
-        {
-            item = &item[..item.len() - 1];
-        }
-        items.push(item.to_vec());
+        items.push(unquote(text::trim_start_space(after_dash)));
     }
     items
+}
+
+fn unquote(item: &[u8]) -> Vec<u8> {
+    let mut item = item;
+    if let Some(first) = item.first()
+        && (*first == b'"' || *first == b'\'')
+    {
+        item = &item[1..];
+    }
+    if let Some(last) = item.last()
+        && (*last == b'"' || *last == b'\'')
+    {
+        item = &item[..item.len() - 1];
+    }
+    item.to_vec()
 }
 
 /// `_strip_frontmatter`: the leading `---` block and the blank lines after it.
@@ -639,14 +653,23 @@ mod tests {
 
     // Design spec, "Known quirks", item 10: reproduced on purpose until cutover.
     #[test]
-    fn a_paths_scoped_rule_takes_every_list_item_like_bash_does() {
+    fn a_paths_scoped_rule_takes_only_the_items_under_paths() {
         let rule = b"---\npaths:\n  - \"a/*\"\n  - b\ntags:\n  - 'c\n---\n\n\n# T\nbody";
-        assert_eq!(rule_paths_csv(rule), b"a/*,b,c");
+        assert_eq!(rule_paths_csv(rule), b"a/*,b");
         assert_eq!(
             String::from_utf8(apply_rule_header(rule, CURSOR_HEADER, CURSOR_SCOPED)).unwrap(),
-            "---\nglobs: 'a/*,b,c'\nalwaysApply: false\n---\n\n# T\nbody"
+            "---\nglobs: 'a/*,b'\nalwaysApply: false\n---\n\n# T\nbody"
         );
         assert_eq!(rule_paths_csv(b"---\ntags:\n  - x\n---\n"), b"");
+        assert_eq!(
+            rule_paths_csv(b"---\ntags:\n  - x\npaths:\n- y\n---\n"),
+            b"y"
+        );
+        assert_eq!(
+            rule_paths_csv(b"---\npaths: [\"src/**\", 'docs/*.md']\n---\n"),
+            b"src/**,docs/*.md"
+        );
+        assert_eq!(rule_paths_csv(b"---\npaths: src/**\n---\n"), b"src/**");
     }
 
     #[test]
