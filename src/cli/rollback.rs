@@ -61,263 +61,364 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
-    let mut backup_id: Option<String> = None;
-    let (mut list_only, mut dry_run, mut assume_yes, mut force) = (false, false, false, false);
+    let parsed = match parse(args, style, out, err) {
+        Ok(parsed) => parsed,
+        Err(status) => return status,
+    };
+    let root = match backup::canonical_root(supplied_root) {
+        Ok(root) => root,
+        Err(e) => return report(err, e),
+    };
+    if parsed.list_only {
+        return list_backups(&root, parsed.backup_id.is_some(), out, err);
+    }
+    let retention = match load_retention(&root, env, err) {
+        Ok(retention) => retention,
+        Err(status) => return status,
+    };
+    let snapshot = match select_snapshot(&root, parsed.backup_id.as_deref(), err) {
+        Ok(snapshot) => snapshot,
+        Err(status) => return status,
+    };
+    let id = paths::leaf(&snapshot).to_string();
+    let targets = match backup::load_targets(&root, &snapshot) {
+        Ok(targets) => targets,
+        Err(e) => return report(err, e),
+    };
+    let is_latest = matches!(backup::latest(&root), Ok(Some(latest)) if paths::leaf(&latest) == id);
+    let mut rollback = Rollback {
+        root,
+        env,
+        retention,
+        snapshot,
+        id,
+        is_latest,
+        out,
+        err,
+    };
+    rollback.run(&parsed, &targets, confirm)
+}
+
+struct Args {
+    backup_id: Option<String>,
+    list_only: bool,
+    dry_run: bool,
+    assume_yes: bool,
+    force: bool,
+}
+
+/// The parsed flags, or the exit status after the help or a refusal.
+fn parse(
+    args: &[String],
+    style: &Style,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<Args, u8> {
+    let mut parsed = Args {
+        backup_id: None,
+        list_only: false,
+        dry_run: false,
+        assume_yes: false,
+        force: false,
+    };
     for arg in args {
         match arg.as_str() {
-            "--list" => list_only = true,
-            "--dry-run" => dry_run = true,
-            "--force" => force = true,
-            "--yes" | "-y" => assume_yes = true,
+            "--list" => parsed.list_only = true,
+            "--dry-run" => parsed.dry_run = true,
+            "--force" => parsed.force = true,
+            "--yes" | "-y" => parsed.assume_yes = true,
             "--help" | "-h" => {
                 let _ = out.write_all(HELP.render(style).as_bytes());
-                return 0;
+                return Err(0);
             }
             option if option.starts_with('-') => {
                 let _ = writeln!(err, "Error: Unknown rollback option: {option}");
                 let _ = err.write_all(HELP.render(style).as_bytes());
-                return 1;
+                return Err(1);
             }
-            id if backup_id.is_some() => {
+            id if parsed.backup_id.is_some() => {
                 let _ = writeln!(err, "Error: Unexpected rollback argument: {id}");
-                return 1;
+                return Err(1);
             }
-            id => backup_id = Some(id.to_string()),
+            id => parsed.backup_id = Some(id.to_string()),
         }
     }
+    Ok(parsed)
+}
 
-    let fail = |err: &mut dyn Write, e: Error| {
-        let _ = match e {
-            Error::Backup(message) => writeln!(err, "Error: {message}"),
-            other => writeln!(err, "{other}"),
-        };
-        1
+/// Prints `e` as the backup helpers do and answers exit status 1.
+fn report(err: &mut dyn Write, e: Error) -> u8 {
+    let _ = match e {
+        Error::Backup(message) => writeln!(err, "Error: {message}"),
+        other => writeln!(err, "{other}"),
     };
-    let root = match backup::canonical_root(supplied_root) {
-        Ok(root) => root,
-        Err(e) => return fail(err, e),
-    };
+    1
+}
 
-    if list_only {
-        if backup_id.is_some() {
-            let _ = writeln!(err, "Error: A backup ID cannot be combined with --list");
-            return 1;
-        }
-        let rows = match backup::list(&root) {
-            Ok(rows) => rows,
-            Err(e) => return fail(err, e),
-        };
-        if rows.is_empty() {
-            let _ = writeln!(out, "No AgentSync backups found.");
-            return 0;
-        }
-        let _ = writeln!(out, "Backup ID\tOperation\tCreated (UTC)");
-        for (id, operation, created) in rows {
-            let _ = writeln!(out, "{id}\t{operation}\t{created}");
-        }
+/// `rollback --list`.
+fn list_backups(root: &str, with_id: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    if with_id {
+        let _ = writeln!(err, "Error: A backup ID cannot be combined with --list");
+        return 1;
+    }
+    let rows = match backup::list(root) {
+        Ok(rows) => rows,
+        Err(e) => return report(err, e),
+    };
+    if rows.is_empty() {
+        let _ = writeln!(out, "No AgentSync backups found.");
         return 0;
     }
+    let _ = writeln!(out, "Backup ID\tOperation\tCreated (UTC)");
+    for (id, operation, created) in rows {
+        let _ = writeln!(out, "{id}\t{operation}\t{created}");
+    }
+    0
+}
 
+/// The backup retention the project config sets.
+fn load_retention(root: &str, env: &Env, err: &mut dyn Write) -> Result<backup::Retention, u8> {
     let is_file = |path: &str| std::path::Path::new(path).is_file();
-    let config_path = match project_config::select(&root, env.config_path.as_deref(), &is_file) {
+    let config_path = match project_config::select(root, env.config_path.as_deref(), &is_file) {
         project_config::Selection::Found(path) => Some(path),
         project_config::Selection::None => None,
         project_config::Selection::Missing(path) => {
             let _ = writeln!(err, "Error: {}", project_config::missing_message(&path));
-            return 1;
+            return Err(1);
         }
     };
     let config = match config_path.as_deref().map(std::fs::read) {
         Some(Ok(bytes)) => Some(String::from_utf8_lossy(&bytes).into_owned()),
         Some(Err(e)) => {
-            return fail(
-                err,
-                Error::io(config_path.as_deref().unwrap_or_default(), e),
-            );
+            let path = config_path.as_deref().unwrap_or_default();
+            return Err(report(err, Error::io(path, e)));
         }
         None => None,
     };
-    let retention = match backup::configure(
+    backup::configure(
         config_path.as_deref().zip(config.as_deref()),
         env.backup_limit.as_deref(),
         env.backup_max_age.as_deref(),
-    ) {
-        Ok(retention) => retention,
-        Err(e) => return fail(err, e),
-    };
+    )
+    .map_err(|e| report(err, e))
+}
 
-    let snapshot = match &backup_id {
-        Some(id) if *id != paths::leaf(id) => {
+/// The snapshot a backup ID names, or the latest complete one without an ID.
+fn select_snapshot(root: &str, backup_id: Option<&str>, err: &mut dyn Write) -> Result<String, u8> {
+    match backup_id {
+        Some(id) if id != paths::leaf(id) => {
             let _ = writeln!(err, "Error: Invalid backup ID: {id}");
-            return 1;
+            Err(1)
         }
-        Some(id) => match backup::snapshot_path(&root, id) {
-            Ok(snapshot) => snapshot,
-            Err(e) => return fail(err, e),
-        },
-        None => match backup::latest(&root) {
-            Ok(Some(snapshot)) => snapshot,
+        Some(id) => backup::snapshot_path(root, id).map_err(|e| report(err, e)),
+        None => match backup::latest(root) {
+            Ok(Some(snapshot)) => Ok(snapshot),
             Ok(None) => {
                 let _ = writeln!(err, "Error: No complete AgentSync backup found");
-                return 1;
+                Err(1)
             }
-            Err(e) => return fail(err, e),
+            Err(e) => Err(report(err, e)),
         },
-    };
-    let id = paths::leaf(&snapshot);
-    let targets = match backup::load_targets(&root, &snapshot) {
-        Ok(targets) => targets,
-        Err(e) => return fail(err, e),
-    };
+    }
+}
 
-    let is_latest = matches!(backup::latest(&root), Ok(Some(latest)) if paths::leaf(&latest) == id);
-    let (mut sealed, mut conflict) = (false, None);
-    if !force || dry_run {
-        match witness::preflight(&root, &snapshot) {
-            Preflight::Clean => sealed = true,
-            Preflight::Conflict(path) => conflict = Some(path),
-            Preflight::Unsealed(detail) => {
-                let _ = writeln!(
-                    err,
-                    "Warning: Backup {id} {detail}; changes made after that operation cannot be detected."
-                );
-            }
-        }
-    }
-    if let Some(path) = &conflict
-        && !dry_run
-    {
-        report_conflict(err, &id, path, is_latest);
-        return 1;
-    }
+/// One restore of a chosen snapshot, and the streams it reports through.
+struct Rollback<'a> {
+    root: String,
+    env: &'a Env,
+    retention: backup::Retention,
+    snapshot: String,
+    id: String,
+    is_latest: bool,
+    out: &'a mut dyn Write,
+    err: &'a mut dyn Write,
+}
 
-    let _ = writeln!(out, "Rollback plan:");
-    let _ = writeln!(out, "  Backup: {id}");
-    for target in &targets {
-        let action = if target.present { "restore" } else { "remove" };
-        let _ = writeln!(out, "  {action:<7} {}", target.rel);
-    }
-    if dry_run {
-        match &conflict {
-            Some(path) if force => {
-                let _ = writeln!(
-                    err,
-                    "Warning: Rollback conflict: {path} changed after the operation recorded in backup {id}; --force will overwrite it."
-                );
-            }
-            Some(path) => report_conflict(err, &id, path, is_latest),
-            None => {}
-        }
-        let _ = writeln!(out, "Dry run — nothing was written.");
-        return if conflict.is_some() && !force { 1 } else { 0 };
-    }
-    if !assume_yes && !confirm(&format!("Restore backup {id}?")) {
-        let _ = writeln!(out, "Cancelled.");
-        return 130;
-    }
-
-    let current: Vec<String> = targets
-        .iter()
-        .map(|target| format!("{root}/{}", target.rel))
-        .collect();
-    let store = format!("{root}/.ai/backups");
-    let pointer = std::path::Path::new(&store).join(".latest");
-    let previous_latest = if pointer.is_file() && !pointer.is_symlink() {
-        std::fs::read(&pointer)
-            .map(|bytes| {
-                String::from_utf8_lossy(&bytes)
-                    .split('\n')
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            })
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    let safety = match backup::create(&root, "rollback", &current, retention) {
-        Ok(safety) => safety,
-        Err(e) => {
-            fail(err, e);
-            let _ = writeln!(
-                err,
-                "Error: Could not create a pre-rollback safety backup; no files were changed"
-            );
+impl Rollback<'_> {
+    fn run(
+        &mut self,
+        parsed: &Args,
+        targets: &[backup::Target],
+        confirm: &mut dyn FnMut(&str) -> bool,
+    ) -> u8 {
+        let (sealed, conflict) = self.preflight(parsed);
+        if let Some(path) = &conflict
+            && !parsed.dry_run
+        {
+            report_conflict(self.err, &self.id, path, self.is_latest);
             return 1;
         }
-    };
-
-    if sealed && let Preflight::Conflict(path) = witness::preflight(&root, &snapshot) {
-        if backup::discard_safety(&store, &safety, &previous_latest).is_err() {
-            let _ = writeln!(
-                err,
-                "Warning: Could not remove the unused safety backup {}.",
-                paths::leaf(&safety)
-            );
+        let _ = writeln!(self.out, "Rollback plan:");
+        let _ = writeln!(self.out, "  Backup: {}", self.id);
+        for target in targets {
+            let action = if target.present { "restore" } else { "remove" };
+            let _ = writeln!(self.out, "  {action:<7} {}", target.rel);
         }
-        report_conflict(err, &id, &path, is_latest);
-        return 1;
+        if parsed.dry_run {
+            return self.dry_run_verdict(conflict.as_deref(), parsed.force);
+        }
+        if !parsed.assume_yes && !confirm(&format!("Restore backup {}?", self.id)) {
+            let _ = writeln!(self.out, "Cancelled.");
+            return 130;
+        }
+        let (safety, previous_latest) = match self.safety_backup(targets) {
+            Ok(safety) => safety,
+            Err(status) => return status,
+        };
+        if sealed && let Preflight::Conflict(path) = witness::preflight(&self.root, &self.snapshot)
+        {
+            let store = format!("{}/.ai/backups", self.root);
+            if backup::discard_safety(&store, &safety, &previous_latest).is_err() {
+                let _ = writeln!(
+                    self.err,
+                    "Warning: Could not remove the unused safety backup {}.",
+                    paths::leaf(&safety)
+                );
+            }
+            report_conflict(self.err, &self.id, &path, self.is_latest);
+            return 1;
+        }
+        self.restore(&safety)
     }
 
-    let mut interrupt = Interrupt::arm();
-    let restored = backup::restore(&root, &snapshot);
-    let signal = interrupt.received();
-    if restored.is_err() || signal.is_some() {
-        let status = match (restored, signal) {
-            (_, Some(sig)) => interrupt::status(sig),
-            (Err(e), None) => fail(err, e),
-            (Ok(()), None) => 0,
+    /// Whether the witness sealed the snapshot, and the first path changed
+    /// since; skipped under `--force` unless it is a dry run.
+    fn preflight(&mut self, parsed: &Args) -> (bool, Option<String>) {
+        if parsed.force && !parsed.dry_run {
+            return (false, None);
+        }
+        match witness::preflight(&self.root, &self.snapshot) {
+            Preflight::Clean => (true, None),
+            Preflight::Conflict(path) => (false, Some(path)),
+            Preflight::Unsealed(detail) => {
+                let _ = writeln!(
+                    self.err,
+                    "Warning: Backup {} {detail}; changes made after that operation cannot be detected.",
+                    self.id
+                );
+                (false, None)
+            }
+        }
+    }
+
+    fn dry_run_verdict(&mut self, conflict: Option<&str>, force: bool) -> u8 {
+        match conflict {
+            Some(path) if force => {
+                let _ = writeln!(
+                    self.err,
+                    "Warning: Rollback conflict: {path} changed after the operation recorded in backup {}; --force will overwrite it.",
+                    self.id
+                );
+            }
+            Some(path) => report_conflict(self.err, &self.id, path, self.is_latest),
+            None => {}
+        }
+        let _ = writeln!(self.out, "Dry run — nothing was written.");
+        u8::from(conflict.is_some() && !force)
+    }
+
+    /// The pre-rollback safety snapshot, and the `.latest` pointer it replaced.
+    fn safety_backup(&mut self, targets: &[backup::Target]) -> Result<(String, String), u8> {
+        let root = &self.root;
+        let current: Vec<String> = targets
+            .iter()
+            .map(|target| format!("{root}/{}", target.rel))
+            .collect();
+        let pointer = std::path::Path::new(&format!("{root}/.ai/backups")).join(".latest");
+        let previous_latest = if pointer.is_file() && !pointer.is_symlink() {
+            std::fs::read(&pointer)
+                .map(|bytes| {
+                    String::from_utf8_lossy(&bytes)
+                        .split('\n')
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                })
+                .unwrap_or_default()
+        } else {
+            String::new()
         };
-        let shown = safety.strip_prefix(&format!("{root}/")).unwrap_or(&safety);
+        match backup::create(root, "rollback", &current, self.retention) {
+            Ok(safety) => Ok((safety, previous_latest)),
+            Err(e) => {
+                report(self.err, e);
+                let _ = writeln!(
+                    self.err,
+                    "Error: Could not create a pre-rollback safety backup; no files were changed"
+                );
+                Err(1)
+            }
+        }
+    }
+
+    /// Restores the snapshot; a failure or a signal puts `safety` back.
+    fn restore(&mut self, safety: &str) -> u8 {
+        let mut interrupt = Interrupt::arm();
+        let restored = backup::restore(&self.root, &self.snapshot);
+        let signal = interrupt.received();
+        if restored.is_err() || signal.is_some() {
+            let status = match (restored, signal) {
+                (_, Some(sig)) => interrupt::status(sig),
+                (Err(e), None) => report(self.err, e),
+                (Ok(()), None) => 0,
+            };
+            self.recover(safety);
+            if let Some(sig) = signal {
+                interrupt.resend(sig);
+            }
+            return status;
+        }
+        drop(interrupt);
+        let root = &self.root;
+        if let Err(reason) = witness::seal(root, safety) {
+            let _ = writeln!(
+                self.err,
+                "Warning: Could not record the post-rollback state ({reason}); rolling back backup {} cannot detect later changes.",
+                paths::leaf(safety)
+            );
+        }
+        if let Err(e) = backup::prune(
+            root,
+            self.env.backup_limit.as_deref(),
+            self.env.backup_max_age.as_deref(),
+            self.retention,
+        ) {
+            report(self.err, e);
+            let _ = writeln!(self.err, "Warning: Could not prune old AgentSync backups.");
+        }
+        let _ = writeln!(self.out, "Restored backup {}.", self.id);
+        let _ = writeln!(self.out, "Undo backup: {}", paths::leaf(safety));
+        0
+    }
+
+    /// Puts the pre-rollback state back from `safety` after a failed restore.
+    fn recover(&mut self, safety: &str) {
+        let root = &self.root;
+        let shown = safety.strip_prefix(&format!("{root}/")).unwrap_or(safety);
         let _ = writeln!(
-            err,
+            self.err,
             "Warning: Rollback failed; restoring the state from before rollback..."
         );
-        match backup::restore(&root, &safety) {
+        match backup::restore(root, safety) {
             Ok(()) => {
-                if let Err(reason) = witness::seal(&root, &safety) {
+                if let Err(reason) = witness::seal(root, safety) {
                     let _ = writeln!(
-                        err,
+                        self.err,
                         "Warning: Could not record the restored state ({reason}); rolling back backup {} cannot detect later changes.",
-                        paths::leaf(&safety)
+                        paths::leaf(safety)
                     );
                 }
-                let _ = writeln!(err, "Restored pre-rollback state from {shown}");
+                let _ = writeln!(self.err, "Restored pre-rollback state from {shown}");
             }
             Err(e) => {
-                fail(err, e);
+                report(self.err, e);
                 let _ = writeln!(
-                    err,
+                    self.err,
                     "Error: Recovery failed. Safety backup retained at {shown}"
                 );
             }
         }
-        if let Some(sig) = signal {
-            interrupt.resend(sig);
-        }
-        return status;
     }
-    drop(interrupt);
-
-    if let Err(reason) = witness::seal(&root, &safety) {
-        let _ = writeln!(
-            err,
-            "Warning: Could not record the post-rollback state ({reason}); rolling back backup {} cannot detect later changes.",
-            paths::leaf(&safety)
-        );
-    }
-    if let Err(e) = backup::prune(
-        &root,
-        env.backup_limit.as_deref(),
-        env.backup_max_age.as_deref(),
-        retention,
-    ) {
-        fail(err, e);
-        let _ = writeln!(err, "Warning: Could not prune old AgentSync backups.");
-    }
-    let _ = writeln!(out, "Restored backup {id}.");
-    let _ = writeln!(out, "Undo backup: {}", paths::leaf(&safety));
-    0
 }
 
 /// `_rollback_report_conflict`.
