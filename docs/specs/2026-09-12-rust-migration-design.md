@@ -490,8 +490,9 @@ decision to make once rather than a bug to find twice.
    never consults `base:` when a shipped file exists for the slug.
 5. `defaults.enabled` in `agent_sync.yaml` and the `defaults:` block in
    `lib/config.yaml` are never read.
-6. Bash `printf '%-Ns'` pads styled strings including their escape bytes, so
-   coloured `list` columns drift; the native `pad_right` reproduces it.
+6. *Fixed after 0.42.0.* Bash `printf '%-Ns'` padded styled strings including
+   their escape bytes, so coloured `list` columns drifted; `pad_right` now
+   counts only the cells a terminal shows.
 7. `outputs` absent means `local`, except when `gitignore.update: false`, which
    means `committed`; the rule is duplicated in three files.
 8. *Struck 2026-09-20: not a quirk.* Locale-ordered tool listings were
