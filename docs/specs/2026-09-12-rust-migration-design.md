@@ -623,8 +623,9 @@ decision to make once rather than a bug to find twice.
 53. *Fixed after 0.42.0.* `setup-hooks` read its options in order and refused
     the first unknown one, so `--bogus --help` printed the unknown-option
     error, not the help.
-54. `release` exits 1 with nothing after its `Continue? [Y/n]:` prompt when
-    stdin ends there: `read -r confirm` fails and errexit ends the run.
+54. *Fixed after 0.42.0.* `release` exited 1 with nothing after its
+    `Continue? [Y/n]:` prompt when stdin ended there; it now says the input
+    ended and nothing was released.
 55. *Fixed in 0.38.0.* `update`'s changelog renderer matched a
     `## <version>` heading by prefix, so `## 9.9.90` rendered under `9.9.9`
     and ran on to the end of the file.

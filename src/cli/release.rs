@@ -382,10 +382,13 @@ pub fn release(
         .as_bytes(),
     )?;
     out.flush().map_err(|e| Error::io("<stdout>", e))?;
-    // `read -r confirm` fails at end of input and errexit ends the run there
-    // (design spec, "Known quirks", item 54).
     let Some(answer) = (env.read_line)() else {
-        return Ok(1);
+        put(err, b"\n")?;
+        return refuse(
+            err,
+            style,
+            "input ended before an answer; nothing was released.",
+        );
     };
     if answer.trim_matches([' ', '\t']).starts_with(['n', 'N']) {
         put(out, b"  Cancelled.\n")?;
@@ -632,9 +635,14 @@ mod checkout_tests {
         let (status, out, err) = run(&["--no-push"], &root, None, Some(" nope"));
         assert_eq!((status, err.as_str()), (0, ""));
         assert!(out.ends_with("\n  ▸ Continue? [Y/n]:   Cancelled.\n"));
-        // Known quirk 54: `read -r` fails at end of input and errexit ends the run.
         let (status, out, err) = run(&["patch", "--no-push"], &root, None, None);
-        assert_eq!((status, err.as_str()), (1, ""));
+        assert_eq!(
+            (status, err.as_str()),
+            (
+                1,
+                "\nError: input ended before an answer; nothing was released.\n"
+            )
+        );
         assert!(out.ends_with("\n  ▸ Continue? [Y/n]: "));
         assert_eq!(
             std::fs::read_to_string(root.join("VERSION")).unwrap(),
