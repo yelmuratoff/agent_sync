@@ -191,6 +191,61 @@ fn render(template: &str, name: &str) -> String {
         .join("\n")
 }
 
+struct Entry {
+    kind: String,
+    name: String,
+    category: Option<String>,
+    force: bool,
+}
+
+/// How a command line that names no entry ends: help on stdout, a refusal
+/// followed by the usage, or a bare error line.
+enum ParseStop {
+    Help,
+    Usage(String),
+    Error(String),
+}
+
+fn parse_entry(args: &[String]) -> Result<Entry, ParseStop> {
+    let mut entry = Entry {
+        kind: String::new(),
+        name: String::new(),
+        category: None,
+        force: false,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--force" | "-f" => entry.force = true,
+            "--category" => match args.next().filter(|value| !value.starts_with('-')) {
+                Some(value) => entry.category = Some(value.clone()),
+                None => return Err(ParseStop::Usage("--category requires a value".into())),
+            },
+            "--help" | "-h" => return Err(ParseStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(ParseStop::Error(format!("Unknown flag: {flag}")));
+            }
+            positional if entry.kind.is_empty() => entry.kind = positional.to_string(),
+            positional if entry.name.is_empty() => entry.name = positional.to_string(),
+            positional => {
+                return Err(ParseStop::Usage(format!(
+                    "Unexpected argument: {positional}"
+                )));
+            }
+        }
+    }
+    if entry.kind.is_empty() {
+        return Err(ParseStop::Usage("missing <kind> and <name>".into()));
+    }
+    if entry.name.is_empty() {
+        return Err(ParseStop::Usage(format!(
+            "missing <name> for {}",
+            entry.kind
+        )));
+    }
+    Ok(entry)
+}
+
 /// `cmd_add`: the report on `out`, refusals on `err`, the status as the result.
 pub fn add(
     args: &[String],
@@ -202,52 +257,29 @@ pub fn add(
     if args.first().map(String::as_str) == Some("mcp") {
         return add_mcp(&args[1..], root, style, out, err);
     }
-    let mut force = false;
-    let mut kind = String::new();
-    let mut name = String::new();
-    let mut category = None;
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--force" | "-f" => force = true,
-            "--category" => match args.next().filter(|value| !value.starts_with('-')) {
-                Some(value) => category = Some(value.clone()),
-                None => {
-                    usage("--category requires a value", style, err)?;
-                    return Ok(1);
-                }
-            },
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: Unknown flag: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            positional => {
-                if kind.is_empty() {
-                    kind = positional.to_string();
-                } else if name.is_empty() {
-                    name = positional.to_string();
-                } else {
-                    usage(&format!("Unexpected argument: {positional}"), style, err)?;
-                    return Ok(1);
-                }
-            }
+    let Entry {
+        kind,
+        name,
+        category,
+        force,
+    } = match parse_entry(args) {
+        Ok(entry) => entry,
+        Err(ParseStop::Help) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-    if kind.is_empty() {
-        usage("missing <kind> and <name>", style, err)?;
-        return Ok(1);
-    }
-    if name.is_empty() {
-        usage(&format!("missing <name> for {kind}"), style, err)?;
-        return Ok(1);
-    }
+        Err(ParseStop::Usage(message)) => {
+            usage(&message, style, err)?;
+            return Ok(1);
+        }
+        Err(ParseStop::Error(message)) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     if !matches!(kind.as_str(), "rule" | "skill" | "command" | "subagent") {
         put(
             err,
