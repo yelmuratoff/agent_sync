@@ -404,177 +404,211 @@ struct Fetched {
     changelog: Option<String>,
 }
 
-/// The tag to install: the pin, or the latest release's.
-fn resolve_tag(
-    pin: Option<&str>,
-    scratch: &Path,
-    env: &mut Env,
-    style: &Style,
-    err: &mut dyn Write,
-) -> Result<Result<String, u8>, Error> {
-    if let Some(pin) = pin {
-        return Ok(Ok(pin.to_string()));
-    }
-    let url = super::notice::latest_release_url();
-    let answer = scratch.join("latest.json");
-    match (env.fetch)(&url, &answer) {
-        Ok(200) => {}
-        Ok(code) => {
-            return Ok(Err(fetch_failed(
-                err,
-                style,
-                &format!("HTTP {code} for {url}"),
-            )?));
-        }
-        Err(why) => return Ok(Err(fetch_failed(err, style, &why)?)),
-    }
-    let json = std::fs::read_to_string(&answer).map_err(|e| Error::io(&answer, e))?;
-    match super::notice::parse_tag_name(&json) {
-        Some(tag) => Ok(Ok(tag)),
-        None => Ok(Err(fetch_failed(
-            err,
-            style,
-            &format!("no tag_name in the answer from {url}"),
-        )?)),
-    }
+/// One release download into `scratch`, each failure reported on `err`.
+struct Download<'a, 'e> {
+    scratch: &'a Path,
+    env: &'a mut Env<'e>,
+    style: &'a Style,
+    err: &'a mut dyn Write,
 }
 
-/// The archive and its checksum downloaded, verified, unpacked, and the new
-/// binary asked for its version and catalog.
-fn fetch_release(
-    tag: &str,
-    pinned: bool,
-    target: &str,
-    scratch: &Path,
-    env: &mut Env,
-    style: &Style,
-    err: &mut dyn Write,
-) -> Result<Result<Fetched, u8>, Error> {
-    let archive_name = format!("agentsync-{target}.{}", archive_extension());
-    let base = format!("https://github.com/{REPO}/releases/download/{tag}");
-    let archive = scratch.join(&archive_name);
-    match (env.fetch)(&format!("{base}/{archive_name}"), &archive) {
-        Ok(200) => {}
-        Ok(404) if pinned => {
-            let probe = scratch.join("tag.json");
-            let tag_url = format!("https://api.github.com/repos/{REPO}/git/ref/tags/{tag}");
-            let message = match (env.fetch)(&tag_url, &probe) {
-                Ok(200) => format!(
-                    "AgentSync {tag} predates the binary releases, so update cannot install it.\n  {}\n    AGENTSYNC_VERSION={tag} curl -fsSL https://raw.githubusercontent.com/{REPO}/main/install.sh | bash",
-                    style.dim("Pin it with the installer instead:")
-                ),
-                _ => format!(
-                    "No AgentSync release is tagged {tag}.\n  {} {}",
-                    style.dim("List releases at"),
-                    style.cyan(&format!("https://github.com/{REPO}/releases"))
-                ),
-            };
-            return Ok(Err(refuse(err, style, &message)?));
-        }
-        Ok(code) => {
-            return Ok(Err(fetch_failed(
-                err,
-                style,
-                &format!("HTTP {code} for {base}/{archive_name}"),
-            )?));
-        }
-        Err(why) => return Ok(Err(fetch_failed(err, style, &why)?)),
+impl Download<'_, '_> {
+    fn failed(&mut self, detail: &str) -> Result<u8, Error> {
+        fetch_failed(self.err, self.style, detail)
     }
-    let sum_name = format!("{archive_name}.sha256");
-    let sum_file = scratch.join(&sum_name);
-    match (env.fetch)(&format!("{base}/{sum_name}"), &sum_file) {
-        Ok(200) => {}
-        Ok(code) => {
-            return Ok(Err(fetch_failed(
-                err,
-                style,
-                &format!("HTTP {code} for {base}/{sum_name}"),
-            )?));
-        }
-        Err(why) => return Ok(Err(fetch_failed(err, style, &why)?)),
+
+    fn refuse(&mut self, message: &str) -> Result<u8, Error> {
+        refuse(self.err, self.style, message)
     }
-    let expected = std::fs::read_to_string(&sum_file)
-        .map_err(|e| Error::io(&sum_file, e))?
-        .split_ascii_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let actual = sha256_hex(&std::fs::read(&archive).map_err(|e| Error::io(&archive, e))?);
-    if expected != actual {
-        return Ok(Err(refuse(
-            err,
-            style,
-            &format!(
-                "checksum mismatch for {archive_name}.\n  {}",
-                style.dim(&format!("expected {expected}, got {actual}"))
+
+    /// A fetch of `url` that did not answer 200, reported.
+    fn answered(
+        &mut self,
+        url: &str,
+        fetched: Result<u16, String>,
+    ) -> Result<Result<(), u8>, Error> {
+        match fetched {
+            Ok(200) => Ok(Ok(())),
+            Ok(code) => Ok(Err(self.failed(&format!("HTTP {code} for {url}"))?)),
+            Err(why) => Ok(Err(self.failed(&why)?)),
+        }
+    }
+
+    /// `url` fetched into the scratch file `name`.
+    fn get(&mut self, url: &str, name: &str) -> Result<Result<PathBuf, u8>, Error> {
+        let to = self.scratch.join(name);
+        let fetched = (self.env.fetch)(url, &to);
+        Ok(self.answered(url, fetched)?.map(|()| to))
+    }
+
+    /// The tag to install: the pin, or the latest release's.
+    fn tag(&mut self, pin: Option<&str>) -> Result<Result<String, u8>, Error> {
+        if let Some(pin) = pin {
+            return Ok(Ok(pin.to_string()));
+        }
+        let url = super::notice::latest_release_url();
+        let answer = match self.get(&url, "latest.json")? {
+            Ok(answer) => answer,
+            Err(status) => return Ok(Err(status)),
+        };
+        let json = std::fs::read_to_string(&answer).map_err(|e| Error::io(&answer, e))?;
+        match super::notice::parse_tag_name(&json) {
+            Some(tag) => Ok(Ok(tag)),
+            None => Ok(Err(
+                self.failed(&format!("no tag_name in the answer from {url}"))?
+            )),
+        }
+    }
+
+    /// The release archive; a pinned tag without one is told apart from a
+    /// tag that predates the binary releases.
+    fn archive(
+        &mut self,
+        tag: &str,
+        pinned: bool,
+        url: &str,
+        name: &str,
+    ) -> Result<Result<PathBuf, u8>, Error> {
+        let archive = self.scratch.join(name);
+        let fetched = (self.env.fetch)(url, &archive);
+        if pinned && matches!(fetched, Ok(404)) {
+            let message = self.missing_tag(tag);
+            return Ok(Err(self.refuse(&message)?));
+        }
+        Ok(self.answered(url, fetched)?.map(|()| archive))
+    }
+
+    fn missing_tag(&mut self, tag: &str) -> String {
+        let style = self.style;
+        let probe = self.scratch.join("tag.json");
+        let tag_url = format!("https://api.github.com/repos/{REPO}/git/ref/tags/{tag}");
+        match (self.env.fetch)(&tag_url, &probe) {
+            Ok(200) => format!(
+                "AgentSync {tag} predates the binary releases, so update cannot install it.\n  {}\n    AGENTSYNC_VERSION={tag} curl -fsSL https://raw.githubusercontent.com/{REPO}/main/install.sh | bash",
+                style.dim("Pin it with the installer instead:")
             ),
-        )?));
+            _ => format!(
+                "No AgentSync release is tagged {tag}.\n  {} {}",
+                style.dim("List releases at"),
+                style.cyan(&format!("https://github.com/{REPO}/releases"))
+            ),
+        }
     }
-    let unpacked = scratch.join("unpacked");
-    std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
-    if !(env.extract)(&archive, &unpacked) {
-        return Ok(Err(refuse(
-            err,
-            style,
-            &format!("could not unpack {archive_name}."),
-        )?));
+
+    /// The archive's sha256 against the published `.sha256` file.
+    fn verify(
+        &mut self,
+        archive: &Path,
+        name: &str,
+        sum_file: &Path,
+    ) -> Result<Result<(), u8>, Error> {
+        let expected = std::fs::read_to_string(sum_file)
+            .map_err(|e| Error::io(sum_file, e))?
+            .split_ascii_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let actual = sha256_hex(&std::fs::read(archive).map_err(|e| Error::io(archive, e))?);
+        if expected == actual {
+            return Ok(Ok(()));
+        }
+        let message = format!(
+            "checksum mismatch for {name}.\n  {}",
+            self.style
+                .dim(&format!("expected {expected}, got {actual}"))
+        );
+        Ok(Err(self.refuse(&message)?))
     }
-    let Some(new_binary) = unpacked_binary(&unpacked) else {
-        return Ok(Err(refuse(
-            err,
-            style,
-            &format!("{archive_name} does not contain {}.", binary_name()),
-        )?));
-    };
-    let Some(new_version) = (env.ask)(&new_binary, "version")
-        .as_deref()
-        .and_then(version_of)
-    else {
-        return Ok(Err(refuse(
-            err,
-            style,
-            &format!(
+
+    /// The archive unpacked and the binary inside it found.
+    fn unpack(&mut self, archive: &Path, name: &str) -> Result<Result<PathBuf, u8>, Error> {
+        let unpacked = self.scratch.join("unpacked");
+        std::fs::create_dir_all(&unpacked).map_err(|e| Error::io(&unpacked, e))?;
+        if !(self.env.extract)(archive, &unpacked) {
+            return Ok(Err(self.refuse(&format!("could not unpack {name}."))?));
+        }
+        match unpacked_binary(&unpacked) {
+            Some(binary) => Ok(Ok(binary)),
+            None => Ok(Err(
+                self.refuse(&format!("{name} does not contain {}.", binary_name()))?
+            )),
+        }
+    }
+
+    /// The new binary asked for its version and catalog.
+    fn interrogate(&mut self, new_binary: PathBuf) -> Result<Result<Fetched, u8>, Error> {
+        let Some(new_version) = (self.env.ask)(&new_binary, "version")
+            .as_deref()
+            .and_then(version_of)
+        else {
+            let message = format!(
                 "the downloaded binary does not run: {}",
                 new_binary.disk_text()
-            ),
-        )?));
-    };
-    let Some(new_catalog) = (env.ask)(&new_binary, CATALOG_COMMAND)
-        .as_deref()
-        .and_then(parse_catalog_dump)
-    else {
-        return Ok(Err(refuse(
-            err,
-            style,
-            &format!(
+            );
+            return Ok(Err(self.refuse(&message)?));
+        };
+        let Some(new_catalog) = (self.env.ask)(&new_binary, CATALOG_COMMAND)
+            .as_deref()
+            .and_then(parse_catalog_dump)
+        else {
+            let message = format!(
                 "the downloaded binary did not answer {CATALOG_COMMAND}: {}",
                 new_binary.disk_text()
-            ),
-        )?));
-    };
-    let changelog = new_binary
-        .parent()
-        .and_then(|dir| std::fs::read_to_string(dir.join("CHANGELOG.md")).ok());
-    Ok(Ok(Fetched {
-        new_binary,
-        new_version,
-        new_catalog,
-        changelog,
-    }))
+            );
+            return Ok(Err(self.refuse(&message)?));
+        };
+        let changelog = new_binary
+            .parent()
+            .and_then(|dir| std::fs::read_to_string(dir.join("CHANGELOG.md")).ok());
+        Ok(Ok(Fetched {
+            new_binary,
+            new_version,
+            new_catalog,
+            changelog,
+        }))
+    }
+
+    /// The archive and its checksum downloaded, verified, unpacked, and the
+    /// new binary asked for its version and catalog.
+    fn release(
+        &mut self,
+        tag: &str,
+        pinned: bool,
+        target: &str,
+    ) -> Result<Result<Fetched, u8>, Error> {
+        let archive_name = format!("agentsync-{target}.{}", archive_extension());
+        let base = format!("https://github.com/{REPO}/releases/download/{tag}");
+        let archive_url = format!("{base}/{archive_name}");
+        let archive = match self.archive(tag, pinned, &archive_url, &archive_name)? {
+            Ok(archive) => archive,
+            Err(status) => return Ok(Err(status)),
+        };
+        let sum_name = format!("{archive_name}.sha256");
+        let sum_file = match self.get(&format!("{base}/{sum_name}"), &sum_name)? {
+            Ok(sum_file) => sum_file,
+            Err(status) => return Ok(Err(status)),
+        };
+        if let Err(status) = self.verify(&archive, &archive_name, &sum_file)? {
+            return Ok(Err(status));
+        }
+        match self.unpack(&archive, &archive_name)? {
+            Ok(new_binary) => self.interrogate(new_binary),
+            Err(status) => Ok(Err(status)),
+        }
+    }
 }
 
-/// `cmd_update`.
-pub fn update(
+/// The pin and `--strict`; the help or the refusal already printed otherwise.
+fn update_args(
     args: &[String],
     style: &Style,
-    env: &mut Env,
     out: &mut dyn Write,
     err: &mut dyn Write,
-) -> Result<u8, Error> {
-    let (pin, strict) = match parse_args(args) {
+) -> Result<Result<(Option<String>, bool), u8>, Error> {
+    match parse_args(args) {
         Args::Help => {
             put(out, HELP.render(style).as_bytes())?;
-            return Ok(0);
+            Ok(Err(0))
         }
         Args::Refused(message) => {
             put(
@@ -586,9 +620,52 @@ pub fn update(
                 )
                 .as_bytes(),
             )?;
-            return Ok(2);
+            Ok(Err(2))
         }
-        Args::Run { pin, strict } => (pin, strict),
+        Args::Run { pin, strict } => Ok(Ok((pin, strict))),
+    }
+}
+
+/// `Updated!` with the version step, then the changelog between the two.
+fn updated_text(style: &Style, old_version: &str, fetched: &Fetched, width: usize) -> String {
+    let new_version = fetched.new_version.as_str();
+    let mut text = if old_version == new_version {
+        format!("\n  {} (v{new_version})\n", style.green("Updated!"))
+    } else {
+        format!(
+            "\n  {} v{old_version} → v{new_version}\n",
+            style.green("Updated!")
+        )
+    };
+    if let Some(changelog) = &fetched.changelog {
+        let versions = changelog::versions_in_range(changelog, old_version, new_version);
+        text.push_str(&changelog::sections(changelog, &versions, width, style));
+    }
+    text
+}
+
+fn queued_hint(style: &Style) -> String {
+    format!(
+        "  {} {}{} {}{}\n\n",
+        style.dim("Queued in"),
+        style.cyan(".ai/.pending-resolutions.yaml"),
+        style.dim(" — run"),
+        style.cyan("agentsync resolve"),
+        style.dim(" to walk them.")
+    )
+}
+
+/// `cmd_update`.
+pub fn update(
+    args: &[String],
+    style: &Style,
+    env: &mut Env,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<u8, Error> {
+    let (pin, strict) = match update_args(args, style, out, err)? {
+        Ok(parsed) => parsed,
+        Err(status) => return Ok(status),
     };
     put(
         out,
@@ -612,19 +689,22 @@ pub fn update(
     };
     let scratch = Scratch::create("agentsync-update")?;
     let old_version = engine_version();
-    let tag = match resolve_tag(pin.as_deref(), &scratch.0, env, style, err)? {
+    let mut download = Download {
+        scratch: &scratch.0,
+        env,
+        style,
+        err,
+    };
+    let tag = match download.tag(pin.as_deref())? {
         Ok(tag) => tag,
         Err(status) => return Ok(status),
     };
     if tag == old_version {
-        put(
-            out,
-            format!(
-                "  {} (v{old_version})\n\n",
-                style.green("Already up to date!")
-            )
-            .as_bytes(),
-        )?;
+        let current = format!(
+            "  {} (v{old_version})\n\n",
+            style.green("Already up to date!")
+        );
+        put(out, current.as_bytes())?;
         return Ok(0);
     }
     if pin.is_some() {
@@ -633,7 +713,7 @@ pub fn update(
         put(out, b"  Updating...\n")?;
     }
     out.flush().map_err(|e| Error::io("<stdout>", e))?;
-    let fetched = match fetch_release(&tag, pin.is_some(), target, &scratch.0, env, style, err)? {
+    let fetched = match download.release(&tag, pin.is_some(), target)? {
         Ok(fetched) => fetched,
         Err(status) => return Ok(status),
     };
@@ -644,29 +724,10 @@ pub fn update(
     if let Some(cache) = cache_file(&env.exe) {
         let _ = std::fs::remove_file(cache);
     }
-    let new_version = fetched.new_version.as_str();
-    if old_version == new_version {
-        put(
-            out,
-            format!("\n  {} (v{new_version})\n", style.green("Updated!")).as_bytes(),
-        )?;
-    } else {
-        put(
-            out,
-            format!(
-                "\n  {} v{old_version} → v{new_version}\n",
-                style.green("Updated!")
-            )
-            .as_bytes(),
-        )?;
-    }
-    if let Some(changelog) = &fetched.changelog {
-        let versions = changelog::versions_in_range(changelog, old_version, new_version);
-        put(
-            out,
-            changelog::sections(changelog, &versions, env.width, style).as_bytes(),
-        )?;
-    }
+    put(
+        out,
+        updated_text(style, old_version, &fetched, env.width).as_bytes(),
+    )?;
     if !conflicts.is_empty() {
         put(out, conflicts_report(&conflicts, style).as_bytes())?;
         if project_dir.join(".ai").is_dir() {
@@ -674,21 +735,10 @@ pub fn update(
                 project_dir,
                 &env.today,
                 old_version,
-                new_version,
+                &fetched.new_version,
                 &conflicts,
             )?;
-            put(
-                out,
-                format!(
-                    "  {} {}{} {}{}\n\n",
-                    style.dim("Queued in"),
-                    style.cyan(".ai/.pending-resolutions.yaml"),
-                    style.dim(" — run"),
-                    style.cyan("agentsync resolve"),
-                    style.dim(" to walk them.")
-                )
-                .as_bytes(),
-            )?;
+            put(out, queued_hint(style).as_bytes())?;
         }
     }
     put(out, b"\n")?;
@@ -1002,6 +1052,30 @@ mod tests {
         assert!(err.starts_with(&format!(
             "  Error: checksum mismatch for agentsync-{target}.tar.xz.\n  expected 0000, got "
         )));
+        assert_eq!(
+            std::fs::read_to_string(fixture.exe()).unwrap(),
+            "old binary"
+        );
+    }
+
+    #[test]
+    fn a_downloaded_binary_that_does_not_answer_is_refused() {
+        let mut fixture = Fixture::new("", &catalog_dump());
+        fixture.publish("9.9.9");
+        let (status, _, err) = fixture.run(&["9.9.9"]);
+        assert_eq!(status, 1);
+        assert!(
+            err.starts_with("  Error: the downloaded binary does not run: "),
+            "{err}"
+        );
+        let mut fixture = Fixture::new("9.9.9", "not a catalog");
+        fixture.publish("9.9.9");
+        let (status, _, err) = fixture.run(&["9.9.9"]);
+        assert_eq!(status, 1);
+        assert!(
+            err.starts_with("  Error: the downloaded binary did not answer __catalog: "),
+            "{err}"
+        );
         assert_eq!(
             std::fs::read_to_string(fixture.exe()).unwrap(),
             "old binary"
