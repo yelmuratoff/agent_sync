@@ -1,10 +1,10 @@
 use std::io::Write;
 
 use crate::config::skill_metadata;
-use crate::engine::filters;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
 use crate::engine::workspace::Workspace;
+use crate::engine::{filters, skill_tree};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::paths::Paths;
@@ -25,7 +25,7 @@ pub const HELP: Help = Help {
     description: &[
         "Reads the effective source.skills tree, including shared and bundled\nskills. --profile applies the same profile overlay as sync. No project\nfiles are changed.",
         "show displays the skill's declared metadata and optional annotations.\nThose annotations and requirements are not verified by AgentSync.",
-        "check verifies the required fields and supported scalar forms. For\nfull Agent Skills validation, use skills-ref validate <skill-dir>.\nIt does not change whether sync accepts a skill.",
+        "check verifies the required fields, the supported scalar forms, and\nthe category layout. For full Agent Skills validation, use skills-ref\nvalidate <skill-dir>. Of its findings, sync refuses only a name two\nskills share.",
         "catalog inspects explicitly declared external skills. Its curator\nnotes are unverified; pinned local Git metadata is read only when a source\nmapping is supplied. It never installs or runs a skill.",
     ],
     sections: &[Section {
@@ -35,8 +35,14 @@ pub const HELP: Help = Help {
                 "--profile <name>",
                 "Inspect this configured profile's skills",
             ),
-            ("--include <globs>", "List only matching skill names"),
-            ("--exclude <globs>", "Exclude matching skill names"),
+            (
+                "--include <globs>",
+                "List only skills whose name or category path matches",
+            ),
+            (
+                "--exclude <globs>",
+                "Exclude skills whose name or category path matches",
+            ),
             ("-h, --help", "Show this help"),
         ],
     }],
@@ -45,6 +51,7 @@ pub const HELP: Help = Help {
         "skills show deploy",
         "skills check",
         "skills list --profile work --include 'review*'",
+        "skills list --include 'flutter/*'",
         "skills catalog list --catalog cards.tsv",
     ],
 };
@@ -105,49 +112,36 @@ pub fn run(
     let mut count = 0;
     let mut issues = 0;
     if matches!(parsed.action, Action::List) {
-        write(out, "name\tdescription\tpath\n")?;
+        write(out, "name\tdescription\tpath\tcategory\n")?;
     }
-    for name in session.ws.glob(&source.effective) {
-        let dir = format!("{}/{name}", source.effective);
-        if !session.ws.is_dir(&dir) {
-            continue;
-        }
+    let tree = skill_tree::discover(&session.ws, &source.effective);
+    for skill in &tree.skills {
+        let (name, rel) = (&skill.name, &skill.rel);
         if let Action::Show(target) = &parsed.action
-            && &name != target
+            && name != target
         {
             continue;
         }
         if matches!(parsed.action, Action::List)
-            && !filters::matches(&name, &parsed.include, &parsed.exclude)
+            && !filters::matches_skill(name, rel, &parsed.include, &parsed.exclude)
         {
             continue;
         }
         count += 1;
-        let file = format!("{dir}/SKILL.md");
+        let file = format!("{}/{rel}/SKILL.md", source.effective);
         let origin = source
             .origins
             .iter()
-            .map(|dir| format!("{dir}/{name}/SKILL.md"))
+            .map(|dir| format!("{dir}/{rel}/SKILL.md"))
             .find(|file| session.ws.is_file(file))
-            .or_else(|| {
-                source
-                    .origins
-                    .iter()
-                    .map(|dir| format!("{dir}/{name}/SKILL.md"))
-                    .find(|file| session.ws.is_dir(&paths::parent(file)))
-            })
             .unwrap_or_else(|| file.clone());
         let shown = if origin.starts_with(paths::ENGINE_ROOT) {
-            format!("bundled:skills/{name}/SKILL.md")
+            format!("bundled:skills/{rel}/SKILL.md")
         } else {
             session.display(&origin)
         };
-        let metadata = if session.ws.is_file(&file) {
-            let bytes = session.ws.read(&file)?;
-            skill_metadata::read(&bytes, &name)
-        } else {
-            Err("missing SKILL.md".to_string())
-        };
+        let bytes = session.ws.read(&file)?;
+        let metadata = skill_metadata::read(&bytes, name);
         match &parsed.action {
             Action::List => {
                 let description = metadata
@@ -156,7 +150,13 @@ pub fn run(
                     .unwrap_or_default();
                 write(
                     out,
-                    &format!("{}\t{}\t{}\n", cell(&name), cell(description), cell(&shown)),
+                    &format!(
+                        "{}\t{}\t{}\t{}\n",
+                        cell(name),
+                        cell(description),
+                        cell(&shown),
+                        cell(skill.category())
+                    ),
                 )?;
             }
             Action::Check => match metadata {
@@ -194,6 +194,9 @@ pub fn run(
                             )?;
                         }
                     }
+                    if !skill.category().is_empty() {
+                        write(out, &format!("Category: {}\n", cell(skill.category())))?;
+                    }
                     write(out, &format!("Path: {}\n", cell(&shown)))?;
                 }
                 Err(message) => {
@@ -207,6 +210,41 @@ pub fn run(
         }
     }
     if matches!(parsed.action, Action::Check) {
+        let shown_dir = |rel: &str| {
+            let dir = source
+                .origins
+                .iter()
+                .map(|origin| format!("{origin}/{rel}"))
+                .find(|dir| session.ws.is_dir(dir))
+                .unwrap_or_else(|| format!("{}/{rel}", source.effective));
+            cell(&session.display(&dir))
+        };
+        let mut findings = Vec::new();
+        for (name, rels) in skill_tree::collisions(&tree.skills) {
+            let claims: Vec<_> = rels.iter().map(|rel| shown_dir(rel)).collect();
+            findings.push(format!(
+                "{}: name claimed by {} — tools install skills flat by name",
+                cell(name),
+                claims.join(", ")
+            ));
+        }
+        for rel in &tree.empty_categories {
+            findings.push(format!(
+                "{}/: no SKILL.md here or in any subdirectory",
+                shown_dir(rel)
+            ));
+        }
+        for rel in &tree.too_deep {
+            findings.push(format!(
+                "{}/: deeper than {} categories — not synced",
+                shown_dir(rel),
+                skill_tree::MAX_CATEGORY_DEPTH
+            ));
+        }
+        issues += findings.len();
+        for finding in findings {
+            write(out, &format!("{finding}\n"))?;
+        }
         write(out, &format!("Checked {count} skills: {issues} issue(s)\n"))?;
     }
     if let Action::Show(name) = &parsed.action
