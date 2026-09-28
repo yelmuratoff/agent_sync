@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use crate::config::skill_metadata;
+use crate::config::skill_metadata::{self, SkillMetadata};
 use crate::engine::filters::Filter;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
-use crate::engine::skill_tree::{self, Tree};
+use crate::engine::skill_tree::{self, Skill, Tree};
 use crate::engine::workspace::Workspace;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
@@ -94,21 +94,9 @@ pub fn run(
             return Ok(1);
         }
     };
-    let mut session = Session::new(Workspace::on_disk(root), Paths::on_disk(root));
-    let source = match render::skill_source(&mut session, env, parsed.profile.as_deref()) {
-        Ok(source) => source,
-        Err(_) => {
-            for (_, line) in session.log.lines() {
-                write(err, &format!("{line}\n"))?;
-            }
-            return Ok(1);
-        }
+    let Some((session, source)) = load_source(root, env, parsed.profile.as_deref(), err)? else {
+        return Ok(1);
     };
-    for (_, line) in session.log.lines() {
-        if line.starts_with("[WARNING]") {
-            write(err, &format!("{line}\n"))?;
-        }
-    }
     let mut count = 0;
     let mut issues = 0;
     if matches!(parsed.action, Action::List) {
@@ -126,19 +114,10 @@ pub fn run(
             continue;
         }
         count += 1;
-        let file = format!("{}/{rel}/SKILL.md", source.effective);
-        let origin = source
-            .origins
-            .iter()
-            .map(|dir| format!("{dir}/{rel}/SKILL.md"))
-            .find(|file| session.ws.is_file(file))
-            .unwrap_or_else(|| file.clone());
-        let shown = if origin.starts_with(paths::ENGINE_ROOT) {
-            format!("bundled:skills/{rel}/SKILL.md")
-        } else {
-            session.display(&origin)
-        };
-        let bytes = session.ws.read(&file)?;
+        let shown = shown_file(&session, &source, rel);
+        let bytes = session
+            .ws
+            .read(&format!("{}/{rel}/SKILL.md", source.effective))?;
         let metadata = skill_metadata::read(&bytes, name);
         match &parsed.action {
             Action::List => {
@@ -146,16 +125,7 @@ pub fn run(
                     .as_ref()
                     .map(|metadata| metadata.description.as_str())
                     .unwrap_or_default();
-                write(
-                    out,
-                    &format!(
-                        "{}\t{}\t{}\t{}\n",
-                        cell(name),
-                        cell(description),
-                        cell(&shown),
-                        cell(skill.category())
-                    ),
-                )?;
+                write(out, &list_row(skill, description, &shown))?;
             }
             Action::Check => match metadata {
                 Ok(_) => {}
@@ -165,38 +135,7 @@ pub fn run(
                 }
             },
             Action::Show(_) => match metadata {
-                Ok(metadata) => {
-                    write(out, &format!("Name: {}\n", cell(&metadata.name)))?;
-                    write(
-                        out,
-                        &format!("Description: {}\n", cell(&metadata.description)),
-                    )?;
-                    if let Some(value) = metadata.compatibility {
-                        write(
-                            out,
-                            &format!("Compatibility (declared): {}\n", cell(&value)),
-                        )?;
-                    }
-                    if let Some(value) = metadata.license {
-                        write(out, &format!("License: {}\n", cell(&value)))?;
-                    }
-                    for (label, value) in [
-                        ("Use when", metadata.use_when),
-                        ("Not for", metadata.not_for),
-                        ("Requirements", metadata.requirements),
-                    ] {
-                        if let Some(value) = value {
-                            write(
-                                out,
-                                &format!("{label} (annotation, unverified): {}\n", cell(&value)),
-                            )?;
-                        }
-                    }
-                    if !skill.category().is_empty() {
-                        write(out, &format!("Category: {}\n", cell(skill.category())))?;
-                    }
-                    write(out, &format!("Path: {}\n", cell(&shown)))?;
-                }
+                Ok(metadata) => write(out, &show_text(metadata, skill, &shown))?,
                 Err(message) => {
                     write(
                         err,
@@ -222,6 +161,80 @@ pub fn run(
         return Ok(1);
     }
     Ok(u8::from(issues > 0))
+}
+
+/// The effective skills source, with its warnings on `err`; `None` after
+/// printing why it could not be resolved.
+fn load_source(
+    root: &str,
+    env: &Env,
+    profile: Option<&str>,
+    err: &mut dyn Write,
+) -> Result<Option<(Session, render::SkillSource)>, Error> {
+    let mut session = Session::new(Workspace::on_disk(root), Paths::on_disk(root));
+    let resolved = render::skill_source(&mut session, env, profile);
+    for (_, line) in session.log.lines() {
+        if resolved.is_err() || line.starts_with("[WARNING]") {
+            write(err, &format!("{line}\n"))?;
+        }
+    }
+    Ok(resolved.ok().map(|source| (session, source)))
+}
+
+/// Where a skill's `SKILL.md` comes from, as `list` and `show` print it.
+fn shown_file(session: &Session, source: &render::SkillSource, rel: &str) -> String {
+    let origin = source
+        .origins
+        .iter()
+        .map(|dir| format!("{dir}/{rel}/SKILL.md"))
+        .find(|file| session.ws.is_file(file))
+        .unwrap_or_else(|| format!("{}/{rel}/SKILL.md", source.effective));
+    if origin.starts_with(paths::ENGINE_ROOT) {
+        format!("bundled:skills/{rel}/SKILL.md")
+    } else {
+        session.display(&origin)
+    }
+}
+
+fn list_row(skill: &Skill, description: &str, shown: &str) -> String {
+    format!(
+        "{}\t{}\t{}\t{}\n",
+        cell(&skill.name),
+        cell(description),
+        cell(shown),
+        cell(skill.category())
+    )
+}
+
+fn show_text(metadata: SkillMetadata, skill: &Skill, shown: &str) -> String {
+    let mut text = format!(
+        "Name: {}\nDescription: {}\n",
+        cell(&metadata.name),
+        cell(&metadata.description)
+    );
+    if let Some(value) = metadata.compatibility {
+        text.push_str(&format!("Compatibility (declared): {}\n", cell(&value)));
+    }
+    if let Some(value) = metadata.license {
+        text.push_str(&format!("License: {}\n", cell(&value)));
+    }
+    for (label, value) in [
+        ("Use when", metadata.use_when),
+        ("Not for", metadata.not_for),
+        ("Requirements", metadata.requirements),
+    ] {
+        if let Some(value) = value {
+            text.push_str(&format!(
+                "{label} (annotation, unverified): {}\n",
+                cell(&value)
+            ));
+        }
+    }
+    if !skill.category().is_empty() {
+        text.push_str(&format!("Category: {}\n", cell(skill.category())));
+    }
+    text.push_str(&format!("Path: {}\n", cell(shown)));
+    text
 }
 
 /// `check`'s findings about the tree itself: shared names, empty and too-deep categories.
