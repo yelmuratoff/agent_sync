@@ -633,13 +633,17 @@ decision to make once rather than a bug to find twice.
     placeholder, and a line holding `<…>` was never reported unless it held
     `sk-`. The scan now reads the line with those spans removed; a `<…>` span
     that holds `sk-` stays readable.
-46. `add mcp` re-emits only the `mcpServers` member of `.ai/src/mcp.json`,
-    dropping every other top-level member, and replaces a file without a
-    `"mcpServers"` substring with a fresh object holding the one server.
-47. `add mcp` takes the first `"mcpServers"` anywhere in the file as the
-    member, so a nested decoy makes the merge fail with `failed to update`.
-48. `add mcp` stops reading the server map at the first key that is not a
-    string and drops the servers after it.
+46. *Fixed after 0.42.0.* `add mcp` re-emitted only the `mcpServers` member of
+    `.ai/src/mcp.json`, dropping every other top-level member, and replaced a
+    file without a `"mcpServers"` substring with a fresh object holding the
+    one server. Every top-level member now stays in order, and `mcpServers` is
+    added beside them when missing.
+47. *Fixed after 0.42.0.* `add mcp` took the first `"mcpServers"` anywhere in
+    the file as the member, so a nested decoy made the merge fail with
+    `failed to update`; only the top-level member counts now.
+48. *Fixed after 0.42.0.* `add mcp` stopped reading the server map at the
+    first key that is not a string and dropped the servers after it. A file
+    that is not a valid JSON object is now refused and left unchanged.
 49. *Fixed after 0.42.0.* `add mcp` created `.ai/src/mcp.json` with an empty
     server map before it validated `--env`, so a bad pair left the file
     behind; `--args` and `--env` read only the first line of their value.

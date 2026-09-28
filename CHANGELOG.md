@@ -26,6 +26,7 @@
 - **`migrate` leaves a file without an extension where it is.** A `README` under `.ai/src/settings/` moved to `.ai/src/tools/README/settings.README`, as if it were a tool's payload; it now stays, and `update` no longer counts it as a legacy override.
 - **`refresh` off a terminal changes nothing without `--yes`.** When only auto-updates were pending it applied them silently, and with `--include-deleted` it printed restore prompts it then declined; any pending change now stops with the same `Use --yes` error new files and conflicts gave. CI jobs that ran `refresh` to take auto-updates add `--yes`.
 - **`init` records no template hash for the files it adopts.** The template manifest was written before adoption, so an adopted `AGENTS.md` or rule carried the shipped template's hash and `refresh` treated the project's own text as an edit of the template. A project initialised before this keeps that record until `refresh --review` revisits it.
+- **`add mcp` keeps the rest of `.ai/src/mcp.json`.** Adding a server dropped every top-level key other than `mcpServers`, replaced a file without `mcpServers` wholesale, took an `mcpServers` nested inside another key for the real one, and silently lost servers after an invalid key. Other keys now stay in order, `mcpServers` is added beside them, and a file that is not valid JSON is refused and left as it is.
 
 ### Fixed
 
