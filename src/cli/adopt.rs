@@ -503,57 +503,26 @@ pub fn adopt(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let (mut dry_run, mut assume_yes, mut all) = (false, false, false);
-    let mut dest = String::new();
-    for arg in args {
-        match arg.as_str() {
-            "--dry-run" => dry_run = true,
-            "--yes" | "-y" => assume_yes = true,
-            "--all" | "-a" => all = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: unknown flag: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(2);
-            }
-            _ if !dest.is_empty() => {
-                put(
-                    err,
-                    format!(
-                        "{}: adopt accepts a single destination file\n",
-                        style.red("Error")
-                    )
-                    .as_bytes(),
-                )?;
-                return Ok(2);
-            }
-            value => dest = value.to_string(),
+    let parsed = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(ParseStop::Help) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-    if all && !dest.is_empty() {
-        put(
-            err,
-            format!("{}: adopt --all takes no <dest-file>\n", style.red("Error")).as_bytes(),
-        )?;
-        return Ok(2);
-    }
-    if !all && dest.is_empty() {
-        put(
-            err,
-            format!(
-                "{}: missing <dest-file>\n{}",
-                style.red("Error"),
-                HELP.render(style)
-            )
-            .as_bytes(),
-        )?;
-        return Ok(2);
-    }
+        Err(ParseStop::Refuse(message)) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(2);
+        }
+        Err(ParseStop::MissingDest) => {
+            let help = HELP.render(style);
+            let text = format!("{}: missing <dest-file>\n{help}", style.red("Error"));
+            put(err, text.as_bytes())?;
+            return Ok(2);
+        }
+    };
 
     let project = match discover() {
         Ok(project) => project,
@@ -577,7 +546,7 @@ pub fn adopt(
     let sources = discover_sources(&project)?;
     let root = project.root.disk_text();
     let loaded = Manifest::load(&root)?;
-    if loaded.is_none() && all {
+    if loaded.is_none() && parsed.all {
         put(
             err,
             format!(
@@ -594,30 +563,89 @@ pub fn adopt(
         style,
         root: &root,
         interactive,
+        dry_run: parsed.dry_run,
+        assume_yes: parsed.assume_yes,
         confirm,
         out,
         err,
     };
     match loaded {
-        Some(manifest) if all => adopt_all(&mut run, &mut resolver, &manifest, dry_run, assume_yes),
-        manifest => adopt_one(
-            &mut run,
-            &mut resolver,
-            manifest.as_ref(),
-            &dest,
-            dry_run,
-            assume_yes,
-        ),
+        Some(manifest) if parsed.all => adopt_all(&mut run, &mut resolver, &manifest),
+        manifest => adopt_one(&mut run, &mut resolver, manifest.as_ref(), &parsed.dest),
     }
+}
+
+struct Args {
+    dry_run: bool,
+    assume_yes: bool,
+    all: bool,
+    dest: String,
+}
+
+/// How a command line that names nothing to adopt ends: help on stdout, an
+/// error line, or the missing destination followed by the usage.
+enum ParseStop {
+    Help,
+    Refuse(String),
+    MissingDest,
+}
+
+fn parse_args(args: &[String]) -> Result<Args, ParseStop> {
+    let mut parsed = Args {
+        dry_run: false,
+        assume_yes: false,
+        all: false,
+        dest: String::new(),
+    };
+    for arg in args {
+        match arg.as_str() {
+            "--dry-run" => parsed.dry_run = true,
+            "--yes" | "-y" => parsed.assume_yes = true,
+            "--all" | "-a" => parsed.all = true,
+            "--help" | "-h" => return Err(ParseStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(ParseStop::Refuse(format!("unknown flag: {flag}")));
+            }
+            _ if !parsed.dest.is_empty() => {
+                return Err(ParseStop::Refuse(
+                    "adopt accepts a single destination file".into(),
+                ));
+            }
+            value => parsed.dest = value.to_string(),
+        }
+    }
+    if parsed.all && !parsed.dest.is_empty() {
+        return Err(ParseStop::Refuse("adopt --all takes no <dest-file>".into()));
+    }
+    if !parsed.all && parsed.dest.is_empty() {
+        return Err(ParseStop::MissingDest);
+    }
+    Ok(parsed)
 }
 
 struct Run<'a> {
     style: &'a Style,
     root: &'a str,
     interactive: bool,
+    dry_run: bool,
+    assume_yes: bool,
     confirm: Confirm<'a>,
     out: &'a mut dyn Write,
     err: &'a mut dyn Write,
+}
+
+impl Run<'_> {
+    fn cannot(&mut self, reason: &str) -> Result<u8, Error> {
+        let text = format!("{}: {reason}\n", self.style.red("Cannot adopt"));
+        put(self.err, text.as_bytes())?;
+        Ok(1)
+    }
+
+    fn nothing_written(&mut self) -> Result<u8, Error> {
+        let text = format!("{}\n", self.style.dim("Dry-run — nothing written."));
+        put(self.out, text.as_bytes())?;
+        Ok(0)
+    }
 }
 
 fn hash(path: &str) -> Option<String> {
@@ -743,9 +771,9 @@ fn write_into_source(found: &Adoption, bytes: &[u8]) -> Result<(), Error> {
 }
 
 /// Whether to go on: refuses off a terminal without `--yes`, then asks.
-fn confirmed(run: &mut Run, assume_yes: bool, question: &str) -> Result<Option<u8>, Error> {
+fn confirmed(run: &mut Run, question: &str) -> Result<Option<u8>, Error> {
     let style = run.style;
-    if assume_yes {
+    if run.assume_yes {
         return Ok(None);
     }
     if !run.interactive {
@@ -801,43 +829,25 @@ fn adopt_one(
     resolver: &mut Resolver,
     manifest: Option<&Manifest>,
     dest: &str,
-    dry_run: bool,
-    assume_yes: bool,
 ) -> Result<u8, Error> {
     let style = run.style;
     let found = match resolver.resolve(dest, run.err)? {
         Ok(found) => found,
-        Err(reason) => {
-            put(
-                run.err,
-                format!("{}: {reason}\n", style.red("Cannot adopt")).as_bytes(),
-            )?;
-            return Ok(1);
-        }
+        Err(reason) => return run.cannot(&reason),
     };
     if let Some(manifest) = manifest
         && !manifest.paths().contains(&found.dest_rel)
     {
-        put(
-            run.err,
-            format!(
-                "{}: {} is not tracked in the manifest.\n  AgentSync only adopts files it produced. Run sync first to register the file.\n",
-                style.red("Cannot adopt"),
-                found.dest_rel
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+        return run.cannot(&format!(
+            "{} is not tracked in the manifest.\n  AgentSync only adopts files it produced. Run sync first to register the file.",
+            found.dest_rel
+        ));
     }
     if found.keyed {
-        return adopt_keys(run, &found, manifest, dry_run, assume_yes);
+        return adopt_keys(run, &found, manifest);
     }
     if let Some(reason) = whole_file_refusal(&found, manifest) {
-        put(
-            run.err,
-            format!("{}: {reason}\n", style.red("Cannot adopt")).as_bytes(),
-        )?;
-        return Ok(1);
+        return run.cannot(&reason);
     }
     let Some(current) = hash(&found.dest_abs) else {
         put(
@@ -862,6 +872,29 @@ fn adopt_one(
         return Ok(0);
     }
 
+    put(run.out, one_plan(style, &found, source_exists).as_bytes())?;
+    if run.dry_run {
+        return run.nothing_written();
+    }
+    if let Some(status) = confirmed(run, "Apply this adoption?")? {
+        return Ok(status);
+    }
+    copy_into_source(&found)?;
+    let mut done = format!("\n{} Wrote {}\n", style.green("✓"), found.source_rel);
+    if manifest.is_some() {
+        manifest::update_entry(run.root, &found.dest_rel, &current, None)?;
+        done.push_str(&format!(
+            "{} Updated .ai/.sync-manifest\n",
+            style.green("✓")
+        ));
+    }
+    done.push('\n');
+    done.push_str(&verify_hint(style));
+    put(run.out, done.as_bytes())?;
+    Ok(0)
+}
+
+fn one_plan(style: &Style, found: &Adoption, source_exists: bool) -> String {
     let mut plan = format!(
         "\n{}\n    {}     {}\n    {} {}\n    {}     {} {}\n    {}       {} {}\n\n",
         style.bold("  Adopt plan"),
@@ -881,61 +914,25 @@ fn adopt_one(
             "    {}\n\n",
             style.dim("(creating new source file)")
         ));
-    } else {
-        let diff = plan_diff(&found);
-        if !diff.is_empty() {
-            for line in diff.split('\n') {
-                plan.push_str(&format!("    {line}\n"));
-            }
-            plan.push('\n');
+        return plan;
+    }
+    let diff = plan_diff(found);
+    if !diff.is_empty() {
+        for line in diff.split('\n') {
+            plan.push_str(&format!("    {line}\n"));
         }
+        plan.push('\n');
     }
-    put(run.out, plan.as_bytes())?;
-
-    if dry_run {
-        put(
-            run.out,
-            format!("{}\n", style.dim("Dry-run — nothing written.")).as_bytes(),
-        )?;
-        return Ok(0);
-    }
-    if let Some(status) = confirmed(run, assume_yes, "Apply this adoption?")? {
-        return Ok(status);
-    }
-    copy_into_source(&found)?;
-    let mut done = format!("\n{} Wrote {}\n", style.green("✓"), found.source_rel);
-    if manifest.is_some() {
-        manifest::update_entry(run.root, &found.dest_rel, &current, None)?;
-        done.push_str(&format!(
-            "{} Updated .ai/.sync-manifest\n",
-            style.green("✓")
-        ));
-    }
-    done.push('\n');
-    done.push_str(&verify_hint(style));
-    put(run.out, done.as_bytes())?;
-    Ok(0)
+    plan
 }
 
 /// `adopt_one` for a key-owned settings or MCP file: only the owned keys the live
 /// file changed move into its source.
-fn adopt_keys(
-    run: &mut Run,
-    found: &Adoption,
-    manifest: Option<&Manifest>,
-    dry_run: bool,
-    assume_yes: bool,
-) -> Result<u8, Error> {
+fn adopt_keys(run: &mut Run, found: &Adoption, manifest: Option<&Manifest>) -> Result<u8, Error> {
     let style = run.style;
     let adoption = match keyed_adoption(found, manifest)? {
         Ok(adoption) => adoption,
-        Err(reason) => {
-            put(
-                run.err,
-                format!("{}: {reason}\n", style.red("Cannot adopt")).as_bytes(),
-            )?;
-            return Ok(1);
-        }
+        Err(reason) => return run.cannot(&reason),
     };
     if adoption.keys.is_empty() {
         put(
@@ -969,14 +966,10 @@ fn adopt_keys(
         keys.join(", ")
     );
     put(run.out, plan.as_bytes())?;
-    if dry_run {
-        put(
-            run.out,
-            format!("{}\n", style.dim("Dry-run — nothing written.")).as_bytes(),
-        )?;
-        return Ok(0);
+    if run.dry_run {
+        return run.nothing_written();
     }
-    if let Some(status) = confirmed(run, assume_yes, "Apply this adoption?")? {
+    if let Some(status) = confirmed(run, "Apply this adoption?")? {
         return Ok(status);
     }
     apply_keyed(run.root, found, &adoption)?;
@@ -1001,14 +994,42 @@ fn apply_keyed(root: &str, found: &Adoption, adoption: &KeyedAdoption) -> Result
     )
 }
 
-fn adopt_all(
-    run: &mut Run,
-    resolver: &mut Resolver,
-    manifest: &Manifest,
-    dry_run: bool,
-    assume_yes: bool,
-) -> Result<u8, Error> {
+/// What `adopt --all` found: the outputs it promotes, each with the hash the
+/// manifest records for it, the key adoptions among them, and why the rest
+/// are skipped.
+struct AllPlan {
+    ready: Vec<(Adoption, String)>,
+    keyed: Vec<(String, KeyedAdoption)>,
+    skipped: Vec<(String, String)>,
+}
+
+fn adopt_all(run: &mut Run, resolver: &mut Resolver, manifest: &Manifest) -> Result<u8, Error> {
     let style = run.style;
+    let plan = plan_all(run, resolver, manifest)?;
+    if plan.ready.is_empty() && plan.skipped.is_empty() {
+        let text = style.dim("Nothing to adopt: every tracked output matches its source.");
+        put(run.out, format!("{text}\n").as_bytes())?;
+        return Ok(0);
+    }
+    put(run.out, all_plan_text(style, &plan).as_bytes())?;
+    if plan.ready.is_empty() {
+        let text =
+            style.dim("No adoptable edits — the drifted files above need manual source edits.");
+        put(run.out, format!("{text}\n").as_bytes())?;
+        return Ok(0);
+    }
+    if run.dry_run {
+        return run.nothing_written();
+    }
+    let question = format!("Apply these {} adoption(s)?", plan.ready.len());
+    if let Some(status) = confirmed(run, &question)? {
+        return Ok(status);
+    }
+    apply_all(run, &plan)?;
+    Ok(0)
+}
+
+fn plan_all(run: &mut Run, resolver: &mut Resolver, manifest: &Manifest) -> Result<AllPlan, Error> {
     let mut planned: Vec<(Adoption, String)> = Vec::new();
     let mut keyed: Vec<(String, KeyedAdoption)> = Vec::new();
     let mut skipped: Vec<(String, String)> = Vec::new();
@@ -1035,7 +1056,7 @@ fn adopt_all(
             },
         }
     }
-    let ok: Vec<bool> = planned
+    let unshared: Vec<bool> = planned
         .iter()
         .enumerate()
         .map(|(i, (found, current))| {
@@ -1044,38 +1065,34 @@ fn adopt_all(
             })
         })
         .collect();
-    for ((found, _), fine) in planned.iter().zip(&ok) {
-        if !fine {
-            skipped.push((
-                found.dest_rel.clone(),
-                format!(
-                    "multiple edited outputs map to {} — adopt one explicitly",
-                    found.source_rel
-                ),
-            ));
+    let mut ready = Vec::new();
+    for ((found, current), fine) in planned.into_iter().zip(unshared) {
+        if fine {
+            ready.push((found, current));
+        } else {
+            let reason = format!(
+                "multiple edited outputs map to {} — adopt one explicitly",
+                found.source_rel
+            );
+            skipped.push((found.dest_rel, reason));
         }
     }
-    let ok_count = ok.iter().filter(|fine| **fine).count();
+    Ok(AllPlan {
+        ready,
+        keyed,
+        skipped,
+    })
+}
 
-    if ok_count == 0 && skipped.is_empty() {
-        put(
-            run.out,
-            format!(
-                "{}\n",
-                style.dim("Nothing to adopt: every tracked output matches its source.")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(0);
-    }
-
-    let mut plan = format!("\n{}\n", style.bold("  Adopt plan (--all)"));
-    if ok_count > 0 {
-        plan.push_str(&format!(
-            "    {ok_count} file(s) will be promoted to source:\n\n"
+fn all_plan_text(style: &Style, plan: &AllPlan) -> String {
+    let mut text = format!("\n{}\n", style.bold("  Adopt plan (--all)"));
+    if !plan.ready.is_empty() {
+        text.push_str(&format!(
+            "    {} file(s) will be promoted to source:\n\n",
+            plan.ready.len()
         ));
-        for ((found, _), _) in planned.iter().zip(&ok).filter(|(_, fine)| **fine) {
-            plan.push_str(&format!(
+        for (found, _) in &plan.ready {
+            text.push_str(&format!(
                 "    {}  {} {} {}\n",
                 style.cyan(&found.tool),
                 style.yellow(&found.dest_rel),
@@ -1083,81 +1100,58 @@ fn adopt_all(
                 style.green(&found.source_rel)
             ));
         }
-        plan.push('\n');
+        text.push('\n');
     }
-    if !skipped.is_empty() {
-        plan.push_str(&format!(
+    if !plan.skipped.is_empty() {
+        text.push_str(&format!(
             "    {}\n",
             style.dim(&format!(
                 "{} skipped (edit .ai/src/ directly):",
-                skipped.len()
+                plan.skipped.len()
             ))
         ));
-        for (rel, reason) in &skipped {
-            plan.push_str(&format!(
+        for (rel, reason) in &plan.skipped {
+            text.push_str(&format!(
                 "    {} {} {}\n",
                 style.yellow(rel),
                 style.dim("—"),
                 style.dim(reason)
             ));
         }
-        plan.push('\n');
+        text.push('\n');
     }
-    put(run.out, plan.as_bytes())?;
+    text
+}
 
-    if ok_count == 0 {
-        put(
-            run.out,
-            format!(
-                "{}\n",
-                style.dim("No adoptable edits — the drifted files above need manual source edits.")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(0);
-    }
-    if dry_run {
-        put(
-            run.out,
-            format!("{}\n", style.dim("Dry-run — nothing written.")).as_bytes(),
-        )?;
-        return Ok(0);
-    }
-    let question = format!("Apply these {ok_count} adoption(s)?");
-    if let Some(status) = confirmed(run, assume_yes, &question)? {
-        return Ok(status);
-    }
-
+fn apply_all(run: &mut Run, plan: &AllPlan) -> Result<(), Error> {
+    let style = run.style;
     put(run.out, b"\n")?;
-    for ((found, current), _) in planned.iter().zip(&ok).filter(|(_, fine)| **fine) {
-        match keyed.iter().find(|(rel, _)| *rel == found.dest_rel) {
+    for (found, current) in &plan.ready {
+        match plan.keyed.iter().find(|(rel, _)| *rel == found.dest_rel) {
             Some((_, adoption)) => apply_keyed(run.root, found, adoption)?,
             None => {
                 copy_into_source(found)?;
                 manifest::update_entry(run.root, &found.dest_rel, current, None)?;
             }
         }
-        put(
-            run.out,
-            format!(
-                "{} {} {}\n",
-                style.green("✓"),
-                style.dim("adopted"),
-                found.source_rel
-            )
-            .as_bytes(),
-        )?;
+        let line = format!(
+            "{} {} {}\n",
+            style.green("✓"),
+            style.dim("adopted"),
+            found.source_rel
+        );
+        put(run.out, line.as_bytes())?;
     }
     put(
         run.out,
         format!(
-            "\n{} Adopted {ok_count} file(s) into .ai/src/ and refreshed .ai/.sync-manifest\n\n{}",
+            "\n{} Adopted {} file(s) into .ai/src/ and refreshed .ai/.sync-manifest\n\n{}",
             style.green("✓"),
+            plan.ready.len(),
             verify_hint(style)
         )
         .as_bytes(),
-    )?;
-    Ok(0)
+    )
 }
 
 #[cfg(all(test, unix))]
