@@ -34,6 +34,7 @@
 - **`profile remove` deletes only what AgentSync generated in the config home.** It removed the whole directory, such as `.claude-hub/`, with the credentials, history, and settings the tool kept there. Files the sync manifest does not record now stay, and the command says `kept .claude-hub/` when any do.
 - **`enable` and `disable` edit the config `AGENTSYNC_CONFIG_PATH` selects.** They wrote to `.ai/agent_sync.yaml` while every other command read the selected file, so a tool enabled there never synced. `disable` also no longer creates `.ai/agent_sync.yaml` in a project that has none; it switches the tool off in its own YAML only.
 - **`upgrade-config` pins the config `AGENTSYNC_CONFIG_PATH` selects,** not `.ai/agent_sync.yaml`; a variable naming a missing file now stops it with the same error the other commands give.
+- **`dedupe` reads `shared.path` from, and records declined templates in, the config `AGENTSYNC_CONFIG_PATH` selects,** resolved for each project under `--workspace`. A variable naming a missing file stops it.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 

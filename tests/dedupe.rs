@@ -195,6 +195,55 @@ fn dedupe_yes_adds_template_derived_dupe_to_declined() {
 }
 
 #[test]
+fn dedupe_declines_into_the_config_agentsync_config_path_names() {
+    let root = tempfile::tempdir().unwrap();
+    let parent_dir = root.path().join("parent");
+    let child_dir = parent_dir.join("child");
+    init_at(&parent_dir);
+    std::fs::write(
+        parent_dir.join(".ai/src/rules/comments.md"),
+        "comments rule\n",
+    )
+    .unwrap();
+    init_at(&child_dir);
+    std::fs::copy(
+        parent_dir.join(".ai/src/rules/comments.md"),
+        child_dir.join(".ai/src/rules/comments.md"),
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(child_dir.join(".ai/agent_sync.yaml")).unwrap();
+    std::fs::write(child_dir.join("selected.yaml"), "tools:\n  enabled: []\n").unwrap();
+
+    let mut command = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agentsync"));
+    command.current_dir(&child_dir);
+    common::scrub(&mut command);
+    command
+        .env("AGENTSYNC_CONFIG_PATH", "selected.yaml")
+        .args(["dedupe", "--yes"])
+        .assert()
+        .success();
+
+    let selected = std::fs::read_to_string(child_dir.join("selected.yaml")).unwrap();
+    assert!(selected.contains("rules/comments.md"));
+    assert_eq!(
+        std::fs::read_to_string(child_dir.join(".ai/agent_sync.yaml")).unwrap(),
+        before
+    );
+
+    let mut missing = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agentsync"));
+    missing.current_dir(&child_dir);
+    common::scrub(&mut missing);
+    missing
+        .env("AGENTSYNC_CONFIG_PATH", "missing.yaml")
+        .args(["dedupe", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "AGENTSYNC_CONFIG_PATH is set but file not found",
+        ));
+}
+
+#[test]
 fn dedupe_yes_does_not_add_non_template_duplicate_to_declined() {
     let root = tempfile::tempdir().unwrap();
     let (_parent, child) = make_parent_child_identical(root.path());

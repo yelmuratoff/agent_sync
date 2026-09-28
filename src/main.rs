@@ -96,7 +96,13 @@ fn dispatch(command: Command, rest: &[String], style: &Style) -> Result<u8, Erro
             let mut read = prompts::read_terminal;
             let answer = prompts::is_tty().then_some(&mut read as &mut dyn FnMut() -> String);
             let cwd = logical_cwd()?;
-            cli::dedupe::dedupe(rest, &cwd, &project_root, style, answer, stdout, stderr)
+            let config = path_var("AGENTSYNC_CONFIG_PATH");
+            let place = cli::dedupe::Place {
+                cwd: &cwd,
+                root: &project_root,
+                config: config.as_deref(),
+            };
+            cli::dedupe::dedupe(rest, &place, style, answer, stdout, stderr)
         }
         Command::Migrate => migrate_command(rest, style),
         Command::Generate => generate_command(rest, style),
