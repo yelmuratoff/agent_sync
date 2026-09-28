@@ -296,6 +296,15 @@ impl<'a> Resolver<'a> {
                 return Ok(Some(found.map(|found| Adoption { keyed, ..found })));
             }
         }
+        if tool.value("targets.rules.merge_to_file") == "true"
+            && self.dest_for(tool, "rules").as_deref() == Some(abs)
+        {
+            return Ok(Some(self.dir_source(
+                tool,
+                self.adoption(tool, "rules", dest),
+                abs,
+            )));
+        }
         let mut best: Option<(&'static str, String)> = None;
         for key in ["rules", "skills", "commands", "subagents"] {
             let Some(dir) = self.dest_for(tool, key) else {

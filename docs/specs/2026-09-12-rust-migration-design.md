@@ -549,9 +549,9 @@ decision to make once rather than a bug to find twice.
 32. `dedupe` ignores `AGENTSYNC_CONFIG_PATH`, even a missing one: it reads
     `shared.path` from and appends declined entries to `.ai/agent_sync.yaml`,
     else a root `agent_sync.yaml`.
-33. `adopt` of a merged rules file such as Zed's `.rules` answers that it is not
-    a recognised output; the merge refusal is reachable only for a file inside
-    a rules directory.
+33. *Fixed after 0.42.0.* `adopt` of a merged rules file such as Zed's
+    `.rules` answered that it was not a recognised output; the merge refusal
+    was reachable only for a file inside a rules directory.
 34. `adopt --all` prints one `✓ adopted` line per destination, so two identical
     edits of one source name it twice.
 35. `migrate --apply --yes` prints `removed .agent/ (pre-v0.6 layout)` with no

@@ -259,6 +259,21 @@ fn adopt_refuses_cursor_rule_header_injection() {
 }
 
 #[test]
+fn adopt_refuses_a_merged_rules_file() {
+    let project = synced_project(&["zed"]);
+    project.append(".rules", "extra\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".rules"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "zed merges rules into a single file. Edit the source rules in",
+        ));
+}
+
+#[test]
 fn adopt_refuses_codex_toml_subagent() {
     let project = synced_project(&["codex"]);
     let toml_file = first_file_in(&project, ".codex/agents");
