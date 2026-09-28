@@ -521,6 +521,7 @@ pub fn sync_converted(
     src_dir: &str,
     dest_dir: &str,
     conversion: Conversion,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
         return Ok(());
@@ -528,6 +529,9 @@ pub fn sync_converted(
     let ext = conversion.extension();
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
+        if !filter.accepts(&name) {
+            continue;
+        }
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
         let dest_name = format!("{stem}{ext}");
         let dest_file = format!("{dest_dir}/{dest_name}");
@@ -776,6 +780,7 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         sync_commands_as_skills(
@@ -798,6 +803,7 @@ mod tests {
             "/proj/.ai/src/commands",
             "/proj/.gemini/commands",
             Conversion::CommandToml,
+            &Filter::default(),
         )
         .unwrap();
         assert!(s.ws.exists("/proj/.cursor/rules/old.mdc"));
@@ -810,6 +816,7 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         assert_eq!(s.ws.list("/proj/.cursor/rules"), ["core.mdc", "mine.mdc"]);
@@ -857,6 +864,7 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         assert!(s.ws.is_file("/proj/.codex/agents/rev.toml"));

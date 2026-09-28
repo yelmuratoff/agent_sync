@@ -300,14 +300,14 @@ pub(super) fn sync_commands_step(
 
     if !dests.commands.is_empty() {
         let result = if tool.value("targets.commands.format") == "toml" {
-            rules::sync_converted(s, &src, &dests.commands, Conversion::CommandToml)
+            rules::sync_converted(s, &src, &dests.commands, Conversion::CommandToml, &filter)
         } else {
             let extension = tool.value("targets.commands.extension");
             let opts = RuleOptions {
                 extension: &extension,
                 header: "",
                 scoped_header: "",
-                filter: &Filter::default(),
+                filter: &filter,
             };
             rules::sync_rules(s, &src, &dests.commands, &opts)
         };
@@ -356,21 +356,21 @@ pub(super) fn sync_subagents_step(
     if !s.ws.is_dir(&src) {
         return Ok(());
     }
+    let everything = Filter::default();
+    let convert = |s: &mut Session, conversion| {
+        rules::sync_converted(s, &src, &dests.subagents, conversion, &everything)
+    };
     let result = match tool.value("targets.subagents.format").as_str() {
-        "toml" => rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentToml),
-        "amazonq_json" => {
-            rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentAmazonqJson)
-        }
-        "opencode_md" => {
-            rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentOpencodeMd)
-        }
+        "toml" => convert(s, Conversion::AgentToml),
+        "amazonq_json" => convert(s, Conversion::AgentAmazonqJson),
+        "opencode_md" => convert(s, Conversion::AgentOpencodeMd),
         _ => {
             let extension = tool.value("targets.subagents.extension");
             let opts = RuleOptions {
                 extension: &extension,
                 header: "",
                 scoped_header: "",
-                filter: &Filter::default(),
+                filter: &everything,
             };
             rules::sync_rules(s, &src, &dests.subagents, &opts)
         }

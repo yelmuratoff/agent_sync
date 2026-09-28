@@ -772,6 +772,10 @@ Appended one line at a time as they are found, with the phase:
 - After Phase 7: `doctor` no longer suggests `agentsync simplify` for an empty
   skill directory. Bash printed that tip, but `simplify` never touched skill
   directories; the advisory itself still says to populate or remove it.
+- After Phase 7: `targets.commands.include` and `.exclude` filter a native or
+  TOML commands directory too, as `_TEMPLATE.yaml` documents. Bash passed
+  empty filters there and applied them only to generated command skills and
+  the inlined command index.
 
 ## Risks
 

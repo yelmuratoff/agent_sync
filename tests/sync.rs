@@ -599,6 +599,26 @@ fn sync_re_sync_emits_no_churn_for_shared_dest_command_or_nested_agents() {
         .stdout(predicate::str::contains("Removed: .amazonq/rules/00-context.md").not());
 }
 
+// ── Command filters ──────────────────────────────────────────────────────
+
+#[test]
+fn sync_command_filters_apply_to_native_and_toml_command_dirs() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["claude", "gemini"]);
+    for tool in ["claude", "gemini"] {
+        project.write(
+            &format!(".ai/src/tools/{tool}.yaml"),
+            "targets:\n  commands:\n    exclude:\n      - review.md\n",
+        );
+    }
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".claude/commands/review.md"));
+    assert!(project.exists(".claude/commands/fix-issue.md"));
+    assert!(!project.exists(".gemini/commands/review.toml"));
+    assert!(project.exists(".gemini/commands/fix-issue.toml"));
+    project.agentsync().arg("check").assert().success();
+}
+
 // ── Skill categories ─────────────────────────────────────────────────────
 
 fn skill(name: &str) -> String {
