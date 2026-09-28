@@ -377,7 +377,7 @@ fn register(
 ) -> Result<(), Error> {
     let child = format!(
         "  {name}:\n    overlay: \"{overlay_rel}\"\n    active: true\n    tools: [{}]\n",
-        variants.join(",")
+        variants.join(", ")
     );
     let bytes = std::fs::read(config).map_err(|e| Error::io(config, e))?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -816,9 +816,14 @@ mod tests {
             )
         );
         assert!(!Path::new(&format!("{root}/.ai/src/tools")).exists());
-        let (status, _, err) = call(&root, &["add", "hub", "--tools", " claude , "]);
+        let (status, _, err) = call(&root, &["add", "hub", "--tools", " claude , cursor"]);
         assert_eq!((status, err.as_str()), (0, ""));
         assert!(Path::new(&format!("{root}/.ai/src/tools/claude-hub.yaml")).is_file());
+        assert!(
+            std::fs::read_to_string(format!("{root}/.ai/agent_sync.yaml"))
+                .unwrap()
+                .contains("    tools: [claude-hub, cursor-hub]\n")
+        );
     }
 
     #[test]
