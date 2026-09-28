@@ -519,8 +519,8 @@ decision to make once rather than a bug to find twice.
     and repeated ones included.
 18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
     0 when no tool had an override, whatever the slug.
-19. `show <slug> <resource>` labels an override `base` when its extension
-    differs from the shipped template's.
+19. *Fixed after 0.42.0.* `show <slug> <resource>` labelled an override
+    `base` when its extension differed from the shipped template's.
 20. `diff` selects the project config before it validates the resource;
     `customize` and `show` validate first.
 21. *Fixed after 0.42.0.* `simplify`'s payload pass scanned `.ai/src/tools` even when `source.tools`
