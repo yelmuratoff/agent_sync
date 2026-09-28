@@ -1,9 +1,10 @@
 //! `lib/helpers/file_ops.sh`: copies and sweeps that honour `--dry-run`, and
 //! prune an extraneous entry only when `Session::may_prune` allows it.
 
+use crate::engine::filters::Filter;
 use crate::engine::session::Session;
 use crate::engine::skill_tree::{self, Skill};
-use crate::{Error, engine::filters, paths};
+use crate::{Error, paths};
 
 /// `cleanup_path`: removes `target` when it exists; true when something went.
 /// A failed removal is not an error: Bash calls it inside an `if`, where
@@ -65,8 +66,7 @@ pub fn sync_skills_dir(
     s: &mut Session,
     src: &str,
     dest: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src) {
         s.log.warning(&format!("Source directory not found: {src}"));
@@ -86,7 +86,7 @@ pub fn sync_skills_dir(
         .chain(tree.files.iter().map(|file| Skill::at(file)));
     let mut source_items: Vec<String> = Vec::new();
     for entry in entries {
-        if !filters::matches_skill(&entry, include, exclude) {
+        if !filter.accepts_skill(&entry) {
             continue;
         }
         source_items.push(entry.name.clone());
@@ -109,7 +109,7 @@ pub fn sync_skills_dir(
             .find(&name)
             .cloned()
             .unwrap_or_else(|| Skill::at(&name));
-        if source_items.contains(&name) || !filters::matches_skill(&entry, include, exclude) {
+        if source_items.contains(&name) || !filter.accepts_skill(&entry) {
             continue;
         }
         let item = format!("{dest}/{name}");
@@ -130,10 +130,10 @@ pub fn sync_skills_dir(
         cleaned += 1;
     }
 
-    let extra = if include.is_empty() {
+    let extra = if filter.include.is_empty() {
         String::new()
     } else {
-        format!(", include='{include}'")
+        format!(", include='{}'", filter.include)
     };
     let suffix = if s.dry_run { " (dry-run)" } else { "" };
     let counts = counts(source_items.len(), cleaned);
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn sync_skills_dir_warns_on_a_missing_source() {
         let mut s = test_session();
-        sync_skills_dir(&mut s, "/proj/nope", "/proj/out", "", "").unwrap();
+        sync_skills_dir(&mut s, "/proj/nope", "/proj/out", &Filter::default()).unwrap();
         assert_eq!(
             s.log.tail(1),
             ["[WARNING] Source directory not found: /proj/nope"]
@@ -224,8 +224,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
-            "",
-            "command-*",
+            &Filter::new("", "command-*"),
         )
         .unwrap();
         assert!(s.ws.is_file("/proj/.claude/skills/a/references/r.md"));
@@ -270,8 +269,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
-            "",
-            "cloudflare/*",
+            &Filter::new("", "cloudflare/*"),
         )
         .unwrap();
         assert_eq!(
@@ -312,8 +310,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         assert!(cleanup_path(&mut s, "/proj/.cursor/rules"));
@@ -344,8 +341,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         assert!(s.ws.exists("/proj/.claude/skills/mine"));

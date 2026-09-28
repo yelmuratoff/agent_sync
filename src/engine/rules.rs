@@ -2,8 +2,9 @@
 //! `lib/helpers/rule_operations.sh` and the directory loops of
 //! `lib/helpers/format_conversion.sh`.
 
+use crate::engine::filters::Filter;
 use crate::engine::session::Session;
-use crate::{Error, engine::convert, engine::file_ops, engine::filters, paths, text};
+use crate::{Error, engine::convert, engine::file_ops, paths, text};
 
 /// `add_header`: `printf '%b\n'` of the header, a blank line, the file.
 pub fn add_header(file: &[u8], header: &str) -> Vec<u8> {
@@ -205,8 +206,7 @@ pub fn merge_rules_to_file(
     s: &mut Session,
     src_dir: &str,
     dest_file: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
     agents_file: Option<&str>,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
@@ -217,7 +217,7 @@ pub fn merge_rules_to_file(
     let dest_disp = s.display(dest_file);
     let files: Vec<String> = md_files(s, src_dir)
         .into_iter()
-        .filter(|name| filters::matches(name, include, exclude))
+        .filter(|name| filter.accepts(name))
         .collect();
 
     if s.dry_run {
@@ -265,8 +265,7 @@ pub struct RuleOptions<'a> {
     pub extension: &'a str,
     pub header: &'a str,
     pub scoped_header: &'a str,
-    pub include: &'a str,
-    pub exclude: &'a str,
+    pub filter: &'a Filter,
 }
 
 /// `sync_rules`: copy with the extension and header applied, then prune
@@ -289,7 +288,7 @@ pub fn sync_rules(
 
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, opts.include, opts.exclude) {
+        if !opts.filter.accepts(&name) {
             continue;
         }
         let dest_name = if opts.extension.is_empty() {
@@ -340,10 +339,10 @@ pub fn sync_rules(
         cleaned += 1;
     }
 
-    let extra = if opts.include.is_empty() {
+    let extra = if opts.filter.include.is_empty() {
         String::new()
     } else {
-        format!(", include='{}'", opts.include)
+        format!(", include='{}'", opts.filter.include)
     };
     let suffix = if s.dry_run { " (dry-run)" } else { "" };
     let counts = file_ops::counts(valid.len(), cleaned);
@@ -358,15 +357,14 @@ pub fn inline_commands_to_file(
     s: &mut Session,
     src_dir: &str,
     target_file: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) || target_file.is_empty() {
         return Ok(());
     }
     let mut entries = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, include, exclude) {
+        if !filter.accepts(&name) {
             continue;
         }
         let stem = name.strip_suffix(".md").unwrap_or(&name);
@@ -399,8 +397,7 @@ pub fn sync_commands_as_skills(
     s: &mut Session,
     src_dir: &str,
     dest_dir: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
         return Ok(());
@@ -413,7 +410,7 @@ pub fn sync_commands_as_skills(
 
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, include, exclude) {
+        if !filter.accepts(&name) {
             continue;
         }
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
@@ -648,8 +645,7 @@ mod tests {
             extension: ".mdc",
             header: CURSOR_HEADER,
             scoped_header: CURSOR_SCOPED,
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
         sync_rules(&mut s, "/proj/.ai/src/rules", "/proj/.cursor/rules", &opts).unwrap();
         assert!(text_of(&s, "/proj/.cursor/rules/core.mdc").starts_with("---\nglobs: '**/*'"));
@@ -671,8 +667,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/.rules",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/AGENTS.md"),
         )
         .unwrap();
@@ -705,8 +700,13 @@ mod tests {
         );
         file(&mut s, "/proj/.ai/src/commands/ship.md", "Ship\n");
         file(&mut s, "/proj/AGENTS.md", "# A\n");
-        inline_commands_to_file(&mut s, "/proj/.ai/src/commands", "/proj/AGENTS.md", "", "")
-            .unwrap();
+        inline_commands_to_file(
+            &mut s,
+            "/proj/.ai/src/commands",
+            "/proj/AGENTS.md",
+            &Filter::default(),
+        )
+        .unwrap();
         assert_eq!(
             text_of(&s, "/proj/AGENTS.md"),
             "# A\n\n## Commands\n\nThe following commands provide quick workflows. Find them in `.ai/src/commands/`:\n\n- `/review` — Review\n- `/ship`\n"
@@ -727,8 +727,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/commands",
             "/proj/.agents/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         assert_eq!(
@@ -767,8 +766,7 @@ mod tests {
             extension: ".mdc",
             header: "",
             scoped_header: "",
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
 
         s.dry_run = true;
@@ -784,16 +782,14 @@ mod tests {
             &mut s,
             "/proj/.ai/src/commands",
             "/proj/.agents/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         merge_rules_to_file(
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/.rules",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/rules/core.md"),
         )
         .unwrap();
@@ -892,8 +888,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/merged.md",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/AGENTS.md"),
         )
         .unwrap();
@@ -911,11 +906,17 @@ mod tests {
             extension: "",
             header: "",
             scoped_header: "",
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
         sync_rules(&mut s, "/proj/nope", "/proj/out", &opts).unwrap();
-        merge_rules_to_file(&mut s, "/proj/nope", "/proj/out.md", "", "", None).unwrap();
+        merge_rules_to_file(
+            &mut s,
+            "/proj/nope",
+            "/proj/out.md",
+            &Filter::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             s.log.tail(2),
             [

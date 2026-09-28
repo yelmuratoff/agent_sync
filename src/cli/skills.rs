@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::config::skill_metadata;
-use crate::engine::filters;
+use crate::engine::filters::Filter;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
 use crate::engine::skill_tree::{self, Tree};
@@ -66,8 +66,7 @@ enum Action {
 struct Args {
     action: Action,
     profile: Option<String>,
-    include: String,
-    exclude: String,
+    filter: Filter,
 }
 
 pub fn run(
@@ -123,9 +122,7 @@ pub fn run(
         {
             continue;
         }
-        if matches!(parsed.action, Action::List)
-            && !filters::matches_skill(skill, &parsed.include, &parsed.exclude)
-        {
+        if matches!(parsed.action, Action::List) && !parsed.filter.accepts_skill(skill) {
             continue;
         }
         count += 1;
@@ -284,8 +281,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
     let mut parsed = Args {
         action,
         profile: None,
-        include: String::new(),
-        exclude: String::new(),
+        filter: Filter::default(),
     };
     let start = if matches!(parsed.action, Action::Show(_)) {
         2
@@ -303,22 +299,15 @@ fn parse(args: &[String]) -> Result<Args, String> {
         match option.as_str() {
             "--profile" if parsed.profile.is_none() => parsed.profile = Some(value.clone()),
             "--include" if matches!(parsed.action, Action::List) => {
-                append_globs(&mut parsed.include, value)
+                parsed.filter.include_also(value)
             }
             "--exclude" if matches!(parsed.action, Action::List) => {
-                append_globs(&mut parsed.exclude, value)
+                parsed.filter.exclude_also(value)
             }
             _ => return Err(format!("unknown option: {option}")),
         }
     }
     Ok(parsed)
-}
-
-fn append_globs(slot: &mut String, value: &str) {
-    if !slot.is_empty() {
-        slot.push(' ');
-    }
-    slot.push_str(value);
 }
 
 fn cell(value: &str) -> String {

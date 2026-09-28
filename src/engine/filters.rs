@@ -2,26 +2,61 @@
 
 use crate::engine::skill_tree::Skill;
 
-/// Whether `filename` passes the space-separated glob lists: any exclude match
-/// rejects, an empty include accepts everything, otherwise any include match accepts.
-pub fn matches(filename: &str, include: &str, exclude: &str) -> bool {
-    if split_patterns(exclude).any(|pat| glob_match(pat, filename)) {
-        return false;
-    }
-    if include.is_empty() {
-        return true;
-    }
-    split_patterns(include).any(|pat| glob_match(pat, filename))
+/// A target's include and exclude globs, each a space-separated list: any
+/// exclude match rejects, an empty include accepts everything, otherwise any
+/// include match accepts.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Filter {
+    pub include: String,
+    pub exclude: String,
 }
 
-/// `matches` for a skill: a pattern names either the skill or its path below
-/// the skills root, so `cloudflare/*` filters a whole category.
-pub fn matches_skill(skill: &Skill, include: &str, exclude: &str) -> bool {
-    let hit = |pat: &str| glob_match(pat, &skill.name) || glob_match(pat, &skill.rel);
-    if split_patterns(exclude).any(hit) {
-        return false;
+impl Filter {
+    pub fn new(include: &str, exclude: &str) -> Self {
+        Self {
+            include: include.to_string(),
+            exclude: exclude.to_string(),
+        }
     }
-    include.is_empty() || split_patterns(include).any(hit)
+
+    /// This filter with `patterns` excluded as well.
+    pub fn excluding(&self, patterns: &str) -> Self {
+        let mut filter = self.clone();
+        filter.exclude_also(patterns);
+        filter
+    }
+
+    pub fn include_also(&mut self, patterns: &str) {
+        append(&mut self.include, patterns);
+    }
+
+    pub fn exclude_also(&mut self, patterns: &str) {
+        append(&mut self.exclude, patterns);
+    }
+
+    pub fn accepts(&self, name: &str) -> bool {
+        self.passes(|pat| glob_match(pat, name))
+    }
+
+    /// A pattern names either the skill or its path below the skills root, so
+    /// `cloudflare/*` filters a whole category.
+    pub fn accepts_skill(&self, skill: &Skill) -> bool {
+        self.passes(|pat| glob_match(pat, &skill.name) || glob_match(pat, &skill.rel))
+    }
+
+    fn passes(&self, hit: impl Fn(&str) -> bool) -> bool {
+        if split_patterns(&self.exclude).any(&hit) {
+            return false;
+        }
+        self.include.is_empty() || split_patterns(&self.include).any(&hit)
+    }
+}
+
+fn append(list: &mut String, patterns: &str) {
+    if !list.is_empty() {
+        list.push(' ');
+    }
+    list.push_str(patterns);
 }
 
 fn split_patterns(list: &str) -> impl Iterator<Item = &str> {
@@ -107,39 +142,44 @@ mod tests {
 
     #[test]
     fn an_empty_filter_accepts_everything() {
-        assert!(matches("core.md", "", ""));
+        assert!(Filter::default().accepts("core.md"));
     }
 
     #[test]
     fn exclude_wins_over_include() {
-        assert!(!matches("core.md", "*.md", "core.*"));
-        assert!(matches("git.md", "*.md", "core.*"));
+        let filter = Filter::new("*.md", "core.*");
+        assert!(!filter.accepts("core.md"));
+        assert!(filter.accepts("git.md"));
     }
 
     #[test]
     fn any_of_several_space_separated_patterns_matches() {
-        assert!(matches("b.md", "a.md b.md", ""));
-        assert!(!matches("c.md", "a.md\tb.md", ""));
-        assert!(!matches("command-review", "", "legacy command-*"));
+        assert!(Filter::new("a.md b.md", "").accepts("b.md"));
+        assert!(!Filter::new("a.md\tb.md", "").accepts("c.md"));
+        assert!(!Filter::new("", "legacy command-*").accepts("command-review"));
+    }
+
+    #[test]
+    fn excluding_adds_patterns_to_either_list_shape() {
+        assert_eq!(
+            Filter::new("a*", "").excluding("command-*"),
+            Filter::new("a*", "command-*")
+        );
+        assert_eq!(
+            Filter::new("", "b").excluding("command-*"),
+            Filter::new("", "b command-*")
+        );
     }
 
     #[test]
     fn a_skill_pattern_names_the_skill_or_its_category_path() {
         let wrangler = Skill::at("cloudflare/wrangler");
-        assert!(!matches_skill(&wrangler, "", "cloudflare/*"));
-        assert!(!matches_skill(&wrangler, "", "wrangler"));
-        assert!(matches_skill(
-            &Skill::at("flutter/bloc"),
-            "",
-            "cloudflare/*"
-        ));
-        assert!(matches_skill(
-            &Skill::at("flutter/ui/slivers"),
-            "flutter/*",
-            ""
-        ));
-        assert!(!matches_skill(&Skill::at("backend/auth"), "flutter/*", ""));
-        assert!(matches_skill(&Skill::at("commit"), "flutter/* commit", ""));
+        assert!(!Filter::new("", "cloudflare/*").accepts_skill(&wrangler));
+        assert!(!Filter::new("", "wrangler").accepts_skill(&wrangler));
+        assert!(Filter::new("", "cloudflare/*").accepts_skill(&Skill::at("flutter/bloc")));
+        assert!(Filter::new("flutter/*", "").accepts_skill(&Skill::at("flutter/ui/slivers")));
+        assert!(!Filter::new("flutter/*", "").accepts_skill(&Skill::at("backend/auth")));
+        assert!(Filter::new("flutter/* commit", "").accepts_skill(&Skill::at("commit")));
     }
 
     #[test]

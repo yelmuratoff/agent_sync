@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::Error;
 use crate::cli::put;
 use crate::config::{skill_cards, skill_source};
-use crate::engine::filters;
+use crate::engine::filters::Filter;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 
@@ -78,8 +78,7 @@ struct Args {
     id: Option<String>,
     catalog: PathBuf,
     sources: BTreeMap<String, PathBuf>,
-    include: String,
-    exclude: String,
+    filter: Filter,
 }
 
 pub fn run(
@@ -103,10 +102,7 @@ pub fn run(
     match parsed.action {
         Action::List => {
             let mut rendered = String::from("id\tsource\tsource_status\tmapping\n");
-            for card in cards
-                .iter()
-                .filter(|card| filters::matches(&card.id, &parsed.include, &parsed.exclude))
-            {
+            for card in cards.iter().filter(|card| parsed.filter.accepts(&card.id)) {
                 let info = source_info(card, &parsed.sources);
                 rendered.push_str(&format!(
                     "{}\t{}\t{}\t{}\n",
@@ -171,8 +167,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
     let mut catalog = None;
     let mut id = None;
     let mut sources = BTreeMap::new();
-    let mut include = String::new();
-    let mut exclude = String::new();
+    let mut filter = Filter::default();
     let mut index = 1;
     while let Some(argument) = args.get(index) {
         match argument.as_str() {
@@ -205,20 +200,14 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 if !matches!(action, Action::List) {
                     return Err("--include is a list option".to_string());
                 }
-                append_patterns(
-                    &mut include,
-                    required(args, index, "--include requires globs")?,
-                );
+                filter.include_also(required(args, index, "--include requires globs")?);
                 index += 2;
             }
             "--exclude" => {
                 if !matches!(action, Action::List) {
                     return Err("--exclude is a list option".to_string());
                 }
-                append_patterns(
-                    &mut exclude,
-                    required(args, index, "--exclude requires globs")?,
-                );
+                filter.exclude_also(required(args, index, "--exclude requires globs")?);
                 index += 2;
             }
             flag if flag.starts_with('-') => return Err(format!("Unknown skills option: {flag}")),
@@ -241,8 +230,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         id,
         catalog,
         sources,
-        include,
-        exclude,
+        filter,
     })
 }
 
@@ -252,8 +240,7 @@ fn help_args() -> Args {
         id: None,
         catalog: PathBuf::new(),
         sources: BTreeMap::new(),
-        include: String::new(),
-        exclude: String::new(),
+        filter: Filter::default(),
     }
 }
 
@@ -262,13 +249,6 @@ fn required<'a>(args: &'a [String], index: usize, message: &str) -> Result<&'a s
         .map(String::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| message.to_string())
-}
-
-fn append_patterns(list: &mut String, value: &str) {
-    if !list.is_empty() {
-        list.push(' ');
-    }
-    list.push_str(value);
 }
 
 fn slug(value: &str) -> bool {
@@ -329,12 +309,8 @@ mod tests {
             "pdf-old".into(),
         ])
         .unwrap();
-        assert!(filters::matches("pdf", &parsed.include, &parsed.exclude));
-        assert!(filters::matches("tdd", &parsed.include, &parsed.exclude));
-        assert!(!filters::matches(
-            "pdf-old",
-            &parsed.include,
-            &parsed.exclude
-        ));
+        assert!(parsed.filter.accepts("pdf"));
+        assert!(parsed.filter.accepts("tdd"));
+        assert!(!parsed.filter.accepts("pdf-old"));
     }
 }
