@@ -764,6 +764,11 @@ Appended one line at a time as they are found, with the phase:
   the current one, keeping the rest of the hook; Bash reported any existing
   block as already present, so a hook that fell back to `bash lib/sync.sh`
   survived every upgrade. A block missing its end marker is still left alone.
+- After Phase 7: a directory under `skills/` without `SKILL.md` is a category.
+  Sync walks it for skills and lands each one flat at `<dest>/<name>/` instead
+  of copying the directory. Bash copied every top-level entry as it was, and
+  most tools then ignored the nested skills. Two skills sharing a name stop
+  sync.
 
 ## Risks
 

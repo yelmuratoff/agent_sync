@@ -84,9 +84,9 @@ targets:
     # Destination directory for skill folders
     dest: ".tool/skills"
 
-    # Optional: Filter skills (folders)
+    # Optional: Filter skills by name or by category path
     # include: "flutter*"
-    # exclude: "python*"
+    # exclude: "python* cloudflare/*"
 
     # Optional: Override source directory
     # source: ".ai/src/my-skills"

@@ -281,9 +281,13 @@ agentsync <command> [options]
 | `version`                | `-v`  | Print version                                                                                  |
 | `help`                   | `-h`  | Show help                                                                                      |
 
+### Skill categories
+
+A directory under `skills/` without its own `SKILL.md` is a category, so `.ai/src/skills/flutter/bloc/SKILL.md` and `.ai/src/skills/backend/auth/SKILL.md` can sit side by side, up to four category levels deep. Tools disagree on nested skills (Claude Code, VS Code Copilot, and Gemini CLI skip them), so `sync` lands every skill flat at `<dest>/<name>/` for every tool, and the inlined index groups entries under a heading per category. Keep leaf names unique across categories: two skills sharing a name stop `sync`. `targets.skills.include`/`exclude` match a skill's name or its category path, so `exclude: cloudflare/*` drops a whole category for one tool. Scaffold into a category with `agentsync add skill bloc --category flutter`.
+
 ### Inspecting skills
 
-`agentsync skills list` reads the effective `source.skills` tree, including shared and bundled skills. Use `--profile <name>` to inspect a profile, or `--include` and `--exclude` to filter names. `agentsync skills show <name>` displays a skill's description, source path, and declared `license` and `compatibility` when present. `agentsync skills check` reports missing or malformed required metadata without changing what `sync` accepts.
+`agentsync skills list` reads the effective `source.skills` tree, including shared and bundled skills, and names each skill's category. Use `--profile <name>` to inspect a profile, or `--include` and `--exclude` to filter by name or category path. `agentsync skills show <name>` displays a skill's description, category, source path, and declared `license` and `compatibility` when present. `agentsync skills check` reports missing or malformed required metadata, empty or too-deep categories, and names two skills share; of those, `sync` refuses only the shared name.
 
 The [Agent Skills specification](https://agentskills.io/specification) defines `name`, `description`, `compatibility`, and an optional string-valued `metadata` map. For project-owned skills, use that map when a concise card needs extra human context:
 

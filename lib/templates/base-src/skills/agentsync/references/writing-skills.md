@@ -49,6 +49,7 @@ allowed-tools: Bash(git:*) Read Grep   # Experimental; tool-specific.
 - Lowercase letters, digits, and hyphens only — no `_`, no uppercase, no Unicode
 - No leading or trailing hyphen, no consecutive `--`
 - Must equal the parent directory name (`my-skill/SKILL.md` ↔ `name: my-skill`)
+- Unique across categories: `flutter/auth/` and `backend/auth/` would both land at `<dest>/auth/`, so sync refuses the pair — name one `flutter-auth`
 
 **`description` constraints (hard):**
 
