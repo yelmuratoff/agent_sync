@@ -837,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wizard_picks_tools_content_outputs_existing_and_ci_like_bash() {
+    fn the_wizard_picks_tools_content_outputs_and_existing_like_bash() {
         let (_dir, root) = project(&[
             (".github/x", ""),
             ("CLAUDE.md", "# Hand-written\n"),
@@ -881,7 +881,10 @@ mod tests {
                 .contains("   Enabled 2 tool(s): claude, cursor (selected)\n")
         );
         assert!(!Path::new(&root).join(".github/workflows").exists());
+    }
 
+    #[test]
+    fn the_wizard_offers_the_ci_gate_to_a_github_project() {
         let (_dir, root) = project(&[(".github/x", "")]);
         let ci = call(
             &root,
@@ -907,7 +910,10 @@ mod tests {
                 .join(".github/workflows/agentsync-check.yml")
                 .is_file()
         );
+    }
 
+    #[test]
+    fn the_wizard_declines_cancels_dry_runs_and_skips_under_yes() {
         let (_dir, root) = project(&[]);
         let declined = call(
             &root,

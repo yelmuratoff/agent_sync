@@ -768,8 +768,7 @@ mod tests {
         assert!(s.ws.exists("/proj/.agents/skills/mine"));
     }
 
-    #[test]
-    fn dry_runs_and_kept_files_log_what_the_bash_helpers_log() {
+    fn session_with_kept_and_obsolete_outputs() -> Session {
         let mut s = test_session();
         file(&mut s, "/proj/.ai/src/rules/core.md", "# Core\n");
         file(
@@ -792,6 +791,12 @@ mod tests {
                 .map(String::from)
                 .into(),
         );
+        s
+    }
+
+    #[test]
+    fn dry_runs_and_kept_files_log_what_the_bash_helpers_log() {
+        let mut s = session_with_kept_and_obsolete_outputs();
         let opts = RuleOptions {
             extension: ".mdc",
             header: "",
