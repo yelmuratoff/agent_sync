@@ -24,6 +24,7 @@
 - **A nested config key matches only at its own level.** `tools.enabled` also matched an `enabled:` nested deeper, such as `tools.foo.enabled`, when reading or editing a config; a key one level further in no longer answers for it.
 - **`simplify --apply` deletes nothing off a terminal without `-y`.** A script running it removed byte-identical payload copies while keeping the override file it had emptied; both now wait for `-y`, and each kept file says so. Scripts that relied on the deletion add `-y`.
 - **`migrate` leaves a file without an extension where it is.** A `README` under `.ai/src/settings/` moved to `.ai/src/tools/README/settings.README`, as if it were a tool's payload; it now stays, and `update` no longer counts it as a legacy override.
+- **`refresh` off a terminal changes nothing without `--yes`.** When only auto-updates were pending it applied them silently, and with `--include-deleted` it printed restore prompts it then declined; any pending change now stops with the same `Use --yes` error new files and conflicts gave. CI jobs that ran `refresh` to take auto-updates add `--yes`.
 
 ### Fixed
 

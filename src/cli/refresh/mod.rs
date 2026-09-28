@@ -136,10 +136,7 @@ pub fn refresh(
         run.say(&report.dry_run())?;
         return Ok(0);
     }
-    if !run.env.interactive
-        && !options.assume_yes
-        && changes.new.len() + changes.conflicts.len() > 0
-    {
+    if !run.env.interactive && !options.assume_yes {
         put(run.err, report.not_a_tty().as_bytes())?;
         return Ok(1);
     }

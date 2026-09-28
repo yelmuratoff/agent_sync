@@ -603,10 +603,11 @@ decision to make once rather than a bug to find twice.
     `--only` and `AGENTS.md` without `--include-agents-md`. The healing keeps
     the manifest honest (`src/config/template_manifest.rs`); scoping it would
     rewrite that committed file on every scoped refresh and buy nothing.
-39. Off a terminal without `--yes`, `refresh` applies pending auto-updates,
-    because the TTY gate looks only at new files and conflicts; with
-    `--include-deleted` and nothing else pending it prints each RESTORE prompt
-    on stderr and declines it.
+39. *Fixed after 0.42.0.* Off a terminal without `--yes`, `refresh` applied
+    pending auto-updates, because the TTY gate looked only at new files and
+    conflicts; with `--include-deleted` and nothing else pending it printed
+    each RESTORE prompt on stderr and declined it. The gate now refuses any
+    pending change there.
 40. *Fixed after 0.42.0.* `refresh` read `template_overrides` from
     `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`, ignoring
     `AGENTSYNC_CONFIG_PATH`.
