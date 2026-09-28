@@ -13,7 +13,7 @@ use crate::paths::{DiskText, Paths};
 use crate::project::Project;
 
 /// `_init_detect_enabled_tools`: a tool is detected when any marker exists.
-const DETECTORS: [(&str, &[&str]); 13] = [
+const DETECTORS: [(&str, &[&str]); 14] = [
     ("claude", &[".claude", "CLAUDE.md"]),
     ("cursor", &[".cursor", ".cursorrules"]),
     (
@@ -31,10 +31,11 @@ const DETECTORS: [(&str, &[&str]); 13] = [
         "opencode",
         &[".opencode", "opencode.json", "opencode.jsonc"],
     ),
-    ("windsurf", &[".windsurf", ".windsurfrules"]),
+    ("windsurf", &[".devin", ".windsurf", ".windsurfrules"]),
     ("junie", &[".junie"]),
-    ("cline", &[".clinerules"]),
+    ("cline", &[".cline", ".clinerules"]),
     ("amazonq", &[".amazonq"]),
+    ("kiro", &[".kiro"]),
     ("zed", &[".zed", ".rules"]),
     ("antigravity", &[".agents/rules", ".agents/workflows"]),
 ];

@@ -16,8 +16,11 @@ Create and maintain AI agent instructions in the AgentSync format.
 │   ├── core.md
 │   └── testing.md
 ├── skills/                     # On-demand recipes (one directory per skill)
-│   └── deploy/
-│       └── SKILL.md
+│   ├── deploy/
+│   │   └── SKILL.md
+│   └── flutter/                #   optional category (no SKILL.md of its own)
+│       └── bloc/
+│           └── SKILL.md
 ├── commands/                   # Custom slash commands (.md files)
 │   ├── review.md
 │   └── fix-issue.md
@@ -34,6 +37,8 @@ Create and maintain AI agent instructions in the AgentSync format.
 
 After editing, run `agentsync sync` to distribute to all tools.
 
+Group many skills into category directories — a directory without `SKILL.md` is a category, up to four levels deep. No tool reads categories the same way (Claude Code, VS Code Copilot, and Gemini CLI skip nested skills), so sync lands every skill flat at `<dest>/<name>/`. Leaf names stay unique across categories: two skills sharing a name stop sync. Filter a whole category with a path glob — `exclude: cloudflare/*` in a tool's `targets.skills` — and inspect the layout with `agentsync skills check`. A shipped skill moved into a category still receives `agentsync refresh` updates there.
+
 Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in (`agentsync enable`, `agentsync customize`, `agentsync add mcp`). When absent, AgentSync falls back to its shipped base templates. The flat `settings/`, `mcp/`, and `hooks/` directories from older layouts still work but are deprecated — preview their move with `agentsync migrate --legacy` and apply it with `agentsync migrate --apply`.
 
 ## Scaffolding new content
@@ -41,7 +46,7 @@ Settings, hooks, and per-tool MCP are overrides: they only exist once you opt in
 Use `agentsync add <kind> <name>` to create a new file with the correct frontmatter and placement:
 
 - `agentsync add rule <name>` — creates `.ai/src/rules/<name>.md`
-- `agentsync add skill <name>` — creates `.ai/src/skills/<name>/SKILL.md`
+- `agentsync add skill <name> [--category <path>]` — creates `.ai/src/skills/[<category>/]<name>/SKILL.md`
 - `agentsync skills list` / `show <name>` / `check` — inspect effective skills and check their metadata without changing sync output
 - `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
 - `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
@@ -166,11 +171,12 @@ OpenCode hooks use `.ai/src/tools/opencode/hooks.ts` → `.opencode/plugins/agen
 For tools without separate rules/skills directories, use inline options:
 
 - **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie, Kimi Code, OpenCode.
-- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Junie, Cline, Amazon Q, Zed.
+- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Amazon Q, Zed.
 - **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex, Kimi Code.
 - **`inline_into_agents: true`** (commands) — appends a `## Commands` index (one `` `/<name>` — description `` line per command) to the agents file. For tools that have neither a commands dir nor a skills dir. Requires `targets.agents.dest` (or `rules.merge_to_file` fallback). Used by: Amazon Q, Zed.
 - **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Zed.
-- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q, Cline.
+- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q.
+- **`legacy_dest`** (any target) — the path an earlier release of the tool config wrote that target to. Sync removes only the files there that the previous manifest records, then the directories that leaves empty, so a tool reading both paths does not load them twice; hand-written files stay, and a failed sync restores them. Used by: Windsurf (`.windsurf/` → `.devin/`), Cline (`.clinerules/` → `.cline/`).
 
 ## Adding a New Tool
 
@@ -312,7 +318,7 @@ Three layers keep an agent (and a person) editing the source instead of the outp
 - Run `agentsync sync` after every change to distribute updates.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
-- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex and Kimi Code emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
-- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, and OpenCode as safe Markdown with translated permissions. Cline, Kimi Code, Zed, Windsurf, and Antigravity have no custom subagent surface, so they get none.
+- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex, Kimi Code, and Kiro emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
+- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, OpenCode as safe Markdown with translated permissions, and Kiro as Markdown agents with its tool tags. Cline, Kimi Code, Zed, Windsurf, and Antigravity have no custom subagent surface, so they get none.
 - The shared `.ai/src/mcp.json` reaches every MCP target. OpenCode composes it into `opencode.json`; do not duplicate `mcp` in the OpenCode settings override. `agentsync mcp use --merge --apply` extends only a regular per-tool `mcp.json`; use `--replace <id>` to replace the selected ID explicitly. `targets.mcp.format: kimi_json` makes `agentsync mcp use` write Kimi-native HTTP entries without `type: "http"`; sync then copies that per-tool source. For hand-written remote servers in a shared source, use a Kimi per-tool override with its native `url` shape. Codex composes supported server fields into `.codex/config.toml` while preserving the settings source; keep `[mcp_servers.*]` out of settings when a separate MCP source exists. Codex-native fields (`cwd`, `enabled`, `startup_timeout_sec`, and the rest listed in `docs/mcp-library.md`) belong in a per-tool `.ai/src/tools/codex/mcp.json`; to keep servers in the settings file instead, set `targets.mcp.enabled: false` in `.ai/src/tools/codex.yaml`. Synced from `$HOME` or into a profile, `ownership: auto` (the default on `settings` and `mcp` targets) owns only the declared keys of each TOML or JSON file, one entry per MCP server, and keeps what the tool writes itself: Codex's projects, hooks.state, and plugins, Claude Code's model, theme, and plugin choices, a server added in an editor. Keep that state out of `.ai/src`, and use `agentsync adopt <file>` to pull a declared key the tool changed back into its source. Zed's commented settings stay owned whole.
 - AgentSync owns `.opencode/plugins/agentsync.ts`, not sibling OpenCode plugins, custom tools, themes, TUI preferences, or credentials. Kimi custom agents and project hooks are unavailable; leave Kimi's global config untouched.

@@ -6,6 +6,7 @@ use super::Doctor;
 use super::json::json_valid;
 use super::secrets::scan_secrets;
 use crate::cli::{files_below, sorted_entries};
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::paths::{self, DiskText};
 use crate::transaction::manifest::{self, Manifest};
 use crate::{
@@ -13,17 +14,19 @@ use crate::{
 };
 
 /// `_DOCTOR_OUTPUT_DIR_MAP`.
-const OUTPUT_DIRS: [(&str, &str); 12] = [
+const OUTPUT_DIRS: [(&str, &str); 14] = [
     (".claude", "claude"),
     (".cursor", "cursor"),
     (".codex", "codex"),
     (".kimi-code", "kimi"),
     (".opencode", "opencode"),
     (".windsurf", "windsurf"),
+    (".devin", "windsurf"),
     (".gemini", "gemini"),
     (".junie", "junie"),
     (".cline", "cline"),
     (".amazonq", "amazonq"),
+    (".kiro", "kiro"),
     (".zed", "zed"),
     (".agents", "codex"),
 ];
@@ -159,26 +162,46 @@ impl Doctor<'_> {
         if !skills.is_dir() {
             return self.info("No .ai/src/skills/ — nothing to scan.");
         }
-        let mut found = 0;
-        for dir in sorted_entries(&skills).into_iter().filter(|p| p.is_dir()) {
-            if !dir.join("SKILL.md").is_file() {
-                let name = dir.file_name().unwrap_or_default().disk_text();
-                self.advise(&format!(
-                    "skills/{name}/ — missing SKILL.md {}",
-                    style.dim("(empty skill — populate or remove)")
-                ))?;
-                found += 1;
-            }
+        let tree = skill_tree::discover(
+            &Workspace::on_disk(&self.root),
+            &format!("{}/.ai/src/skills", self.root),
+        );
+        let collisions = skill_tree::collisions(&tree.skills);
+        for (name, rels) in &collisions {
+            let claims: Vec<_> = rels.iter().map(|rel| format!("skills/{rel}/")).collect();
+            self.warn(&format!(
+                "skill name '{name}' is claimed by {} — agentsync sync refuses it; rename one",
+                claims.join(", ")
+            ))?;
         }
-        if found == 0 {
+        for rel in &tree.too_deep {
+            self.advise(&format!(
+                "skills/{rel}/ — deeper than {} categories {}",
+                skill_tree::MAX_CATEGORY_DEPTH,
+                style.dim("(not synced — move it up)")
+            ))?;
+        }
+        for rel in &tree.empty_categories {
+            self.advise(&format!(
+                "skills/{rel}/ — missing SKILL.md {}",
+                style.dim("(empty skill — populate or remove)")
+            ))?;
+        }
+        let nonstandard = tree.nonstandard_categories();
+        for rel in &nonstandard {
+            self.advise(&format!(
+                "skills/{rel}/ — category name is not lowercase-kebab {}",
+                style.dim("(agentsync add --category refuses it — rename)")
+            ))?;
+        }
+        if collisions.is_empty()
+            && tree.too_deep.is_empty()
+            && tree.empty_categories.is_empty()
+            && nonstandard.is_empty()
+        {
             self.ok("All skill directories contain SKILL.md")
         } else {
-            self.info(&format!(
-                "{} {} {}",
-                style.dim("Tip:"),
-                style.cyan("agentsync simplify"),
-                style.dim("can prune empty skill dirs.")
-            ))
+            Ok(())
         }
     }
 
@@ -283,90 +306,32 @@ impl Doctor<'_> {
         ))?;
         self.say("\n")?;
 
-        let inherited: Vec<&str> = self
-            .config
-            .as_deref()
-            .map(|config| {
-                overlay::inherit_categories(&yaml_subset::value(config, "shared.inherit"))
-            })
-            .unwrap_or_default();
-        let parent_root = paths::parent(&parent_src);
+        let scan = CrossScan {
+            inherited: self
+                .config
+                .as_deref()
+                .map(|config| {
+                    overlay::inherit_categories(&yaml_subset::value(config, "shared.inherit"))
+                })
+                .unwrap_or_default(),
+            parent_root: paths::parent(&parent_src),
+        };
+        let child_skills = skill_tree::discover(
+            &Workspace::on_disk(&self.root),
+            &format!("{child_src}/skills"),
+        );
         let (mut dupes, mut divergent) = (0, 0);
-        let mut pairs: Vec<(String, PathBuf)> = Vec::new();
-        for category in ["rules", "commands", "agents"] {
-            let dir = Path::new(&parent_src).join(category);
-            if !dir.is_dir() {
-                continue;
-            }
-            for file in sorted_entries(&dir)
-                .into_iter()
-                .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "md"))
-            {
-                let name = file.file_name().unwrap_or_default().disk_text();
-                pairs.push((format!("{category}/{name}"), file));
-            }
-        }
-        let skills = Path::new(&parent_src).join("skills");
-        if skills.is_dir() {
-            let mut files = Vec::new();
-            files_below(&skills, &mut files);
-            files.retain(|p| {
-                !p.file_name()
-                    .is_some_and(|n| n.disk_text().starts_with('.'))
-            });
-            files.sort();
-            for file in files {
-                let rel = file
-                    .strip_prefix(&parent_src)
-                    .map(|p| p.disk_text())
-                    .unwrap_or_default();
-                pairs.push((rel, file));
-            }
-        }
-        for (rel, parent_file) in pairs {
-            let child_file = Path::new(&child_src).join(&rel);
-            if !child_file.is_file() {
-                continue;
-            }
-            let (Some(child_hash), Some(parent_hash)) = (
-                template_manifest::hash(&child_file),
-                template_manifest::hash(&parent_file),
-            ) else {
-                continue;
+        for (rel, parent) in parent_files(&parent_src) {
+            let rel = match rel.strip_prefix("skills/") {
+                Some(inside) => format!("skills/{}", child_skills.locate(inside)),
+                None => rel,
             };
-            let category = rel.split('/').next().unwrap_or("");
-            if child_hash == parent_hash {
-                let hint = if inherited.contains(&category) {
-                    format!(" {}", style.dim("(inherited via shared: — safe to delete)"))
-                } else {
-                    String::new()
-                };
-                let shown = parent_file
-                    .disk_text()
-                    .strip_prefix(&format!("{parent_root}/"))
-                    .unwrap_or(&parent_file.disk_text())
-                    .to_string();
-                self.advise(&format!(
-                    "{rel} — duplicate of parent's {}{hint}",
-                    style.dim(&shown)
-                ))?;
-                dupes += 1;
-            } else {
-                let content =
-                    std::fs::read(&parent_file).map_err(|e| Error::io(&parent_file, e))?;
-                if convert::read_field(&content, "category") == b"governance" {
-                    self.advise(&format!(
-                        "{rel} — {} {}",
-                        style.yellow("governance file diverges from parent"),
-                        style.dim("(category: governance — likely a mistake, not an override)")
-                    ))?;
-                } else {
-                    self.info(&format!(
-                        "{rel} — diverges from parent {}",
-                        style.dim("(review intent)")
-                    ))?;
-                }
-                divergent += 1;
+            let child = Path::new(&child_src).join(&rel);
+            let shared = SharedFile { rel, child, parent };
+            match self.report_shared(&scan, &shared)? {
+                Some(true) => dupes += 1,
+                Some(false) => divergent += 1,
+                None => {}
             }
         }
         if dupes == 0 && divergent == 0 {
@@ -383,6 +348,108 @@ impl Doctor<'_> {
             Ok(())
         }
     }
+
+    /// Reports a parent file the child also has: `Some(true)` for an identical
+    /// copy, `Some(false)` for a divergent one, `None` when either is unreadable
+    /// or the child has none.
+    fn report_shared(
+        &mut self,
+        scan: &CrossScan,
+        shared: &SharedFile,
+    ) -> Result<Option<bool>, Error> {
+        let style = self.style;
+        let SharedFile { rel, child, parent } = shared;
+        if !child.is_file() {
+            return Ok(None);
+        }
+        let (Some(child_hash), Some(parent_hash)) = (
+            template_manifest::hash(child),
+            template_manifest::hash(parent),
+        ) else {
+            return Ok(None);
+        };
+        if child_hash == parent_hash {
+            let category = rel.split('/').next().unwrap_or("");
+            let hint = if scan.inherited.contains(&category) {
+                format!(" {}", style.dim("(inherited via shared: — safe to delete)"))
+            } else {
+                String::new()
+            };
+            let parent_text = parent.disk_text();
+            let shown = parent_text
+                .strip_prefix(&format!("{}/", scan.parent_root))
+                .unwrap_or(&parent_text);
+            self.advise(&format!(
+                "{rel} — duplicate of parent's {}{hint}",
+                style.dim(shown)
+            ))?;
+            return Ok(Some(true));
+        }
+        let content = std::fs::read(parent).map_err(|e| Error::io(parent, e))?;
+        if convert::read_field(&content, "category") == b"governance" {
+            self.advise(&format!(
+                "{rel} — {} {}",
+                style.yellow("governance file diverges from parent"),
+                style.dim("(category: governance — likely a mistake, not an override)")
+            ))?;
+        } else {
+            self.info(&format!(
+                "{rel} — diverges from parent {}",
+                style.dim("(review intent)")
+            ))?;
+        }
+        Ok(Some(false))
+    }
+}
+
+/// What the cross-project scan knows about the parent.
+struct CrossScan {
+    inherited: Vec<&'static str>,
+    parent_root: String,
+}
+
+/// A parent source file and where the child would keep its copy.
+struct SharedFile {
+    rel: String,
+    child: PathBuf,
+    parent: PathBuf,
+}
+
+/// The parent's `rules`, `commands`, and `agents` Markdown files and every
+/// file below its `skills`, each with its path below the parent's `src`.
+fn parent_files(parent_src: &str) -> Vec<(String, PathBuf)> {
+    let mut pairs = Vec::new();
+    for category in ["rules", "commands", "agents"] {
+        let dir = Path::new(parent_src).join(category);
+        if !dir.is_dir() {
+            continue;
+        }
+        for file in sorted_entries(&dir)
+            .into_iter()
+            .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "md"))
+        {
+            let name = file.file_name().unwrap_or_default().disk_text();
+            pairs.push((format!("{category}/{name}"), file));
+        }
+    }
+    let skills = Path::new(parent_src).join("skills");
+    if skills.is_dir() {
+        let mut files = Vec::new();
+        files_below(&skills, &mut files);
+        files.retain(|p| {
+            !p.file_name()
+                .is_some_and(|n| n.disk_text().starts_with('.'))
+        });
+        files.sort();
+        for file in files {
+            let rel = file
+                .strip_prefix(parent_src)
+                .map(|p| p.disk_text())
+                .unwrap_or_default();
+            pairs.push((rel, file));
+        }
+    }
+    pairs
 }
 
 /// `sed -n '2,/^---$/p' | grep -q '^paths:[[:space:]]*$'` after a first

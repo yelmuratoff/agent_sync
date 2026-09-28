@@ -280,37 +280,7 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
             if !value.is_empty() {
                 return Err("unsupported metadata mapping");
             }
-            i += 1;
-            let mut entries = 0;
-            while i < end {
-                let line = lines[i];
-                if line.is_empty() || line.trim_start().starts_with('#') {
-                    i += 1;
-                    continue;
-                }
-                if !line.starts_with(char::is_whitespace) {
-                    break;
-                }
-                let entry = line
-                    .strip_prefix("  ")
-                    .ok_or("unsupported metadata mapping")?;
-                let (field, raw) = entry
-                    .split_once(':')
-                    .ok_or("unsupported metadata mapping")?;
-                if !simple_key(field) || !raw.starts_with(' ') {
-                    return Err("unsupported metadata mapping");
-                }
-                if block_style(raw.trim()) {
-                    block(&lines, &mut i, end, raw.trim(), 2)?;
-                } else {
-                    scalar(raw).ok_or("unsupported metadata mapping")?;
-                    i += 1;
-                }
-                entries += 1;
-            }
-            if entries == 0 {
-                return Err("empty metadata mapping");
-            }
+            metadata(&lines, &mut i, end)?;
             continue;
         }
         if !matches!(key, "name" | "description") {
@@ -342,6 +312,43 @@ fn fields(text: &str) -> Result<(String, String), &'static str> {
         .filter(|s| !s.is_empty())
         .ok_or("missing description")?;
     Ok((name, description))
+}
+
+/// The two-space `metadata:` mapping below `lines[*index]`, each value a
+/// scalar or a block; `index` is left on the first line past it.
+fn metadata(lines: &[&str], index: &mut usize, end: usize) -> Result<(), &'static str> {
+    *index += 1;
+    let mut entries = 0;
+    while *index < end {
+        let line = lines[*index];
+        if line.is_empty() || line.trim_start().starts_with('#') {
+            *index += 1;
+            continue;
+        }
+        if !line.starts_with(char::is_whitespace) {
+            break;
+        }
+        let entry = line
+            .strip_prefix("  ")
+            .ok_or("unsupported metadata mapping")?;
+        let (field, raw) = entry
+            .split_once(':')
+            .ok_or("unsupported metadata mapping")?;
+        if !simple_key(field) || !raw.starts_with(' ') {
+            return Err("unsupported metadata mapping");
+        }
+        if block_style(raw.trim()) {
+            block(lines, index, end, raw.trim(), 2)?;
+        } else {
+            scalar(raw).ok_or("unsupported metadata mapping")?;
+            *index += 1;
+        }
+        entries += 1;
+    }
+    if entries == 0 {
+        return Err("empty metadata mapping");
+    }
+    Ok(())
 }
 
 fn block_style(value: &str) -> bool {

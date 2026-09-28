@@ -171,6 +171,30 @@ fn child_wins_on_path_collision() {
 }
 
 #[test]
+fn a_categorized_child_skill_shadows_the_parent_skill_of_its_name() {
+    let project = Project::empty();
+    let (parent, child) = make_pair(&project);
+    add_shared_block(&child, "../", "skills");
+    write(
+        &parent.join(".ai/src/skills/bloc/SKILL.md"),
+        "---\nname: bloc\ndescription: Parent\n---\n",
+    );
+    write(&parent.join(".ai/src/skills/bloc/references/p.md"), "p\n");
+    write(
+        &child.join(".ai/src/skills/flutter/bloc/SKILL.md"),
+        "---\nname: bloc\ndescription: Child\n---\n",
+    );
+
+    agentsync_in(&child).arg("sync").assert().success();
+    assert_eq!(
+        std::fs::read_to_string(child.join(".claude/skills/bloc/SKILL.md")).unwrap(),
+        "---\nname: bloc\ndescription: Child\n---\n"
+    );
+    assert!(!child.join(".claude/skills/bloc/references").exists());
+    agentsync_in(&child).arg("check").assert().success();
+}
+
+#[test]
 fn inherit_list_filters_which_categories_materialise() {
     let project = Project::empty();
     let (parent, child) = make_pair(&project); // inherits: rules
@@ -248,6 +272,22 @@ fn dry_run_does_not_produce_output_but_still_tears_down_tmpdir() {
         .stderr(predicate::str::contains("Shared overlay active"));
     assert!(!child.join(".claude/rules/parent-only.md").exists());
     assert_eq!(std::fs::read_dir(&sandbox).unwrap().count(), 0);
+}
+
+#[test]
+fn doctor_finds_a_parent_skill_the_child_copied_into_a_category() {
+    let project = Project::empty();
+    let (parent, child) = make_pair(&project);
+    let skill = "---\nname: bloc\ndescription: Bloc\n---\n";
+    write(&parent.join(".ai/src/skills/bloc/SKILL.md"), skill);
+    write(&child.join(".ai/src/skills/flutter/bloc/SKILL.md"), skill);
+
+    agentsync_in(&child)
+        .arg("doctor")
+        .assert()
+        .stdout(predicate::str::contains(
+            "skills/flutter/bloc/SKILL.md — duplicate of parent's",
+        ));
 }
 
 #[test]

@@ -2,8 +2,9 @@
 //! `lib/helpers/rule_operations.sh` and the directory loops of
 //! `lib/helpers/format_conversion.sh`.
 
+use crate::engine::filters::Filter;
 use crate::engine::session::Session;
-use crate::{Error, engine::convert, engine::file_ops, engine::filters, paths, text};
+use crate::{Error, engine::convert, engine::file_ops, paths, text};
 
 /// `add_header`: `printf '%b\n'` of the header, a blank line, the file.
 pub fn add_header(file: &[u8], header: &str) -> Vec<u8> {
@@ -82,6 +83,12 @@ pub fn merge_or_prepend_header(file: &[u8], header: &str) -> Vec<u8> {
 /// `_rule_paths_csv`: every list item in the leading frontmatter, joined with
 /// commas, when that frontmatter has a bare `paths:` key.
 pub fn rule_paths_csv(file: &[u8]) -> Vec<u8> {
+    rule_paths(file).join(&b","[..])
+}
+
+/// Every list item in the leading frontmatter, unquoted, when that
+/// frontmatter has a bare `paths:` key.
+fn rule_paths(file: &[u8]) -> Vec<Vec<u8>> {
     let lines = text::lines(file);
     if lines.first().copied() != Some(b"---".as_slice()) {
         return Vec::new();
@@ -121,7 +128,7 @@ pub fn rule_paths_csv(file: &[u8]) -> Vec<u8> {
         }
         items.push(item.to_vec());
     }
-    items.join(&b","[..])
+    items
 }
 
 /// `_strip_frontmatter`: the leading `---` block and the blank lines after it.
@@ -151,15 +158,21 @@ pub fn strip_frontmatter(file: &[u8]) -> Vec<u8> {
 }
 
 /// `apply_rule_header`: a `paths:`-scoped rule takes the scoped header with
-/// `{globs}` filled; otherwise the always-on header is merged in.
+/// `{globs}` filled as a comma-joined string and `{globs_list}` as a YAML
+/// flow list of single-quoted globs; otherwise the always-on header is merged in.
 pub fn apply_rule_header(file: &[u8], header: &str, scoped_header: &str) -> Vec<u8> {
-    let globs = rule_paths_csv(file);
-    if !globs.is_empty() && !scoped_header.is_empty() {
-        let globs = String::from_utf8_lossy(&globs);
-        return add_header(
-            &strip_frontmatter(file),
-            &scoped_header.replace("{globs}", &globs),
-        );
+    let paths = rule_paths(file);
+    if !paths.is_empty() && !scoped_header.is_empty() {
+        let csv = String::from_utf8_lossy(&paths.join(&b","[..])).into_owned();
+        let quoted: Vec<String> = paths
+            .iter()
+            .map(|glob| format!("'{}'", String::from_utf8_lossy(glob).replace('\'', "''")))
+            .collect();
+        let list = format!("[{}]", quoted.join(", "));
+        let scoped = scoped_header
+            .replace("{globs_list}", &list)
+            .replace("{globs}", &csv);
+        return add_header(&strip_frontmatter(file), &scoped);
     }
     if !header.is_empty() {
         return merge_or_prepend_header(file, header);
@@ -205,8 +218,7 @@ pub fn merge_rules_to_file(
     s: &mut Session,
     src_dir: &str,
     dest_file: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
     agents_file: Option<&str>,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
@@ -217,7 +229,7 @@ pub fn merge_rules_to_file(
     let dest_disp = s.display(dest_file);
     let files: Vec<String> = md_files(s, src_dir)
         .into_iter()
-        .filter(|name| filters::matches(name, include, exclude))
+        .filter(|name| filter.accepts(name))
         .collect();
 
     if s.dry_run {
@@ -265,8 +277,7 @@ pub struct RuleOptions<'a> {
     pub extension: &'a str,
     pub header: &'a str,
     pub scoped_header: &'a str,
-    pub include: &'a str,
-    pub exclude: &'a str,
+    pub filter: &'a Filter,
 }
 
 /// `sync_rules`: copy with the extension and header applied, then prune
@@ -289,7 +300,7 @@ pub fn sync_rules(
 
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, opts.include, opts.exclude) {
+        if !opts.filter.accepts(&name) {
             continue;
         }
         let dest_name = if opts.extension.is_empty() {
@@ -340,10 +351,10 @@ pub fn sync_rules(
         cleaned += 1;
     }
 
-    let extra = if opts.include.is_empty() {
+    let extra = if opts.filter.include.is_empty() {
         String::new()
     } else {
-        format!(", include='{}'", opts.include)
+        format!(", include='{}'", opts.filter.include)
     };
     let suffix = if s.dry_run { " (dry-run)" } else { "" };
     let counts = file_ops::counts(valid.len(), cleaned);
@@ -358,15 +369,14 @@ pub fn inline_commands_to_file(
     s: &mut Session,
     src_dir: &str,
     target_file: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) || target_file.is_empty() {
         return Ok(());
     }
     let mut entries = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, include, exclude) {
+        if !filter.accepts(&name) {
             continue;
         }
         let stem = name.strip_suffix(".md").unwrap_or(&name);
@@ -399,8 +409,7 @@ pub fn sync_commands_as_skills(
     s: &mut Session,
     src_dir: &str,
     dest_dir: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
         return Ok(());
@@ -413,7 +422,7 @@ pub fn sync_commands_as_skills(
 
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
-        if !filters::matches(&name, include, exclude) {
+        if !filter.accepts(&name) {
             continue;
         }
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
@@ -476,6 +485,7 @@ pub enum Conversion {
     AgentToml,
     AgentAmazonqJson,
     AgentOpencodeMd,
+    AgentKiroMd,
 }
 
 impl Conversion {
@@ -483,7 +493,7 @@ impl Conversion {
         match self {
             Self::CommandToml | Self::AgentToml => ".toml",
             Self::AgentAmazonqJson => ".json",
-            Self::AgentOpencodeMd => ".md",
+            Self::AgentOpencodeMd | Self::AgentKiroMd => ".md",
         }
     }
 
@@ -493,6 +503,7 @@ impl Conversion {
             Self::AgentToml => "agent md→toml",
             Self::AgentAmazonqJson => "agent md→json",
             Self::AgentOpencodeMd => "agent md→opencode md",
+            Self::AgentKiroMd => "agent md→kiro md",
         }
     }
 
@@ -502,6 +513,7 @@ impl Conversion {
             Self::AgentToml => ("agent", "md→toml"),
             Self::AgentAmazonqJson => ("agent", "md→amazonq json"),
             Self::AgentOpencodeMd => ("agent", "md→opencode md"),
+            Self::AgentKiroMd => ("agent", "md→kiro md"),
         };
         let plural = if count == 1 { "" } else { "s" };
         format!("{count} {noun}{plural}, {format}")
@@ -513,6 +525,7 @@ impl Conversion {
             Self::AgentToml => convert::agent_to_toml(stem, source),
             Self::AgentAmazonqJson => convert::agent_to_amazonq_json(stem, source),
             Self::AgentOpencodeMd => convert::agent_to_opencode_md(stem, source),
+            Self::AgentKiroMd => convert::agent_to_kiro_md(stem, source),
         }
     }
 }
@@ -524,6 +537,7 @@ pub fn sync_converted(
     src_dir: &str,
     dest_dir: &str,
     conversion: Conversion,
+    filter: &Filter,
 ) -> Result<(), Error> {
     if !s.ws.is_dir(src_dir) {
         return Ok(());
@@ -531,6 +545,9 @@ pub fn sync_converted(
     let ext = conversion.extension();
     let mut valid: Vec<String> = Vec::new();
     for name in md_files(s, src_dir) {
+        if !filter.accepts(&name) {
+            continue;
+        }
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
         let dest_name = format!("{stem}{ext}");
         let dest_file = format!("{dest_dir}/{dest_name}");
@@ -633,6 +650,16 @@ mod tests {
     }
 
     #[test]
+    fn a_scoped_header_can_take_the_globs_as_a_quoted_flow_list() {
+        let rule = b"---\npaths:\n  - \"src/{a,b}/*.ts\"\n  - it's/*\n---\n# T\n";
+        let scoped = "---\\ninclusion: fileMatch\\nfileMatchPattern: {globs_list}\\n---";
+        assert_eq!(
+            String::from_utf8(apply_rule_header(rule, "", scoped)).unwrap(),
+            "---\ninclusion: fileMatch\nfileMatchPattern: ['src/{a,b}/*.ts', 'it''s/*']\n---\n\n# T\n"
+        );
+    }
+
+    #[test]
     fn claude_rules_without_headers_are_copied_verbatim() {
         let rule = b"---\npaths:\n  - x\n---\nbody\n";
         assert_eq!(apply_rule_header(rule, "", ""), rule);
@@ -648,8 +675,7 @@ mod tests {
             extension: ".mdc",
             header: CURSOR_HEADER,
             scoped_header: CURSOR_SCOPED,
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
         sync_rules(&mut s, "/proj/.ai/src/rules", "/proj/.cursor/rules", &opts).unwrap();
         assert!(text_of(&s, "/proj/.cursor/rules/core.mdc").starts_with("---\nglobs: '**/*'"));
@@ -671,8 +697,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/.rules",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/AGENTS.md"),
         )
         .unwrap();
@@ -705,8 +730,13 @@ mod tests {
         );
         file(&mut s, "/proj/.ai/src/commands/ship.md", "Ship\n");
         file(&mut s, "/proj/AGENTS.md", "# A\n");
-        inline_commands_to_file(&mut s, "/proj/.ai/src/commands", "/proj/AGENTS.md", "", "")
-            .unwrap();
+        inline_commands_to_file(
+            &mut s,
+            "/proj/.ai/src/commands",
+            "/proj/AGENTS.md",
+            &Filter::default(),
+        )
+        .unwrap();
         assert_eq!(
             text_of(&s, "/proj/AGENTS.md"),
             "# A\n\n## Commands\n\nThe following commands provide quick workflows. Find them in `.ai/src/commands/`:\n\n- `/review` — Review\n- `/ship`\n"
@@ -727,8 +757,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/commands",
             "/proj/.agents/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         assert_eq!(
@@ -739,8 +768,7 @@ mod tests {
         assert!(s.ws.exists("/proj/.agents/skills/mine"));
     }
 
-    #[test]
-    fn dry_runs_and_kept_files_log_what_the_bash_helpers_log() {
+    fn session_with_kept_and_obsolete_outputs() -> Session {
         let mut s = test_session();
         file(&mut s, "/proj/.ai/src/rules/core.md", "# Core\n");
         file(
@@ -763,12 +791,17 @@ mod tests {
                 .map(String::from)
                 .into(),
         );
+        s
+    }
+
+    #[test]
+    fn dry_runs_and_kept_files_log_what_the_bash_helpers_log() {
+        let mut s = session_with_kept_and_obsolete_outputs();
         let opts = RuleOptions {
             extension: ".mdc",
             header: "",
             scoped_header: "",
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
 
         s.dry_run = true;
@@ -778,22 +811,21 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         sync_commands_as_skills(
             &mut s,
             "/proj/.ai/src/commands",
             "/proj/.agents/skills",
-            "",
-            "",
+            &Filter::default(),
         )
         .unwrap();
         merge_rules_to_file(
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/.rules",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/rules/core.md"),
         )
         .unwrap();
@@ -802,6 +834,7 @@ mod tests {
             "/proj/.ai/src/commands",
             "/proj/.gemini/commands",
             Conversion::CommandToml,
+            &Filter::default(),
         )
         .unwrap();
         assert!(s.ws.exists("/proj/.cursor/rules/old.mdc"));
@@ -814,6 +847,7 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         assert_eq!(s.ws.list("/proj/.cursor/rules"), ["core.mdc", "mine.mdc"]);
@@ -861,6 +895,7 @@ mod tests {
             "/proj/.ai/src/agents",
             "/proj/.codex/agents",
             Conversion::AgentToml,
+            &Filter::default(),
         )
         .unwrap();
         assert!(s.ws.is_file("/proj/.codex/agents/rev.toml"));
@@ -892,8 +927,7 @@ mod tests {
             &mut s,
             "/proj/.ai/src/rules",
             "/proj/merged.md",
-            "",
-            "",
+            &Filter::default(),
             Some("/proj/.ai/src/AGENTS.md"),
         )
         .unwrap();
@@ -911,11 +945,17 @@ mod tests {
             extension: "",
             header: "",
             scoped_header: "",
-            include: "",
-            exclude: "",
+            filter: &Filter::default(),
         };
         sync_rules(&mut s, "/proj/nope", "/proj/out", &opts).unwrap();
-        merge_rules_to_file(&mut s, "/proj/nope", "/proj/out.md", "", "", None).unwrap();
+        merge_rules_to_file(
+            &mut s,
+            "/proj/nope",
+            "/proj/out.md",
+            &Filter::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             s.log.tail(2),
             [

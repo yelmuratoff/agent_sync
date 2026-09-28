@@ -276,6 +276,7 @@ fn sync(s: &mut Session, args: &Args, env: &Env, tx: &mut Transaction) -> Result
     let root = s.paths.root.clone();
     let previous = Manifest::load(&root).map_err(|e| io(s, e))?;
     s.activate_manifest(previous.as_ref().map(Manifest::paths).unwrap_or_default());
+    render::collect_legacy_targets(s, &mut run);
     s.set_owned_before(
         previous
             .as_ref()

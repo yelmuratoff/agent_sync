@@ -80,6 +80,29 @@ fn sync_skip_excludes_a_tool() {
 }
 
 #[test]
+fn sync_only_and_skip_filter_kiro() {
+    let project = seeded();
+    project.enable_tools(&["claude", "kiro"]);
+    project
+        .agentsync()
+        .args(["sync", "--only", "kiro"])
+        .assert()
+        .success();
+    assert!(project.exists(".kiro/steering/core.md"));
+    assert!(!project.exists("CLAUDE.md"));
+
+    let skipped = seeded();
+    skipped.enable_tools(&["claude", "kiro"]);
+    skipped
+        .agentsync()
+        .args(["sync", "--skip", "kiro"])
+        .assert()
+        .success();
+    assert!(skipped.exists("CLAUDE.md"));
+    assert!(!skipped.exists(".kiro"));
+}
+
+#[test]
 fn sync_only_and_skip_filter_minimax() {
     let project = seeded();
     project.enable_tools(&["claude", "minimax"]);

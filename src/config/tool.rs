@@ -3,6 +3,7 @@
 
 use include_dir::File;
 
+use crate::engine::filters::Filter;
 use crate::{Error, config::catalog, config::yaml_subset, project::Project};
 
 pub struct Tool {
@@ -85,6 +86,14 @@ impl Tool {
             "false" | "no" | "0" | "off" => Some(false),
             _ => None,
         }
+    }
+
+    /// `targets.<target>.include` and `.exclude`, each layered as `filter` reads it.
+    pub fn target_filter(&self, target: &str) -> Filter {
+        Filter::new(
+            &self.filter(&format!("targets.{target}.include")),
+            &self.filter(&format!("targets.{target}.exclude")),
+        )
     }
 
     /// `get_tool_filter`: an include/exclude list as one space-joined string,

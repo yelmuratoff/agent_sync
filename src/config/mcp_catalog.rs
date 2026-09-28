@@ -391,6 +391,103 @@ fn variant(value: &Value) -> Result<(), String> {
     requirements(&map["requirements"])
 }
 
+fn provenance(value: &Value) -> Result<(), String> {
+    let fields = object(
+        value,
+        "provenance",
+        &[],
+        &["homepage", "repository", "artifact"],
+    )?;
+    for (key, value) in fields {
+        if !value.is_string() && !value.is_null() {
+            return Err(format!("provenance.{key} must be a string or null"));
+        }
+    }
+    Ok(())
+}
+
+fn extensions(value: &Value) -> Result<(), String> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| "extensions must be an object".to_string())?;
+    for key in fields.keys() {
+        if !key.contains('.') || key.starts_with('.') || key.ends_with('.') {
+            return Err(format!(
+                "extension key must be namespaced: {}",
+                escaped_title(key)
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The alternative variant ids, each variant checked.
+fn alternatives(value: &Value) -> Result<Vec<&str>, String> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| "alternatives must be an object".to_string())?;
+    let mut ids = Vec::new();
+    for (id, value) in fields {
+        if !valid_id(id) || matches!(id.as_str(), "default" | "recommended") {
+            return Err(format!(
+                "alternative needs a non-reserved variant id: {}",
+                escaped_title(id)
+            ));
+        }
+        variant(value)?;
+        ids.push(id.as_str());
+    }
+    Ok(ids)
+}
+
+fn guidance(value: &Value, alternatives: &[&str]) -> Result<(), String> {
+    let fields = object(
+        value,
+        "guidance",
+        &["recommended", "authority", "source", "checked_at", "reason"],
+        &[],
+    )?;
+    let recommended = text(fields, "recommended", "guidance")?;
+    if recommended != "default" && !alternatives.contains(&recommended) {
+        return Err("guidance.recommended names an unavailable alternative".to_string());
+    }
+    if !matches!(
+        text(fields, "authority", "guidance")?,
+        "vendor" | "maintainer"
+    ) {
+        return Err("guidance.authority must be vendor or maintainer".to_string());
+    }
+    if !https_source(text(fields, "source", "guidance")?) {
+        return Err("guidance.source must be an HTTPS URL".to_string());
+    }
+    let date = text(fields, "checked_at", "guidance")?;
+    if !valid_date(date) {
+        return Err("guidance.checked_at must be a real YYYY-MM-DD date".to_string());
+    }
+    text(fields, "reason", "guidance")?;
+    Ok(())
+}
+
+/// An `https://` URL with a plain host, an optional numeric port, and no
+/// control or whitespace character.
+fn https_source(source: &str) -> bool {
+    let authority = source
+        .strip_prefix("https://")
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        .unwrap_or("");
+    let host = authority.split(':').next().unwrap_or("");
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+        && !source
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace())
+        && !authority
+            .split_once(':')
+            .is_some_and(|(_, port)| port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn validate<'a>(value: &'a Value, expected_id: &str) -> Result<&'a str, String> {
     let map = value
         .as_object()
@@ -438,89 +535,18 @@ fn validate<'a>(value: &'a Value, expected_id: &str) -> Result<&'a str, String> 
     }
     connection(&map["connection"])?;
     requirements(&map["requirements"])?;
-    if let Some(provenance) = map.get("provenance") {
-        let fields = object(
-            provenance,
-            "provenance",
-            &[],
-            &["homepage", "repository", "artifact"],
-        )?;
-        for (key, value) in fields {
-            if !value.is_string() && !value.is_null() {
-                return Err(format!("provenance.{key} must be a string or null"));
-            }
-        }
+    if let Some(value) = map.get("provenance") {
+        provenance(value)?;
     }
-    if let Some(extensions) = map.get("extensions") {
-        let fields = extensions
-            .as_object()
-            .ok_or_else(|| "extensions must be an object".to_string())?;
-        for key in fields.keys() {
-            if !key.contains('.') || key.starts_with('.') || key.ends_with('.') {
-                return Err(format!(
-                    "extension key must be namespaced: {}",
-                    escaped_title(key)
-                ));
-            }
-        }
+    if let Some(value) = map.get("extensions") {
+        extensions(value)?;
     }
-    let mut alternatives = Vec::new();
-    if let Some(value) = map.get("alternatives") {
-        let fields = value
-            .as_object()
-            .ok_or_else(|| "alternatives must be an object".to_string())?;
-        for (id, value) in fields {
-            if !valid_id(id) || matches!(id.as_str(), "default" | "recommended") {
-                return Err(format!(
-                    "alternative needs a non-reserved variant id: {}",
-                    escaped_title(id)
-                ));
-            }
-            variant(value)?;
-            alternatives.push(id.as_str());
-        }
-    }
+    let alternatives = match map.get("alternatives") {
+        Some(value) => alternatives(value)?,
+        None => Vec::new(),
+    };
     if let Some(value) = map.get("guidance") {
-        let fields = object(
-            value,
-            "guidance",
-            &["recommended", "authority", "source", "checked_at", "reason"],
-            &[],
-        )?;
-        let recommended = text(fields, "recommended", "guidance")?;
-        if recommended != "default" && !alternatives.contains(&recommended) {
-            return Err("guidance.recommended names an unavailable alternative".to_string());
-        }
-        if !matches!(
-            text(fields, "authority", "guidance")?,
-            "vendor" | "maintainer"
-        ) {
-            return Err("guidance.authority must be vendor or maintainer".to_string());
-        }
-        let source = text(fields, "source", "guidance")?;
-        let authority = source
-            .strip_prefix("https://")
-            .and_then(|rest| rest.split(['/', '?', '#']).next())
-            .unwrap_or("");
-        let host = authority.split(':').next().unwrap_or("");
-        if host.is_empty()
-            || !host
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
-            || source
-                .chars()
-                .any(|ch| ch.is_control() || ch.is_whitespace())
-            || authority.split_once(':').is_some_and(|(_, port)| {
-                port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit())
-            })
-        {
-            return Err("guidance.source must be an HTTPS URL".to_string());
-        }
-        let date = text(fields, "checked_at", "guidance")?;
-        if !valid_date(date) {
-            return Err("guidance.checked_at must be a real YYYY-MM-DD date".to_string());
-        }
-        text(fields, "reason", "guidance")?;
+        guidance(value, &alternatives)?;
     }
     Ok(title)
 }
@@ -589,5 +615,96 @@ mod tests {
     fn date_rejects_nonexistent_calendar_days() {
         assert!(valid_date("2024-02-29"));
         assert!(!valid_date("2026-02-29"));
+    }
+
+    fn manifest() -> Value {
+        serde_json::json!({
+            "schema_version": 2,
+            "id": "demo",
+            "title": "Demo",
+            "connection": {"type": "http", "url": "https://mcp.example.com"},
+            "requirements": {"binaries": [], "inputs": []},
+            "provenance": {"homepage": "https://example.com", "artifact": null},
+            "extensions": {"example.dev": {}},
+            "alternatives": {
+                "local": {
+                    "connection": {"type": "stdio", "command": "demo", "args": []},
+                    "requirements": {"binaries": ["demo"], "inputs": []}
+                }
+            },
+            "guidance": {
+                "recommended": "local",
+                "authority": "vendor",
+                "source": "https://docs.example.com:8443/mcp?x#y",
+                "checked_at": "2026-09-01",
+                "reason": "Runs offline."
+            }
+        })
+    }
+
+    fn with(path: &[&str], value: Value) -> Result<String, String> {
+        let mut manifest = manifest();
+        let (last, parents) = path.split_last().unwrap();
+        let mut node = &mut manifest;
+        for key in parents {
+            node = &mut node[*key];
+        }
+        node[*last] = value;
+        validate(&manifest, "demo").map(str::to_string)
+    }
+
+    #[test]
+    fn validate_checks_each_optional_section() {
+        assert_eq!(validate(&manifest(), "demo"), Ok("Demo"));
+        assert_eq!(
+            with(&["provenance", "homepage"], Value::from(1)),
+            Err("provenance.homepage must be a string or null".to_string())
+        );
+        assert_eq!(
+            with(&["extensions"], serde_json::json!({"plain": {}})),
+            Err("extension key must be namespaced: plain".to_string())
+        );
+        assert_eq!(
+            with(&["alternatives"], serde_json::json!({"default": {}})),
+            Err("alternative needs a non-reserved variant id: default".to_string())
+        );
+        assert_eq!(
+            with(&["guidance", "recommended"], Value::from("remote")),
+            Err("guidance.recommended names an unavailable alternative".to_string())
+        );
+        assert_eq!(
+            with(&["guidance", "authority"], Value::from("blog")),
+            Err("guidance.authority must be vendor or maintainer".to_string())
+        );
+        assert_eq!(
+            with(&["guidance", "checked_at"], Value::from("2026-02-30")),
+            Err("guidance.checked_at must be a real YYYY-MM-DD date".to_string())
+        );
+    }
+
+    #[test]
+    fn guidance_source_must_be_a_plain_https_url() {
+        for source in ["https://example.com", "https://ex-ample.com:8443/a?b#c"] {
+            assert_eq!(
+                with(&["guidance", "source"], Value::from(source)),
+                Ok("Demo".to_string()),
+                "{source}"
+            );
+        }
+        for source in [
+            "http://example.com",
+            "https://",
+            "https://ex_ample.com",
+            "https://example.com:",
+            "https://example.com:80a",
+            "https://example.com/a b",
+            "https://example.com/\u{7}",
+        ] {
+            assert_eq!(
+                with(&["guidance", "source"], Value::from(source)),
+                Err("guidance.source must be an HTTPS URL".to_string()),
+                "{source}"
+            );
+        }
     }
 }

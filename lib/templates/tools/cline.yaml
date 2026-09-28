@@ -1,12 +1,17 @@
 name: "Cline"
 enabled: false
 
+# Cline reads the workspace AGENTS.md, and .cline/ supersedes the deprecated
+# .clinerules/ it still reads: https://docs.cline.bot/customization/cline-rules
 targets:
   agents:
-    dest: ".clinerules/00-context.md"
+    dest: "AGENTS.md"
+    legacy_dest: ".clinerules/00-context.md"
   rules:
-    dest: ".clinerules"
+    dest: ".cline/rules"
+    legacy_dest: ".clinerules"
   skills:
-    inline_into_agents: true
+    dest: ".cline/skills"
   commands:
-    dest: ".clinerules/workflows"
+    dest: ".cline/workflows"
+    legacy_dest: ".clinerules/workflows"

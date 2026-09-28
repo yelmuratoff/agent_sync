@@ -384,6 +384,30 @@ fn copy_new(src: &Path, dst: &Path) -> Result<(), Error> {
         .map_err(|e| Error::io(dst, e))
 }
 
+/// `--apply` and `--yes`; `Err(None)` asks for the help, `Err(Some(flag))`
+/// names a flag `--legacy` does not take.
+fn legacy_flags(args: &[String]) -> Result<(bool, bool), Option<String>> {
+    let (mut apply, mut yes) = (false, false);
+    for arg in args {
+        match arg.as_str() {
+            "--apply" => apply = true,
+            "--yes" | "-y" => yes = true,
+            "--help" | "-h" => return Err(None),
+            flag => return Err(Some(flag.to_string())),
+        }
+    }
+    Ok((apply, yes))
+}
+
+/// The project config's format revision; r1 without a config.
+fn project_format(project: &Project) -> Result<u32, Error> {
+    let Some(path) = &project.config_path else {
+        return Ok(1);
+    };
+    let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+    Ok(format_rev::project(&String::from_utf8_lossy(&bytes)))
+}
+
 /// `_cmd_migrate_legacy`.
 fn legacy(
     args: &[String],
@@ -393,29 +417,24 @@ fn legacy(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let (mut apply, mut yes) = (false, false);
-    for arg in args {
-        match arg.as_str() {
-            "--apply" => apply = true,
-            "--yes" | "-y" => yes = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag => {
-                put(
-                    err,
-                    format!(
-                        "{}: Unknown flag: {flag}\nUsage: agentsync migrate --legacy [--apply] [--yes]\n",
-                        style.red("Error")
-                    )
-                    .as_bytes(),
-                )?;
-                return Ok(1);
-            }
+    let (apply, yes) = match legacy_flags(args) {
+        Ok(flags) => flags,
+        Err(None) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-
+        Err(Some(flag)) => {
+            put(
+                err,
+                format!(
+                    "{}: Unknown flag: {flag}\nUsage: agentsync migrate --legacy [--apply] [--yes]\n",
+                    style.red("Error")
+                )
+                .as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     let project = discover()?;
     let root_path = project.root.clone();
     let mut run = Run {
@@ -432,22 +451,13 @@ fn legacy(
     let has_agent_dir = agent_dir.is_dir();
     let skills = scan_base_skills(&root_path)?;
     let engine_rev = format_rev::engine();
-    let config = match &project.config_path {
-        Some(path) => Some(
-            std::fs::read(path)
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .map_err(|e| Error::io(path, e))?,
-        ),
-        None => None,
-    };
-    let current_rev = config.as_deref().map_or(1, format_rev::project);
+    let current_rev = project_format(&project)?;
 
     run.say(&format!(
         "\n{}\n{}\n\n",
         style.bold("  AgentSync Migrate"),
         style.dim(&format!("  {}", run.root))
     ))?;
-
     if legacy.is_empty() && !has_agent_dir && skills.is_empty() && current_rev >= engine_rev {
         run.say(&format!(
             "{}\n{}\n\n",
@@ -458,235 +468,277 @@ fn legacy(
         ))?;
         return Ok(0);
     }
-
     if apply && !legacy.is_empty() && !project.tools_dir_in_project() {
         return super::refuse_outside_tools_dir(&project, style, run.err);
     }
-
     if !skills.is_empty() {
         run.say(&format!("  {}:\n", style.bold("Engine-owned skills")))?;
         retire_base_skills(&mut run, apply, &skills)?;
         run.say("\n")?;
     }
-
     if current_rev < engine_rev {
-        run.say(&format!(
-            "  {} {}:\n",
-            style.bold("Project format"),
-            style.dim(&format!("r{current_rev} → r{engine_rev}"))
-        ))?;
-        if let Some(path) = &project.config_path {
-            let shown = run.rel(path);
-            if apply {
-                yaml_edit::set_scalar(path, "format", &engine_rev.to_string())?;
-                run.say(&format!(
-                    "{}           format: {engine_rev} {}\n",
-                    style.green("  set"),
-                    style.dim(&format!("in {shown}"))
-                ))?;
-            } else {
-                run.say(&format!(
-                    "{}     format: {engine_rev} {}\n",
-                    style.cyan("  would set"),
-                    style.dim(&format!("in {shown}"))
-                ))?;
-            }
-        }
-        run.say("\n")?;
+        run.bump_format(current_rev, engine_rev, apply)?;
     }
-
     if legacy.is_empty() && !has_agent_dir {
-        if apply {
-            run.say(&format!("{}\n\n", style.green("  Migration complete.")))?;
-        } else {
-            run.say(&format!(
-                "{} {}{}\n\n",
-                style.dim("  Dry-run — re-run with"),
-                style.cyan("agentsync migrate --apply"),
-                style.dim(" to apply.")
-            ))?;
-        }
+        let hint = run.closing_hint(apply);
+        run.say(&hint)?;
         return Ok(0);
     }
-
     if has_agent_dir {
-        let mut listing = format!(
-            "  {}:\n    {} — orphan directory from before tool-specific outputs.\n",
-            style.bold("Legacy pre-v0.6 layout"),
-            style.yellow(".agent/")
-        );
-        for item in sorted_entries(&agent_dir) {
-            if item.exists() {
-                listing.push_str(&format!(
-                    "      · {}\n",
-                    item.file_name().unwrap_or_default().disk_text()
-                ));
-            }
-        }
-        listing.push('\n');
-        run.say(&listing)?;
-
-        if apply {
-            let remove = if yes {
-                true
-            } else if run.env.interactive {
-                (run.env.confirm)("Remove .agent/ (review the listing above first)?", false)
-            } else {
-                run.say(&format!(
-                    "  {}\n\n",
-                    style.dim(
-                        "(non-interactive; .agent/ left in place — re-run with --yes to remove)"
-                    )
-                ))?;
-                false
-            };
-            if remove && agent_dir.is_dir() {
-                std::fs::remove_dir_all(&agent_dir).map_err(|e| Error::io(&agent_dir, e))?;
-                run.say(&format!(
-                    "{}\n",
-                    style.green("  removed .agent/ (pre-v0.6 layout)")
-                ))?;
-            }
-        } else {
-            run.say(&format!(
-                "{} {}{}\n\n",
-                style.dim("  Dry-run. Re-run with"),
-                style.cyan("agentsync migrate --apply"),
-                style.dim(" to remove .agent/.")
-            ))?;
-        }
+        run.retire_agent_dir(&agent_dir, apply, yes)?;
         if legacy.is_empty() {
             return Ok(0);
         }
     }
 
-    let (mcp, other): (Vec<&Legacy>, Vec<&Legacy>) =
-        legacy.iter().partition(|entry| entry.resource == "mcp");
-    let candidate = consolidation_candidate(&root_path);
-
-    let mut plan = format!("  {}:\n", style.bold("Planned moves"));
-    let move_line = |run: &Run, entry: &Legacy| {
-        format!(
-            "  {}  →  {}\n",
-            run.rel(&entry.src),
-            run.rel(&run.dest(entry))
-        )
-    };
-    for entry in &other {
-        plan.push_str(&move_line(&run, entry));
-    }
-    if let Some(first) = &candidate {
-        plan.push_str(&format!(
-            "\n  {}:\n    All {} .ai/src/mcp/*.json are byte-identical — can consolidate into .ai/src/mcp.json.\n    {} {}\n",
-            style.bold("MCP consolidation"),
-            mcp.len(),
-            style.dim("Source file:"),
-            run.rel(first)
-        ));
-    } else {
-        for entry in &mcp {
-            plan.push_str(&move_line(&run, entry));
-        }
-    }
-    plan.push('\n');
+    let moves = Moves::of(&legacy, &root_path);
+    let plan = run.planned_moves(&moves);
     run.say(&plan)?;
-
     if !apply {
-        run.say(&format!(
-            "{} {}{}\n\n",
-            style.dim("  Dry-run. Re-run with"),
-            style.cyan("agentsync migrate --apply"),
-            style.dim(" to move files.")
-        ))?;
+        run.rerun_hint(" to move files.")?;
         return Ok(0);
     }
-
-    let (mut applied, mut skipped, mut consolidated) = (0, 0, false);
-    let mut count = |moved: bool| {
-        if moved {
-            applied += 1;
-        } else {
-            skipped += 1;
-        }
-    };
-
-    if let Some(first) = &candidate {
-        let consolidate = if yes {
-            true
-        } else if run.env.interactive {
-            let question = format!(
-                "Consolidate {} identical MCP files into .ai/src/mcp.json?",
-                mcp.len()
-            );
-            (run.env.confirm)(&question, true)
-        } else {
-            true
-        };
-        if consolidate {
-            copy_new(first, &root_path.join(".ai/src/mcp.json"))?;
-            for entry in &mcp {
-                match std::fs::remove_file(&entry.src) {
-                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                        return Err(Error::io(&entry.src, e));
-                    }
-                    _ => {}
-                }
-                let text = format!(
-                    "{} {} → .ai/src/mcp.json\n",
-                    style.green("  consolidated"),
-                    run.rel(&entry.src)
-                );
-                run.say(&text)?;
-            }
-            for _ in &mcp {
-                count(true);
-            }
-            consolidated = true;
-        } else {
-            for entry in &mcp {
-                count(move_one(&mut run, entry)?);
-            }
-        }
-    } else {
-        for entry in &mcp {
-            count(move_one(&mut run, entry)?);
-        }
-    }
-    for entry in &other {
-        count(move_one(&mut run, entry)?);
-    }
-
+    let tally = run.apply_moves(&moves, yes)?;
     for dir in ["hooks", "mcp", "settings"] {
         let _ = std::fs::remove_dir(root_path.join(".ai/src").join(dir));
     }
-
-    let mut summary = format!(
-        "\n{}\n{}\n",
-        style.green("  Migration complete."),
-        style.dim(&format!("    moved:        {applied}"))
-    );
-    if skipped > 0 {
-        summary.push_str(&format!(
-            "{}\n",
-            style.yellow(&format!(
-                "    skipped:      {skipped} (target already existed)"
-            ))
-        ));
-    }
-    if consolidated {
-        summary.push_str(&format!(
-            "{}\n",
-            style.dim("    consolidated: .ai/src/mcp.json")
-        ));
-    }
-    summary.push_str(&format!(
-        "\n{} {}{}\n\n",
-        style.dim("  Run"),
-        style.cyan("agentsync sync"),
-        style.dim(" to confirm outputs are unchanged.")
-    ));
-    run.say(&summary)?;
+    run.say(&tally.summary(style))?;
     Ok(0)
+}
+
+/// The legacy entries to move: the MCP ones, which may consolidate into one
+/// shared file, apart from the rest.
+struct Moves<'a> {
+    mcp: Vec<&'a Legacy>,
+    other: Vec<&'a Legacy>,
+    candidate: Option<PathBuf>,
+}
+
+impl<'a> Moves<'a> {
+    fn of(legacy: &'a [Legacy], root: &Path) -> Self {
+        let (mcp, other) = legacy.iter().partition(|entry| entry.resource == "mcp");
+        Self {
+            mcp,
+            other,
+            candidate: consolidation_candidate(root),
+        }
+    }
+}
+
+#[derive(Default)]
+struct MoveTally {
+    applied: usize,
+    skipped: usize,
+    consolidated: bool,
+}
+
+impl MoveTally {
+    fn count(&mut self, moved: bool) {
+        if moved {
+            self.applied += 1;
+        } else {
+            self.skipped += 1;
+        }
+    }
+
+    fn summary(&self, style: &Style) -> String {
+        let mut summary = format!(
+            "\n{}\n{}\n",
+            style.green("  Migration complete."),
+            style.dim(&format!("    moved:        {}", self.applied))
+        );
+        if self.skipped > 0 {
+            let skipped = format!(
+                "    skipped:      {} (target already existed)",
+                self.skipped
+            );
+            summary.push_str(&format!("{}\n", style.yellow(&skipped)));
+        }
+        if self.consolidated {
+            summary.push_str(&format!(
+                "{}\n",
+                style.dim("    consolidated: .ai/src/mcp.json")
+            ));
+        }
+        summary.push_str(&format!(
+            "\n{} {}{}\n\n",
+            style.dim("  Run"),
+            style.cyan("agentsync sync"),
+            style.dim(" to confirm outputs are unchanged.")
+        ));
+        summary
+    }
+}
+
+impl Run<'_, '_> {
+    fn bump_format(&mut self, current: u32, engine: u32, apply: bool) -> Result<(), Error> {
+        let style = self.style;
+        self.say(&format!(
+            "  {} {}:\n",
+            style.bold("Project format"),
+            style.dim(&format!("r{current} → r{engine}"))
+        ))?;
+        if let Some(path) = &self.project.config_path {
+            let shown = self.rel(path);
+            let place = style.dim(&format!("in {shown}"));
+            if apply {
+                yaml_edit::set_scalar(path, "format", &engine.to_string())?;
+                self.say(&format!(
+                    "{}           format: {engine} {place}\n",
+                    style.green("  set")
+                ))?;
+            } else {
+                self.say(&format!(
+                    "{}     format: {engine} {place}\n",
+                    style.cyan("  would set")
+                ))?;
+            }
+        }
+        self.say("\n")
+    }
+
+    /// The dry-run line that names `migrate --apply` and what it would do.
+    fn rerun_hint(&mut self, what: &str) -> Result<(), Error> {
+        let style = self.style;
+        self.say(&format!(
+            "{} {}{}\n\n",
+            style.dim("  Dry-run. Re-run with"),
+            style.cyan("agentsync migrate --apply"),
+            style.dim(what)
+        ))
+    }
+
+    fn closing_hint(&self, apply: bool) -> String {
+        let style = self.style;
+        if apply {
+            return format!("{}\n\n", style.green("  Migration complete."));
+        }
+        format!(
+            "{} {}{}\n\n",
+            style.dim("  Dry-run — re-run with"),
+            style.cyan("agentsync migrate --apply"),
+            style.dim(" to apply.")
+        )
+    }
+
+    /// Lists the pre-v0.6 `.agent/` and, under `--apply`, removes it once
+    /// `--yes` or the terminal agrees.
+    fn retire_agent_dir(&mut self, agent_dir: &Path, apply: bool, yes: bool) -> Result<(), Error> {
+        let style = self.style;
+        let mut listing = format!(
+            "  {}:\n    {} — orphan directory from before tool-specific outputs.\n",
+            style.bold("Legacy pre-v0.6 layout"),
+            style.yellow(".agent/")
+        );
+        for item in sorted_entries(agent_dir) {
+            if item.exists() {
+                let name = item.file_name().unwrap_or_default().disk_text();
+                listing.push_str(&format!("      · {name}\n"));
+            }
+        }
+        listing.push('\n');
+        self.say(&listing)?;
+        if !apply {
+            return self.rerun_hint(" to remove .agent/.");
+        }
+        let remove = if yes {
+            true
+        } else if self.env.interactive {
+            (self.env.confirm)("Remove .agent/ (review the listing above first)?", false)
+        } else {
+            let note = "(non-interactive; .agent/ left in place — re-run with --yes to remove)";
+            self.say(&format!("  {}\n\n", style.dim(note)))?;
+            false
+        };
+        if remove && agent_dir.is_dir() {
+            std::fs::remove_dir_all(agent_dir).map_err(|e| Error::io(agent_dir, e))?;
+            self.say(&format!(
+                "{}\n",
+                style.green("  removed .agent/ (pre-v0.6 layout)")
+            ))?;
+        }
+        Ok(())
+    }
+
+    fn planned_moves(&self, moves: &Moves) -> String {
+        let style = self.style;
+        let move_line = |entry: &Legacy| {
+            format!(
+                "  {}  →  {}\n",
+                self.rel(&entry.src),
+                self.rel(&self.dest(entry))
+            )
+        };
+        let mut plan = format!("  {}:\n", style.bold("Planned moves"));
+        for entry in &moves.other {
+            plan.push_str(&move_line(entry));
+        }
+        match &moves.candidate {
+            Some(first) => plan.push_str(&format!(
+                "\n  {}:\n    All {} .ai/src/mcp/*.json are byte-identical — can consolidate into .ai/src/mcp.json.\n    {} {}\n",
+                style.bold("MCP consolidation"),
+                moves.mcp.len(),
+                style.dim("Source file:"),
+                self.rel(first)
+            )),
+            None => {
+                for entry in &moves.mcp {
+                    plan.push_str(&move_line(entry));
+                }
+            }
+        }
+        plan.push('\n');
+        plan
+    }
+
+    /// Consolidates the MCP files when `--yes` or the terminal agrees, else
+    /// moves them one by one, then moves the rest.
+    fn apply_moves(&mut self, moves: &Moves, yes: bool) -> Result<MoveTally, Error> {
+        let mut tally = MoveTally::default();
+        let consolidate = match &moves.candidate {
+            None => false,
+            Some(_) if yes || !self.env.interactive => true,
+            Some(_) => {
+                let question = format!(
+                    "Consolidate {} identical MCP files into .ai/src/mcp.json?",
+                    moves.mcp.len()
+                );
+                (self.env.confirm)(&question, true)
+            }
+        };
+        if let (true, Some(first)) = (consolidate, &moves.candidate) {
+            self.consolidate_mcp(first, &moves.mcp)?;
+            tally.applied += moves.mcp.len();
+            tally.consolidated = true;
+        } else {
+            for entry in &moves.mcp {
+                tally.count(move_one(self, entry)?);
+            }
+        }
+        for entry in &moves.other {
+            tally.count(move_one(self, entry)?);
+        }
+        Ok(tally)
+    }
+
+    fn consolidate_mcp(&mut self, first: &Path, mcp: &[&Legacy]) -> Result<(), Error> {
+        copy_new(first, &self.project.root.join(".ai/src/mcp.json"))?;
+        for entry in mcp {
+            match std::fs::remove_file(&entry.src) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(Error::io(&entry.src, e));
+                }
+                _ => {}
+            }
+            let text = format!(
+                "{} {} → .ai/src/mcp.json\n",
+                self.style.green("  consolidated"),
+                self.rel(&entry.src)
+            );
+            self.say(&text)?;
+        }
+        Ok(())
+    }
 }
 
 /// `_migrate_move_one`: whether the file moved; an existing target is skipped.

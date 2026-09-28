@@ -4,7 +4,7 @@
     <img src="https://raw.githubusercontent.com/yelmuratoff/agent_sync/main/assets/agent_sync_light.svg" alt="AgentSync" width="400">
   </picture>
 
-  <h3>One source → 14 AI tools. Stop copy-pasting rules.</h3>
+  <h3>One source → 15 AI tools. Stop copy-pasting rules.</h3>
 
   <p>
     <a href="https://github.com/yelmuratoff/agent_sync">
@@ -21,13 +21,13 @@
 
 ## The problem
 
-Every AI coding tool wants instructions in its own format and directory: `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.windsurf/rules/`...
+Every AI coding tool wants instructions in its own format and directory: `.claude/CLAUDE.md`, `.cursor/rules/*.mdc`, `.github/instructions/*.instructions.md`, `AGENTS.md`, `.devin/rules/`...
 
 Use more than one tool — or work on a team where different people use different tools? You end up maintaining the same rules in 5+ formats. They drift. They go stale. You copy-paste forever.
 
 ## The solution
 
-AgentSync syncs from a single source (`.ai/src/`) into **14 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Windsurf, JetBrains Junie, Cline, Amazon Q, Zed, Google Antigravity.
+AgentSync syncs from a single source (`.ai/src/`) into **15 AI tools**: Claude Code, GitHub Copilot, Cursor, Gemini CLI, OpenAI Codex, Kimi Code, MiniMax Code, OpenCode, Devin Desktop (Windsurf), JetBrains Junie, Cline, Kiro, Amazon Q, Zed, Google Antigravity.
 
 Write once → `agentsync sync` → every tool gets instructions in its native format.
 
@@ -37,7 +37,7 @@ Write once → `agentsync sync` → every tool gets instructions in its native f
 ├── .claude/rules/testing.md              # + @rules/testing.md import in CLAUDE.md
 ├── .cursor/rules/testing.mdc             # + globs/alwaysApply frontmatter
 ├── .github/instructions/testing.instructions.md  # + applyTo frontmatter
-├── .windsurf/rules/testing.md            # + trigger: always_on frontmatter
+├── .devin/rules/testing.md               # + trigger: always_on frontmatter
 ├── .amazonq/rules/testing.md
 ├── AGENTS.md                             # inlined rule reference (Codex, Gemini, Junie, Kimi, MiniMax, OpenCode)
 └── .rules                                # merged into single file (Zed)
@@ -192,7 +192,7 @@ agentsync sync                        # 5. Re-distribute after any change to .ai
 
 5. **`agentsync sync`** — Reads each enabled tool's config (user override + shipped base — see [How Resources Resolve](#how-resources-resolve)), then copies and transforms your source files into tool-specific formats. Rules get renamed (`.mdc` for Cursor, `.instructions.md` for Copilot), frontmatter headers are added, commands are converted to TOML for Gemini, agents get the right extensions, and settings/MCP/hooks are placed where each tool expects them. Also manages the `.gitignore` block that matches your `outputs:` mode — see [Where generated files live](#where-generated-files-live).
 
-After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.windsurf/`, etc.), each with instructions in that tool's expected format.
+After `sync`, tool-specific directories appear (`.claude/`, `.cursor/`, `.github/`, `.devin/`, etc.), each with instructions in that tool's expected format.
 
 > **Important:** `agentsync sync` **overwrites** generated tool directories entirely. `agentsync init` adopts the config a project already has, and `agentsync adopt <file>` promotes a single file at any time — but a sync you run against untouched tool directories replaces them from `.ai/src/`. See [Migrating Existing Configurations](#migrating-existing-configurations).
 
@@ -281,9 +281,13 @@ agentsync <command> [options]
 | `version`                | `-v`  | Print version                                                                                  |
 | `help`                   | `-h`  | Show help                                                                                      |
 
+### Skill categories
+
+A directory under `skills/` without its own `SKILL.md` is a category, so `.ai/src/skills/flutter/bloc/SKILL.md` and `.ai/src/skills/backend/auth/SKILL.md` can sit side by side, up to four category levels deep. Tools disagree on nested skills (Claude Code, VS Code Copilot, and Gemini CLI skip them), so `sync` lands every skill flat at `<dest>/<name>/` for every tool, and the inlined index groups entries under a heading per category. Keep leaf names unique across categories: two skills sharing a name stop `sync`. `targets.skills.include`/`exclude` match a skill's name or its category path, so `exclude: cloudflare/*` drops a whole category for one tool. Scaffold into a category with `agentsync add skill bloc --category flutter`; category names follow the same lowercase-kebab rule as skill names, and `skills check` and `doctor` flag a directory that breaks it. Moving a shipped skill such as `commit` into a category keeps it tracked: `refresh` finds it there by name and updates it in place.
+
 ### Inspecting skills
 
-`agentsync skills list` reads the effective `source.skills` tree, including shared and bundled skills. Use `--profile <name>` to inspect a profile, or `--include` and `--exclude` to filter names. `agentsync skills show <name>` displays a skill's description, source path, and declared `license` and `compatibility` when present. `agentsync skills check` reports missing or malformed required metadata without changing what `sync` accepts.
+`agentsync skills list` reads the effective `source.skills` tree, including shared and bundled skills, and names each skill's category. Use `--profile <name>` to inspect a profile, or `--include` and `--exclude` to filter by name or category path. `agentsync skills show <name>` displays a skill's description, category, source path, and declared `license` and `compatibility` when present. `agentsync skills check` reports missing or malformed required metadata, empty or too-deep categories, and names two skills share; of those, `sync` refuses only the shared name.
 
 The [Agent Skills specification](https://agentskills.io/specification) defines `name`, `description`, `compatibility`, and an optional string-valued `metadata` map. For project-owned skills, use that map when a concise card needs extra human context:
 
@@ -433,19 +437,21 @@ always skips it.
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `extension`                     | Rename file extension (`.mdc`, `.instructions.md`, `.agent.md`, `.prompt.md`)                                          |
 | `header`                        | Prepend text to each file (YAML frontmatter for Cursor, Windsurf, Copilot)                                             |
-| `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs (Cursor, Copilot, Windsurf, Antigravity) |
+| `scoped_header` (rules)         | Header used instead of `header` for a rule with `paths:` frontmatter; `{globs}` becomes its comma-joined globs, `{globs_list}` a quoted YAML list (Cursor, Copilot, Windsurf, Antigravity, Kiro) |
 | `append_imports`                | Append `@rules/*` import lines to AGENTS file (Claude)                                                                 |
 | `merge_to_file`                 | Merge all rules into a single file (Zed)                                                                               |
 | `inline_into_agents` (rules)    | Append lightweight rule REFERENCES (name + title) into AGENTS file (Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode) |
-| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Cline, Amazon Q, Zed)                            |
+| `inline_into_agents` (skills)   | Append lightweight skill INDEX (name + description) into AGENTS file (Amazon Q, Zed)                                    |
 | `as_skills` (commands)          | Emit each command as a generated skill at `<skills.dest>/command-<name>/SKILL.md` (Codex, Kimi Code)                  |
 | `inline_into_agents` (commands) | Append a `## Commands` index (`` `/<name>` — description ``) into AGENTS file (Amazon Q, Zed)                          |
 | `prepend_agents`                | Prepend AGENTS.md content before merged rules (Zed)                                                                    |
 | `format: "toml"`                | Auto-convert MD→TOML (Gemini commands, Codex subagents)                                                                |
 | `format: "amazonq_json"`        | Auto-convert subagent MD→Amazon Q CLI custom-agent JSON (Amazon Q subagents)                                           |
 | `format: "opencode_md"`         | Convert portable subagent frontmatter to safe OpenCode Markdown (OpenCode subagents)                                  |
+| `format: "kiro_md"`             | Convert portable subagent frontmatter to a Kiro Markdown agent, tools mapped to Kiro's tags (Kiro subagents)           |
 | `format: "opencode_json"`       | Compose canonical `mcpServers` into OpenCode's top-level `mcp` settings map                                            |
 | `source` (settings/mcp/hooks)   | Optional declared source; canonical `.ai/src/tools/<tool>/<resource>.<ext>` overrides it automatically                 |
+| `legacy_dest`                   | Where an earlier config wrote the target; sync removes the files there the manifest records once it moves (Windsurf)   |
 | `guard` (target)                | Copy the tool's write-guard script to `dest` and mark it executable; override the base at `.ai/src/tools/<tool>/guard.sh` and register it from the tool's settings (Claude) |
 | `profile_scoped: false`         | On any target: `agentsync profile add` keeps the base `dest` instead of rewriting it into the profile's config home     |
 | `profile_supported: false`      | Refuse config-home profiles for a client that reads only project-root files                                             |
@@ -466,9 +472,10 @@ documents every option, including the ones this table leaves out.
 | **Kimi Code**          | `kimi.yaml`        | .kimi-code/AGENTS.md (+inlined rules), skills, commands (as `command-*` skills), mcp.json                         |
 | **MiniMax Code**       | `minimax.yaml`     | AGENTS.md (+inlined rule references), project .mcp.json                                                          |
 | **OpenCode**           | `opencode.yaml`    | AGENTS.md (+inlined rules), skills, commands, subagents (safe MD), settings + converted MCP in opencode.json, agentsync.ts plugin |
-| **Windsurf**           | `windsurf.yaml`    | AGENTS.md, rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json          |
+| **Devin Desktop (Windsurf)** | `windsurf.yaml` | AGENTS.md and `.devin/` rules (trigger frontmatter), skills, workflows (commands), mcp_config.json, hooks.json; removes its old `.windsurf/` outputs |
 | **JetBrains Junie**    | `junie.yaml`       | .junie/AGENTS.md (+inlined rules), skills, commands, agents, mcp.json                                      |
-| **Cline**              | `cline.yaml`       | 00-context.md, .clinerules/, workflows (commands), +inlined skills index                                   |
+| **Cline**              | `cline.yaml`       | AGENTS.md, `.cline/` rules, skills, workflows (commands); removes its old `.clinerules/` outputs           |
+| **Kiro**               | `kiro.yaml`        | AGENTS.md, `.kiro/steering/` (inclusion frontmatter), skills, commands as `command-*` skills, agents (MD→Kiro MD), settings/mcp.json |
 | **Amazon Q**           | `amazonq.yaml`     | 00-context.md, .amazonq/rules/, +inlined skills index, +inlined commands index, mcp.json, cli-agents (MD→JSON) |
 | **Zed**                | `zed.yaml`         | .rules (prepend AGENTS.md + merged rules), +inlined skills index, +inlined commands index, settings.json   |
 | **Google Antigravity** | `antigravity.yaml` | GEMINI.md, .agents/rules (trigger frontmatter), .agents/skills, .agents/workflows (commands)               |
@@ -484,8 +491,8 @@ AgentSync auto-converts between formats during sync:
 | Rules `.md`    | `.md` + `trigger: always_on` header              | Windsurf                    |
 | Rules `.md`    | Single merged file                               | Zed                         |
 | Rules `.md`    | Inline references (name + title) in AGENTS.md    | Codex, Gemini, Junie, Kimi Code, MiniMax Code, OpenCode |
-| Skills dirs    | Inline index (name + description) in AGENTS.md   | Cline, Amazon Q, Zed        |
-| AGENTS.md      | Copied as `00-context.md` in rules directory     | Cline, Amazon Q             |
+| Skills dirs    | Inline index (name + description) in AGENTS.md   | Amazon Q, Zed               |
+| AGENTS.md      | Copied as `00-context.md` in rules directory     | Amazon Q                    |
 | AGENTS.md      | Prepended before merged rules                    | Zed                         |
 | Commands `.md` | `.toml` (prompt field, `!{}` syntax, `{{args}}`) | Gemini CLI                  |
 | Commands `.md` | `.prompt.md`                                     | Copilot                     |
@@ -675,7 +682,7 @@ The legacy flat-layout overrides (`.ai/src/hooks/<tool>.<ext>`, `.ai/src/mcp/<to
 
 **Why it matters:**
 
-- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 14 tools you don't use.
+- **Lean by default.** `agentsync init` creates `.ai/agent_sync.yaml`, `AGENTS.md`, and your chosen content sections — no pre-written hooks / MCP / settings for 15 tools you don't use.
 - **Updates flow through.** Because the base ships with the engine, `agentsync update` improves every project that hasn't locked the file in as an override.
 - **Shared MCP is converted where schemas differ.** One `.ai/src/mcp.json` reaches every enabled MCP target. OpenCode's adapter validates local and remote transports, then atomically composes the result into `opencode.json`.
 - **MiniMax Code MCP uses the project `.mcp.json`.** Claude Code shares that destination. When their effective MCP sources differ, sync stops before writing either version. MiniMax may start a configured server during tool discovery or use, so review an MCP source before syncing it.

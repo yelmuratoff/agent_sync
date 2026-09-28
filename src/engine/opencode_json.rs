@@ -493,6 +493,31 @@ impl Parser {
         if !self.walk_root(raw_value, Mode::Server, 23) {
             return None;
         }
+        let server = self.server_fields(name)?;
+        if server.command.is_empty() == server.url.is_empty() {
+            self.fail(
+                26,
+                format!("server '{name}' must define exactly one transport: command or url"),
+            );
+            return None;
+        }
+        let mut props = if server.command.is_empty() {
+            self.remote_props(name, &server)?
+        } else {
+            self.local_props(name, &server)?
+        };
+        if !server.enabled.is_empty() {
+            props.push(format!("\"enabled\": {}", server.enabled));
+        }
+        if !server.timeout.is_empty() {
+            props.push(format!("\"timeout\": {}", server.timeout));
+        }
+        Some(format!("{{{}}}", props.join(", ")))
+    }
+
+    /// The walked server's fields, each checked for its JSON kind; `None`
+    /// once a wrong kind or an unsupported field is reported.
+    fn server_fields(&mut self, name: &str) -> Option<ServerFields> {
         let fields: Vec<(String, String)> = self
             .server
             .keys
@@ -500,83 +525,39 @@ impl Parser {
             .cloned()
             .zip(self.server.values.iter().cloned())
             .collect();
-        let mut command = String::new();
-        let mut url = String::new();
-        let mut type_ = String::new();
-        let mut args = String::new();
-        let mut env = String::new();
-        let mut headers = String::new();
-        let mut enabled = String::new();
-        let mut timeout = String::new();
-        let mut oauth = String::new();
+        let mut server = ServerFields::default();
         let must =
             |field: &str, what: &str| format!("server '{name}' field '{field}' must be {what}");
         for (field, value) in fields {
             let kind = json_kind(&value);
+            let wrong = match field.as_str() {
+                "command" | "url" | "type" if kind != "string" => Some("a string"),
+                "args" if kind != "array" => Some("an array"),
+                "env" | "headers" if kind != "object" => Some("an object"),
+                "enabled" if kind != "boolean" => Some("a boolean"),
+                "timeout" if kind != "number" || !is_timeout(&value) => {
+                    Some("a non-negative number")
+                }
+                "oauth" if kind != "boolean" && kind != "object" => Some("a boolean or object"),
+                _ => None,
+            };
+            if let Some(what) = wrong {
+                self.fail(23, must(&field, what));
+                return None;
+            }
             match field.as_str() {
-                "command" | "url" => {
-                    if kind != "string" {
-                        self.fail(23, must(&field, "a string"));
-                        return None;
-                    }
-                    if field == "command" {
-                        command = value;
-                    } else {
-                        url = value;
-                    }
+                "command" => server.command = value,
+                "url" => server.url = value,
+                "args" if self.validate_string_array(&value, name, "args") => server.args = value,
+                "env" if self.validate_string_map(&value, name, "env") => server.env = value,
+                "headers" if self.validate_string_map(&value, name, "headers") => {
+                    server.headers = value;
                 }
-                "args" => {
-                    if kind != "array" {
-                        self.fail(23, must("args", "an array"));
-                        return None;
-                    }
-                    if !self.validate_string_array(&value, name, "args") {
-                        return None;
-                    }
-                    args = value;
-                }
-                "env" | "headers" => {
-                    if kind != "object" {
-                        self.fail(23, must(&field, "an object"));
-                        return None;
-                    }
-                    if !self.validate_string_map(&value, name, &field) {
-                        return None;
-                    }
-                    if field == "env" {
-                        env = value;
-                    } else {
-                        headers = value;
-                    }
-                }
-                "type" => {
-                    if kind != "string" {
-                        self.fail(23, must("type", "a string"));
-                        return None;
-                    }
-                    type_ = self.decode_string(&value);
-                }
-                "enabled" => {
-                    if kind != "boolean" {
-                        self.fail(23, must("enabled", "a boolean"));
-                        return None;
-                    }
-                    enabled = value;
-                }
-                "timeout" => {
-                    if kind != "number" || !is_timeout(&value) {
-                        self.fail(23, must("timeout", "a non-negative number"));
-                        return None;
-                    }
-                    timeout = value;
-                }
-                "oauth" => {
-                    if kind != "boolean" && kind != "object" {
-                        self.fail(23, must("oauth", "a boolean or object"));
-                        return None;
-                    }
-                    oauth = value;
-                }
+                "args" | "env" | "headers" => return None,
+                "type" => server.type_ = self.decode_string(&value),
+                "enabled" => server.enabled = value,
+                "timeout" => server.timeout = value,
+                "oauth" => server.oauth = value,
                 other => {
                     self.fail(
                         25,
@@ -586,65 +567,62 @@ impl Parser {
                 }
             }
         }
-        if command.is_empty() == url.is_empty() {
+        Some(server)
+    }
+
+    fn local_props(&mut self, name: &str, server: &ServerFields) -> Option<Vec<String>> {
+        if !server.headers.is_empty() || !server.oauth.is_empty() {
+            self.fail(25, format!("server '{name}' contains remote-only fields"));
+            return None;
+        }
+        if !server.type_.is_empty() && server.type_ != "stdio" {
             self.fail(
-                26,
-                format!("server '{name}' must define exactly one transport: command or url"),
+                23,
+                format!("server '{name}' field 'type' must be stdio for a local server"),
             );
             return None;
         }
-        let mut props: Vec<String> = Vec::new();
-        if !command.is_empty() {
-            if !headers.is_empty() || !oauth.is_empty() {
-                self.fail(25, format!("server '{name}' contains remote-only fields"));
-                return None;
-            }
-            if !type_.is_empty() && type_ != "stdio" {
-                self.fail(
-                    23,
-                    format!("server '{name}' field 'type' must be stdio for a local server"),
-                );
-                return None;
-            }
-            props.push("\"type\": \"local\"".to_string());
-            let inner = array_inner(&args);
-            let value = if inner.is_empty() {
-                format!("[{command}]")
-            } else {
-                format!("[{command}, {inner}]")
-            };
-            props.push(format!("\"command\": {value}"));
-            if !env.is_empty() {
-                props.push(format!("\"environment\": {env}"));
-            }
+        let inner = array_inner(&server.args);
+        let command = if inner.is_empty() {
+            format!("[{}]", server.command)
         } else {
-            if !args.is_empty() || !env.is_empty() {
-                self.fail(25, format!("server '{name}' contains local-only fields"));
-                return None;
-            }
-            if !type_.is_empty() && !matches!(type_.as_str(), "http" | "sse" | "streamable-http") {
-                self.fail(
-                    23,
-                    format!("server '{name}' field 'type' is not a supported remote transport"),
-                );
-                return None;
-            }
-            props.push("\"type\": \"remote\"".to_string());
-            props.push(format!("\"url\": {url}"));
-            if !headers.is_empty() {
-                props.push(format!("\"headers\": {headers}"));
-            }
-            if !oauth.is_empty() {
-                props.push(format!("\"oauth\": {oauth}"));
-            }
+            format!("[{}, {inner}]", server.command)
+        };
+        let mut props = vec![
+            "\"type\": \"local\"".to_string(),
+            format!("\"command\": {command}"),
+        ];
+        if !server.env.is_empty() {
+            props.push(format!("\"environment\": {}", server.env));
         }
-        if !enabled.is_empty() {
-            props.push(format!("\"enabled\": {enabled}"));
+        Some(props)
+    }
+
+    fn remote_props(&mut self, name: &str, server: &ServerFields) -> Option<Vec<String>> {
+        if !server.args.is_empty() || !server.env.is_empty() {
+            self.fail(25, format!("server '{name}' contains local-only fields"));
+            return None;
         }
-        if !timeout.is_empty() {
-            props.push(format!("\"timeout\": {timeout}"));
+        if !server.type_.is_empty()
+            && !matches!(server.type_.as_str(), "http" | "sse" | "streamable-http")
+        {
+            self.fail(
+                23,
+                format!("server '{name}' field 'type' is not a supported remote transport"),
+            );
+            return None;
         }
-        Some(format!("{{{}}}", props.join(", ")))
+        let mut props = vec![
+            "\"type\": \"remote\"".to_string(),
+            format!("\"url\": {}", server.url),
+        ];
+        if !server.headers.is_empty() {
+            props.push(format!("\"headers\": {}", server.headers));
+        }
+        if !server.oauth.is_empty() {
+            props.push(format!("\"oauth\": {}", server.oauth));
+        }
+        Some(props)
     }
 
     fn take_error(&mut self) -> Option<ComposeError> {
@@ -652,6 +630,21 @@ impl Parser {
             .take()
             .map(|(code, message)| ComposeError { code, message })
     }
+}
+
+/// A canonical server's fields as their raw JSON values, empty when absent;
+/// `type_` is decoded.
+#[derive(Default)]
+struct ServerFields {
+    command: String,
+    url: String,
+    type_: String,
+    args: String,
+    env: String,
+    headers: String,
+    enabled: String,
+    timeout: String,
+    oauth: String,
 }
 
 /// awk `sub(/^[[:space:]]*\[[[:space:]]*/)` and `sub(/[[:space:]]*\][[:space:]]*$/)`.

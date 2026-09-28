@@ -2,7 +2,7 @@
 //! into `.ai/src/`.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::transaction::manifest::{hashed_lines, sha256_hex};
 use crate::{Error, engine::staging};
@@ -68,15 +68,15 @@ impl TemplateManifest {
     }
 
     /// `template_manifest_heal_from_match`: records the shipped hash of every
-    /// template whose copy under `user_base` matches it byte for byte, whatever
-    /// the scope of the run.
+    /// template whose project copy, at the path `locate` gives it, matches it
+    /// byte for byte, whatever the scope of the run.
     pub fn heal_from_match<'a>(
         &mut self,
         templates: impl IntoIterator<Item = (&'a str, &'a [u8])>,
-        user_base: &Path,
+        locate: impl Fn(&str) -> PathBuf,
     ) {
         for (rel, bytes) in templates {
-            let Some(current) = hash(&user_base.join(rel)) else {
+            let Some(current) = hash(&locate(rel)) else {
                 continue;
             };
             let shipped = sha256_hex(bytes);
@@ -193,7 +193,7 @@ mod tests {
         ];
         let mut manifest = TemplateManifest::default();
         manifest.record("rules/edited.md", "old");
-        manifest.heal_from_match(templates, &base);
+        manifest.heal_from_match(templates, |rel| base.join(rel));
         manifest.write(dir.path()).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join(REL)).unwrap(),

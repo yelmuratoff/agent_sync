@@ -3,9 +3,11 @@
 use super::passes::{Dests, source_path, tool_source};
 use super::{Run, Step, Stop, io, tools};
 use crate::config::tool::Tool;
+use crate::engine::filters::Filter;
 use crate::engine::keyed;
 use crate::engine::rules::{self, Conversion, RuleOptions};
 use crate::engine::session::Session;
+use crate::engine::skill_tree;
 use crate::{config::payload, engine::codex_toml, engine::file_ops, engine::opencode_json, paths};
 
 pub(super) fn sync_rules_step(
@@ -17,8 +19,7 @@ pub(super) fn sync_rules_step(
 ) -> Step {
     let src_agents = tool_source(s, tool, "agents", &run.sources.agents, display)?;
     let src_rules = tool_source(s, tool, "rules", &run.sources.rules, display)?;
-    let include = tool.filter("targets.rules.include");
-    let exclude = tool.filter("targets.rules.exclude");
+    let filter = tool.target_filter("rules");
 
     if tool.value("targets.rules.inline_into_agents") == "true" && !dests.agents.is_empty() {
         if s.dry_run {
@@ -27,14 +28,14 @@ pub(super) fn sync_rules_step(
                 paths::leaf(&dests.agents)
             ));
         } else {
-            inline_rules_into_agents(s, &src_rules, &dests.agents, &include, &exclude)?;
+            inline_rules_into_agents(s, &src_rules, &dests.agents, &filter)?;
         }
     } else if !dests.rules.is_empty() {
         if tool.value("targets.rules.merge_to_file") == "true" {
             let prepend = (tool.value("targets.rules.prepend_agents") == "true"
                 && s.ws.is_file(&src_agents))
             .then_some(src_agents.as_str());
-            rules::merge_rules_to_file(s, &src_rules, &dests.rules, &include, &exclude, prepend)
+            rules::merge_rules_to_file(s, &src_rules, &dests.rules, &filter, prepend)
                 .map_err(|e| io(s, e))?;
         } else {
             let extension = tool.value("targets.rules.extension");
@@ -44,8 +45,7 @@ pub(super) fn sync_rules_step(
                 extension: &extension,
                 header: &header,
                 scoped_header: &scoped_header,
-                include: &include,
-                exclude: &exclude,
+                filter: &filter,
             };
             rules::sync_rules(s, &src_rules, &dests.rules, &opts).map_err(|e| io(s, e))?;
             if tool.value("targets.rules.append_imports") == "true" && !s.dry_run {
@@ -79,8 +79,7 @@ fn inline_rules_into_agents(
     s: &mut Session,
     src_rules: &str,
     dest_agents: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Step {
     if !s.ws.is_dir(src_rules) {
         return Ok(());
@@ -90,10 +89,7 @@ fn inline_rules_into_agents(
         .to_vec();
     for name in s.ws.glob(src_rules) {
         let path = format!("{src_rules}/{name}");
-        if !name.ends_with(".md")
-            || !s.ws.is_file(&path)
-            || !crate::engine::filters::matches(&name, include, exclude)
-        {
+        if !name.ends_with(".md") || !s.ws.is_file(&path) || !filter.accepts(&name) {
             continue;
         }
         let bytes = s.ws.read(&path).map_err(|e| io(s, e))?;
@@ -180,22 +176,27 @@ fn inline_skills_into_file(
     s: &mut Session,
     src_skills: &str,
     target: &str,
-    include: &str,
-    exclude: &str,
+    filter: &Filter,
 ) -> Step {
+    let mut skills: Vec<_> = skill_tree::discover(&s.ws, src_skills)
+        .skills
+        .into_iter()
+        .filter(|skill| filter.accepts_skill(skill))
+        .collect();
+    skills.sort_by(|a, b| a.category().cmp(b.category()));
     let mut entries = Vec::new();
-    for name in s.ws.glob(src_skills) {
-        let dir = format!("{src_skills}/{name}");
-        if !s.ws.is_dir(&dir) || !crate::engine::filters::matches(&name, include, exclude) {
-            continue;
+    let mut category = "";
+    for skill in &skills {
+        if skill.category() != category {
+            category = skill.category();
+            if !entries.is_empty() {
+                entries.push(b'\n');
+            }
+            entries.extend_from_slice(format!("### {category}\n\n").as_bytes());
         }
-        let skill_file = format!("{dir}/SKILL.md");
-        let desc = if s.ws.is_file(&skill_file) {
-            skill_description(&s.ws.read(&skill_file).map_err(|e| io(s, e))?)
-        } else {
-            Vec::new()
-        };
-        entries.extend_from_slice(format!("- `{name}`").as_bytes());
+        let skill_file = format!("{src_skills}/{}/SKILL.md", skill.rel);
+        let desc = skill_description(&s.ws.read(&skill_file).map_err(|e| io(s, e))?);
+        entries.extend_from_slice(format!("- `{}`", skill.name).as_bytes());
         if !desc.is_empty() {
             entries.extend_from_slice(" — ".as_bytes());
             entries.extend(desc);
@@ -216,6 +217,35 @@ fn inline_skills_into_file(
     Ok(())
 }
 
+/// Stops when two filtered skills share a name: every tool installs skills
+/// flat by name, so one would silently replace the other.
+fn refuse_skill_collisions(s: &mut Session, src: &str, filter: &Filter) -> Step {
+    let filtered: Vec<_> = skill_tree::discover(&s.ws, src)
+        .skills
+        .into_iter()
+        .filter(|skill| filter.accepts_skill(skill))
+        .collect();
+    let collisions = skill_tree::collisions(&filtered);
+    if collisions.is_empty() {
+        return Ok(());
+    }
+    let shown = s.display(src);
+    for (name, rels) in collisions {
+        let claims = rels
+            .iter()
+            .map(|rel| format!("{shown}/{rel}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        s.log.error(&format!(
+            "Skill name '{name}' is claimed by {claims}; every tool installs skills flat by name"
+        ));
+    }
+    s.log.err(
+        "  • Rename one skill of each pair: skill names are unique across categories".to_string(),
+    );
+    Err(Stop(1))
+}
+
 pub(super) fn sync_skills_step(
     s: &mut Session,
     run: &Run,
@@ -224,19 +254,16 @@ pub(super) fn sync_skills_step(
     display: &str,
 ) -> Step {
     let src_skills = tool_source(s, tool, "skills", &run.sources.skills, display)?;
-    let include = tool.filter("targets.skills.include");
-    let exclude = tool.filter("targets.skills.exclude");
+    let filter = tool.target_filter("skills");
 
     if !dests.skills.is_empty() {
-        let effective = if exclude.is_empty() {
-            "command-*".to_string()
-        } else {
-            format!("{exclude} command-*")
-        };
-        return file_ops::sync_dir(s, &src_skills, &dests.skills, &include, &effective)
+        refuse_skill_collisions(s, &src_skills, &filter)?;
+        let effective = filter.excluding("command-*");
+        return file_ops::sync_skills_dir(s, &src_skills, &dests.skills, &effective)
             .map_err(|e| io(s, e));
     }
     if tool.value("targets.skills.inline_into_agents") == "true" && s.ws.is_dir(&src_skills) {
+        refuse_skill_collisions(s, &src_skills, &filter)?;
         let target = if !dests.agents.is_empty() {
             dests.agents.clone()
         } else if tool.value("targets.rules.merge_to_file") == "true" && s.ws.is_file(&dests.rules)
@@ -246,7 +273,7 @@ pub(super) fn sync_skills_step(
             String::new()
         };
         if !target.is_empty() && !s.dry_run {
-            inline_skills_into_file(s, &src_skills, &target, &include, &exclude)?;
+            inline_skills_into_file(s, &src_skills, &target, &filter)?;
         } else if s.dry_run {
             s.log.step("Would append skill index (dry-run)");
         }
@@ -264,8 +291,7 @@ pub(super) fn sync_commands_step(
     if run.sources.commands.is_empty() {
         return Ok(());
     }
-    let include = tool.filter("targets.commands.include");
-    let exclude = tool.filter("targets.commands.exclude");
+    let filter = tool.target_filter("commands");
     let label = format!("source.commands for {display}");
     let src = source_path(s, &run.sources.commands, &label)?;
     if !s.ws.is_dir(&src) {
@@ -274,15 +300,14 @@ pub(super) fn sync_commands_step(
 
     if !dests.commands.is_empty() {
         let result = if tool.value("targets.commands.format") == "toml" {
-            rules::sync_converted(s, &src, &dests.commands, Conversion::CommandToml)
+            rules::sync_converted(s, &src, &dests.commands, Conversion::CommandToml, &filter)
         } else {
             let extension = tool.value("targets.commands.extension");
             let opts = RuleOptions {
                 extension: &extension,
                 header: "",
                 scoped_header: "",
-                include: "",
-                exclude: "",
+                filter: &filter,
             };
             rules::sync_rules(s, &src, &dests.commands, &opts)
         };
@@ -291,7 +316,7 @@ pub(super) fn sync_commands_step(
     if tool.value("targets.commands.as_skills") == "true" && !dests.skills.is_empty() {
         s.log
             .step("No native commands surface — generating skills (command-*) instead");
-        return rules::sync_commands_as_skills(s, &src, &dests.skills, &include, &exclude)
+        return rules::sync_commands_as_skills(s, &src, &dests.skills, &filter)
             .map_err(|e| io(s, e));
     }
     if tool.value("targets.commands.inline_into_agents") == "true" {
@@ -310,8 +335,7 @@ pub(super) fn sync_commands_step(
                 "No native commands surface — appending command index to {}",
                 paths::leaf(&target)
             ));
-            rules::inline_commands_to_file(s, &src, &target, &include, &exclude)
-                .map_err(|e| io(s, e))?;
+            rules::inline_commands_to_file(s, &src, &target, &filter).map_err(|e| io(s, e))?;
         }
     }
     Ok(())
@@ -332,22 +356,22 @@ pub(super) fn sync_subagents_step(
     if !s.ws.is_dir(&src) {
         return Ok(());
     }
+    let everything = Filter::default();
+    let convert = |s: &mut Session, conversion| {
+        rules::sync_converted(s, &src, &dests.subagents, conversion, &everything)
+    };
     let result = match tool.value("targets.subagents.format").as_str() {
-        "toml" => rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentToml),
-        "amazonq_json" => {
-            rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentAmazonqJson)
-        }
-        "opencode_md" => {
-            rules::sync_converted(s, &src, &dests.subagents, Conversion::AgentOpencodeMd)
-        }
+        "toml" => convert(s, Conversion::AgentToml),
+        "amazonq_json" => convert(s, Conversion::AgentAmazonqJson),
+        "opencode_md" => convert(s, Conversion::AgentOpencodeMd),
+        "kiro_md" => convert(s, Conversion::AgentKiroMd),
         _ => {
             let extension = tool.value("targets.subagents.extension");
             let opts = RuleOptions {
                 extension: &extension,
                 header: "",
                 scoped_header: "",
-                include: "",
-                exclude: "",
+                filter: &everything,
             };
             rules::sync_rules(s, &src, &dests.subagents, &opts)
         }

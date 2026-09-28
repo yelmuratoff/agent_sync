@@ -13,6 +13,7 @@ pub mod overlay;
 pub mod render;
 pub mod rules;
 pub mod session;
+pub mod skill_tree;
 pub mod staging;
 pub mod toml_keys;
 pub mod workspace;

@@ -19,7 +19,7 @@ mod discover;
 mod report;
 mod scaffold;
 
-use args::{CONTENT_DEFAULT, CONTENT_VALID, merge_lists, normalize_csv, parse_args};
+use args::{CONTENT_DEFAULT, CONTENT_VALID, Options, merge_lists, normalize_csv, parse_args};
 use discover::{backup_targets, detect_tools, existing_dest_files};
 use report::plan;
 use scaffold::{Failure, Scaffold, scaffold};
@@ -62,6 +62,27 @@ impl Run<'_, '_> {
     }
 }
 
+/// What the init writes, from the flags and then the wizard.
+struct Choices {
+    tools: Vec<String>,
+    content: Vec<String>,
+    detect_source: &'static str,
+    outputs: String,
+    existing_action: String,
+    ci: String,
+    existing: Vec<String>,
+}
+
+/// Everything the transaction needs once the choices are settled.
+struct InitPlan {
+    target: String,
+    ai_dir: String,
+    choices: Choices,
+    no_templates: bool,
+    run_sync: bool,
+    retention: backup::Retention,
+}
+
 pub fn init(
     args: &[String],
     style: &Style,
@@ -79,32 +100,97 @@ pub fn init(
         Ok(options) => options,
         Err(status) => return Ok(status),
     };
-
-    if !matches!(options.outputs.as_str(), "committed" | "local") {
-        run.tell(&format!(
-            "{}: --outputs must be 'committed' or 'local' (got '{}')\n",
-            style.red("Error"),
-            options.outputs
-        ))?;
+    if let Some(message) = invalid_choice(&options) {
+        run.tell(&format!("{}: {message}\n", style.red("Error")))?;
         return Ok(1);
+    }
+    let target = match resolve_target(&mut run, &options)? {
+        Ok(target) => target,
+        Err(status) => return Ok(status),
+    };
+    let retention = match load_retention(&mut run, &target)? {
+        Ok(retention) => retention,
+        Err(status) => return Ok(status),
+    };
+    let ai_dir = format!("{target}/.ai");
+    if Path::new(&ai_dir).join("src").is_dir() {
+        run.say(&format!(
+            "{}: .ai/src/ already exists in {target}\nSkipping init to avoid overwriting your content.\n\nRun {} to synchronize.\n",
+            style.yellow("Warning"),
+            style.cyan("agentsync sync")
+        ))?;
+        return Ok(0);
+    }
+    let mut choices = match initial_choices(&mut run, &options, &target)? {
+        Ok(choices) => choices,
+        Err(status) => return Ok(status),
+    };
+    let interactive = run.env.interactive
+        && !options.assume_yes
+        && options.tools.is_none()
+        && options.content.is_none()
+        && !options.no_templates;
+    if interactive && let Err(status) = ask_choices(&mut run, &target, &mut choices)? {
+        return Ok(status);
+    }
+    let project = Project::at(&target)?;
+    if !choices.tools.is_empty() {
+        choices.existing = existing_dest_files(&project, &target, &choices.tools)?;
+    }
+    if interactive {
+        ask_follow_ups(&mut run, &target, &mut choices)?;
+    }
+    run.say(&plan(style, &target, &choices, options.no_templates))?;
+    if options.dry_run {
+        run.say(&format!(
+            "{}\n",
+            style.dim("Dry run — nothing was written.")
+        ))?;
+        return Ok(0);
+    }
+    if interactive {
+        if !(run.env.confirm)("Proceed?", true) {
+            run.say(&format!("{}\n", style.yellow("Cancelled.")))?;
+            return Ok(130);
+        }
+        run.say("\n")?;
+    }
+    let plan = InitPlan {
+        target,
+        ai_dir,
+        choices,
+        no_templates: options.no_templates,
+        run_sync: options.run_sync,
+        retention,
+    };
+    if let Some(status) = transact(&mut run, &project, &plan)? {
+        return Ok(status);
+    }
+    first_sync(&mut run, &plan)
+}
+
+/// Why `--outputs`, `--existing`, or `--ci` names no supported value.
+fn invalid_choice(options: &Options) -> Option<String> {
+    if !matches!(options.outputs.as_str(), "committed" | "local") {
+        return Some(format!(
+            "--outputs must be 'committed' or 'local' (got '{}')",
+            options.outputs
+        ));
     }
     if !matches!(options.existing.as_str(), "adopt" | "replace") {
-        run.tell(&format!(
-            "{}: --existing must be 'adopt' or 'replace' (got '{}')\n",
-            style.red("Error"),
+        return Some(format!(
+            "--existing must be 'adopt' or 'replace' (got '{}')",
             options.existing
-        ))?;
-        return Ok(1);
+        ));
     }
-    if !matches!(options.ci.as_str(), "" | "github") {
-        run.tell(&format!(
-            "{}: --ci only supports 'github' (got '{}')\n",
-            style.red("Error"),
-            options.ci
-        ))?;
-        return Ok(1);
-    }
+    (!matches!(options.ci.as_str(), "" | "github"))
+        .then(|| format!("--ci only supports 'github' (got '{}')", options.ci))
+}
 
+/// The directory to init, absolute and normalized, unless it is missing or
+/// inside a `.ai/`.
+fn resolve_target(run: &mut Run, options: &Options) -> Result<Result<String, u8>, Error> {
+    let style = run.style;
     let requested = options.target.clone().unwrap_or_else(|| ".".to_string());
     let target = if crate::paths::is_absolute(&requested) {
         paths::normalize(&requested)
@@ -116,21 +202,22 @@ pub fn init(
             "{}: Directory not found: {requested}\n",
             style.red("Error")
         ))?;
-        return Ok(1);
+        return Ok(Err(1));
     }
-
     if let Some(project_root) = paths::ai_dir_enclosing_root(&target) {
         run.tell(&format!(
             "{}: Cannot init inside the .ai/ directory: {target}\nRun agentsync init from the project root (the parent of .ai/):\n  cd \"{project_root}\" && agentsync init\n",
             style.red("Error")
         ))?;
-        return Ok(2);
+        return Ok(Err(2));
     }
+    Ok(Ok(target))
+}
 
-    let ai_dir = format!("{target}/.ai");
-
+/// The backup retention the project config sets, read before anything is written.
+fn load_retention(run: &mut Run, target: &str) -> Result<Result<backup::Retention, u8>, Error> {
     let is_file = |path: &str| Path::new(path).is_file();
-    let config = match project_config::select(&target, run.env.config_path.as_deref(), &is_file) {
+    let config = match project_config::select(target, run.env.config_path.as_deref(), &is_file) {
         Selection::Found(path) => {
             let text = std::fs::read(&path).map_err(|e| Error::io(&path, e))?;
             Some((path, String::from_utf8_lossy(&text).into_owned()))
@@ -141,309 +228,302 @@ pub fn init(
                 "Error: {}\n",
                 project_config::missing_message(&path)
             ))?;
-            return Ok(1);
+            return Ok(Err(1));
         }
     };
-    let retention = match backup::configure(
+    let configured = backup::configure(
         config
             .as_ref()
             .map(|(path, text)| (path.as_str(), text.as_str())),
         run.env.backup_limit.as_deref(),
         run.env.backup_max_age.as_deref(),
-    ) {
-        Ok(retention) => retention,
+    );
+    match configured {
+        Ok(retention) => Ok(Ok(retention)),
         Err(e) => {
-            report_backup_error(&mut run, &e)?;
-            return Ok(1);
+            report_backup_error(run, &e)?;
+            Ok(Err(1))
         }
-    };
-
-    if Path::new(&ai_dir).join("src").is_dir() {
-        run.say(&format!(
-            "{}: .ai/src/ already exists in {target}\nSkipping init to avoid overwriting your content.\n\nRun {} to synchronize.\n",
-            style.yellow("Warning"),
-            style.cyan("agentsync sync")
-        ))?;
-        return Ok(0);
     }
+}
 
-    let mut content_list = normalize_csv(
+/// The content sections and tools the flags and the tool detection name.
+fn initial_choices(
+    run: &mut Run,
+    options: &Options,
+    target: &str,
+) -> Result<Result<Choices, u8>, Error> {
+    let content = normalize_csv(
         options
             .content
             .as_deref()
             .filter(|c| !c.is_empty())
             .unwrap_or(CONTENT_DEFAULT),
     );
-    for token in &content_list {
-        if !CONTENT_VALID.contains(&token.as_str()) {
-            run.tell(&format!(
-                "{}: Unknown --content section: {token}\nValid sections: agents rules skills commands subagents\n",
-                style.red("Error")
-            ))?;
-            return Ok(1);
-        }
+    if let Some(token) = content
+        .iter()
+        .find(|token| !CONTENT_VALID.contains(&token.as_str()))
+    {
+        run.tell(&format!(
+            "{}: Unknown --content section: {token}\nValid sections: agents rules skills commands subagents\n",
+            run.style.red("Error")
+        ))?;
+        return Ok(Err(1));
     }
-
-    let tools_from_flag = normalize_csv(options.tools.as_deref().unwrap_or(""));
-    let tools_from_detect = if options.no_detect {
+    let from_flag = normalize_csv(options.tools.as_deref().unwrap_or(""));
+    let from_detect = if options.no_detect {
         Vec::new()
     } else {
-        detect_tools(&target)
+        detect_tools(target)
     };
-    let mut tool_list = merge_lists(&tools_from_flag, &tools_from_detect);
-    let mut detect_source = match (tools_from_flag.is_empty(), tools_from_detect.is_empty()) {
+    let detect_source = match (from_flag.is_empty(), from_detect.is_empty()) {
         (false, false) => "mixed",
         (false, true) => "flag",
         (true, false) => "detect",
         (true, true) => "none",
     };
+    Ok(Ok(Choices {
+        tools: merge_lists(&from_flag, &from_detect),
+        content,
+        detect_source,
+        outputs: options.outputs.clone(),
+        existing_action: options.existing.clone(),
+        ci: options.ci.clone(),
+        existing: Vec::new(),
+    }))
+}
 
-    let mut outputs = options.outputs.clone();
-    let mut existing_action = options.existing.clone();
-    let mut ci = options.ci.clone();
-
-    let interactive = run.env.interactive
-        && !options.assume_yes
-        && options.tools.is_none()
-        && options.content.is_none()
-        && !options.no_templates;
-
-    if interactive {
-        run.say(&format!(
-            "\n{} — {}\n\n",
-            style.bold("AgentSync init"),
-            style.dim(&target)
-        ))?;
-        let available = catalog::base_tools();
-        if !available.is_empty() {
-            let title = if tool_list.is_empty() {
-                format!("Tools to enable {}", style.dim("(none auto-detected):"))
-            } else {
-                format!(
-                    "Tools to enable {}",
-                    style.dim(&format!("(detected: {}):", tool_list.join(",")))
-                )
-            };
-            match (run.env.multiselect)(&title, &available, &tool_list) {
-                Ok(picked) => tool_list = picked,
-                Err(Cancelled(_)) => {
-                    run.tell(&format!("{}\n", style.yellow("Cancelled.")))?;
-                    return Ok(130);
-                }
-            }
-            detect_source = "interactive";
-            run.say("\n")?;
-        }
-        let sections: Vec<String> = CONTENT_VALID.iter().map(|s| s.to_string()).collect();
-        match (run.env.multiselect)("Content sections:", &sections, &content_list) {
-            Ok(picked) => content_list = picked,
-            Err(Cancelled(_)) => {
-                run.tell(&format!("{}\n", style.yellow("Cancelled.")))?;
-                return Ok(130);
-            }
-        }
-        run.say("\n")?;
-        run.say(&format!(
-            "{}\n{}\n",
-            style.dim("Generated files (CLAUDE.md, .claude/, .cursor/, …) can be committed, so"),
-            style.dim("teammates get current rules from git pull and never run agentsync.")
-        ))?;
-        outputs = if (run.env.confirm)("Commit generated files?", true) {
-            "committed".to_string()
+/// The wizard's first round: tools, content sections, and committed outputs.
+fn ask_choices(
+    run: &mut Run,
+    target: &str,
+    choices: &mut Choices,
+) -> Result<Result<(), u8>, Error> {
+    let style = run.style;
+    run.say(&format!(
+        "\n{} — {}\n\n",
+        style.bold("AgentSync init"),
+        style.dim(target)
+    ))?;
+    let available = catalog::base_tools();
+    if !available.is_empty() {
+        let title = if choices.tools.is_empty() {
+            format!("Tools to enable {}", style.dim("(none auto-detected):"))
         } else {
-            "local".to_string()
+            let detected = format!("(detected: {}):", choices.tools.join(","));
+            format!("Tools to enable {}", style.dim(&detected))
         };
+        match (run.env.multiselect)(&title, &available, &choices.tools) {
+            Ok(picked) => choices.tools = picked,
+            Err(Cancelled(_)) => return cancelled(run),
+        }
+        choices.detect_source = "interactive";
         run.say("\n")?;
     }
-
-    let project = Project::at(&target)?;
-    let existing = if tool_list.is_empty() {
-        Vec::new()
+    let sections: Vec<String> = CONTENT_VALID.iter().map(|s| s.to_string()).collect();
+    match (run.env.multiselect)("Content sections:", &sections, &choices.content) {
+        Ok(picked) => choices.content = picked,
+        Err(Cancelled(_)) => return cancelled(run),
+    }
+    run.say("\n")?;
+    run.say(&format!(
+        "{}\n{}\n",
+        style.dim("Generated files (CLAUDE.md, .claude/, .cursor/, …) can be committed, so"),
+        style.dim("teammates get current rules from git pull and never run agentsync.")
+    ))?;
+    choices.outputs = if (run.env.confirm)("Commit generated files?", true) {
+        "committed".to_string()
     } else {
-        existing_dest_files(&project, &target, &tool_list)?
+        "local".to_string()
     };
+    run.say("\n")?;
+    Ok(Ok(()))
+}
 
-    if interactive && !existing.is_empty() {
+fn cancelled(run: &mut Run) -> Result<Result<(), u8>, Error> {
+    let style = run.style;
+    run.tell(&format!("{}\n", style.yellow("Cancelled.")))?;
+    Ok(Err(130))
+}
+
+/// The wizard's second round: adopting existing tool config, then the CI gate.
+fn ask_follow_ups(run: &mut Run, target: &str, choices: &mut Choices) -> Result<(), Error> {
+    let style = run.style;
+    if !choices.existing.is_empty() {
+        let found = format!(
+            "Found {} existing tool config file(s)",
+            choices.existing.len()
+        );
         let mut text = format!(
             "{} {}\n",
-            style.yellow(&format!(
-                "Found {} existing tool config file(s)",
-                existing.len()
-            )),
+            style.yellow(&found),
             style.dim("— the first sync regenerates these paths:")
         );
-        for line in existing.iter().take(10) {
+        for line in choices.existing.iter().take(10) {
             text.push_str(&format!("   {line}\n"));
         }
-        if existing.len() > 10 {
-            text.push_str(&format!(
-                "   {}\n",
-                style.dim(&format!("… and {} more", existing.len() - 10))
-            ));
+        if choices.existing.len() > 10 {
+            let more = format!("… and {} more", choices.existing.len() - 10);
+            text.push_str(&format!("   {}\n", style.dim(&more)));
         }
         run.say(&text)?;
-        existing_action = if (run.env.confirm)(
+        let adopt = (run.env.confirm)(
             "Copy them into .ai/src/ first, so sync reproduces them?",
             true,
-        ) {
-            "adopt".to_string()
-        } else {
-            "replace".to_string()
-        };
+        );
+        choices.existing_action = if adopt { "adopt" } else { "replace" }.to_string();
         run.say("\n")?;
     }
-
-    if interactive
-        && ci.is_empty()
-        && outputs == "committed"
-        && Path::new(&target).join(".github").is_dir()
+    if choices.ci.is_empty()
+        && choices.outputs == "committed"
+        && Path::new(target).join(".github").is_dir()
     {
         if (run.env.confirm)(
             "Add a GitHub Actions gate that runs 'agentsync check'?",
             true,
         ) {
-            ci = "github".to_string();
+            choices.ci = "github".to_string();
         }
         run.say("\n")?;
     }
+    Ok(())
+}
 
-    run.say(&plan(
-        style,
-        &target,
-        &tool_list,
-        &content_list,
-        detect_source,
-        options.no_templates,
-    ))?;
-
-    if options.dry_run {
-        run.say(&format!(
-            "{}\n",
-            style.dim("Dry run — nothing was written.")
-        ))?;
-        return Ok(0);
-    }
-
-    if interactive {
-        if !(run.env.confirm)("Proceed?", true) {
-            run.say(&format!("{}\n", style.yellow("Cancelled.")))?;
-            return Ok(130);
-        }
-        run.say("\n")?;
-    }
-
+/// Backs up, scaffolds, and restores the backup on a failure or a signal:
+/// the failed run's exit status, or `None` once the scaffold is sealed.
+fn transact(run: &mut Run, project: &Project, plan: &InitPlan) -> Result<Option<u8>, Error> {
+    let style = run.style;
+    let target = plan.target.as_str();
     run.say(&format!(
         "{} in {}\n\n",
         style.bold("Initializing AgentSync"),
-        style.cyan(&target)
+        style.cyan(target)
     ))?;
-
-    let targets = backup_targets(&mut run, &project, &target, &tool_list)?;
-    let backup_path = match backup::create(&target, "init", &targets, retention) {
+    let targets = backup_targets(run, project, target, &plan.choices.tools)?;
+    let backup_path = match backup::create(target, "init", &targets, plan.retention) {
         Ok(path) => path,
         Err(e) => {
-            report_backup_error(&mut run, &e)?;
+            report_backup_error(run, &e)?;
             run.tell(&format!(
                 "{}: Could not back up init targets; no project files were changed.\n",
                 style.red("Error")
             ))?;
-            return Ok(1);
+            return Ok(Some(1));
         }
     };
     let shown_backup = backup_path
         .strip_prefix(&format!("{target}/"))
         .unwrap_or(&backup_path)
         .to_string();
-
+    let choices = &plan.choices;
     let mut interrupt = Interrupt::arm();
-    let scaffold = scaffold(
-        &mut run,
+    let scaffolded = scaffold(
+        run,
         &mut interrupt,
         Scaffold {
-            target: &target,
-            ai_dir: &ai_dir,
-            content: &content_list,
-            tools: &tool_list,
-            no_templates: options.no_templates,
-            outputs: &outputs,
-            adopt: existing_action == "adopt",
-            existing: &existing,
-            ci_github: ci == "github",
-            detect_source,
-            run_sync: options.run_sync,
+            target,
+            ai_dir: &plan.ai_dir,
+            content: &choices.content,
+            tools: &choices.tools,
+            no_templates: plan.no_templates,
+            outputs: &choices.outputs,
+            adopt: choices.existing_action == "adopt",
+            existing: &choices.existing,
+            ci_github: choices.ci == "github",
+            detect_source: choices.detect_source,
+            run_sync: plan.run_sync,
             shown_backup: &shown_backup,
         },
     );
-    let status = match scaffold {
-        Ok(()) => 0,
-        Err(failure) => {
-            let status = match &failure {
-                Failure::Io(e) => {
-                    run.tell(&format!("{e}\n"))?;
-                    1
-                }
-                Failure::Signal(sig) => interrupt::status(*sig),
-            };
-            run.tell(&format!(
-                "{}: Init failed; restoring pre-init state...\n",
-                style.yellow("Warning")
-            ))?;
-            match backup::restore(&target, &backup_path) {
-                Ok(()) => {
-                    if let Err(reason) = witness::seal(&target, &backup_path) {
-                        run.tell(&format!(
-                            "{}: Could not record the restored state ({reason}); rolling back backup {} cannot detect later changes.\n",
-                            style.yellow("Warning"),
-                            paths::leaf(&backup_path)
-                        ))?;
-                    }
-                    run.tell(&format!("Restored pre-init state from {shown_backup}\n"))?;
-                    prune(&mut run, &target, retention)?;
-                }
-                Err(e) => {
-                    report_backup_error(&mut run, &e)?;
-                    run.tell(&format!(
-                        "{}: Automatic restore failed. Backup retained at {shown_backup}\n",
-                        style.red("Error")
-                    ))?;
-                }
-            }
-            if let Failure::Signal(sig) = failure {
-                interrupt.resend(sig);
-            }
-            return Ok(status);
+    if let Err(failure) = scaffolded {
+        let status = restore(run, plan, &backup_path, &failure)?;
+        if let Failure::Signal(sig) = failure {
+            interrupt.resend(sig);
         }
-    };
+        return Ok(Some(status));
+    }
     drop(interrupt);
-
-    prune(&mut run, &target, retention)?;
-    if let Err(reason) = witness::seal(&target, &backup_path) {
+    prune(run, target, plan.retention)?;
+    if let Err(reason) = witness::seal(target, &backup_path) {
         run.tell(&format!(
             "{}: Could not record the post-init state ({reason}); rolling back backup {} cannot detect later changes.\n",
             style.yellow("Warning"),
             paths::leaf(&backup_path)
         ))?;
     }
+    Ok(None)
+}
 
-    if options.run_sync && !tool_list.is_empty() {
-        run.say(&format!("{}\n\n", style.bold("Running the first sync")))?;
-        if (run.env.sync)(&target) != 0 {
-            run.tell(&format!(
-                "{}: first sync failed — fix the cause and run {}.\n",
-                style.yellow("Warning"),
-                style.cyan("agentsync sync")
-            ))?;
-            return Ok(0);
+/// Reports `failure` and restores the pre-init state from `backup_path`:
+/// the exit status the failure ends the run with.
+fn restore(
+    run: &mut Run,
+    plan: &InitPlan,
+    backup_path: &str,
+    failure: &Failure,
+) -> Result<u8, Error> {
+    let style = run.style;
+    let target = plan.target.as_str();
+    let shown_backup = backup_path
+        .strip_prefix(&format!("{target}/"))
+        .unwrap_or(backup_path);
+    let status = match failure {
+        Failure::Io(e) => {
+            run.tell(&format!("{e}\n"))?;
+            1
         }
-        if outputs == "committed" {
-            run.say(&format!(
-                "{} {}\n\n",
-                style.bold("Commit .ai/ and the generated files"),
-                style.dim("— teammates then need only git pull.")
+        Failure::Signal(sig) => interrupt::status(*sig),
+    };
+    run.tell(&format!(
+        "{}: Init failed; restoring pre-init state...\n",
+        style.yellow("Warning")
+    ))?;
+    match backup::restore(target, backup_path) {
+        Ok(()) => {
+            if let Err(reason) = witness::seal(target, backup_path) {
+                run.tell(&format!(
+                    "{}: Could not record the restored state ({reason}); rolling back backup {} cannot detect later changes.\n",
+                    style.yellow("Warning"),
+                    paths::leaf(backup_path)
+                ))?;
+            }
+            run.tell(&format!("Restored pre-init state from {shown_backup}\n"))?;
+            prune(run, target, plan.retention)?;
+        }
+        Err(e) => {
+            report_backup_error(run, &e)?;
+            run.tell(&format!(
+                "{}: Automatic restore failed. Backup retained at {shown_backup}\n",
+                style.red("Error")
             ))?;
         }
     }
     Ok(status)
+}
+
+/// Runs the first sync when asked and a tool is enabled; a failed sync only warns.
+fn first_sync(run: &mut Run, plan: &InitPlan) -> Result<u8, Error> {
+    let style = run.style;
+    if !plan.run_sync || plan.choices.tools.is_empty() {
+        return Ok(0);
+    }
+    run.say(&format!("{}\n\n", style.bold("Running the first sync")))?;
+    if (run.env.sync)(&plan.target) != 0 {
+        run.tell(&format!(
+            "{}: first sync failed — fix the cause and run {}.\n",
+            style.yellow("Warning"),
+            style.cyan("agentsync sync")
+        ))?;
+        return Ok(0);
+    }
+    if plan.choices.outputs == "committed" {
+        run.say(&format!(
+            "{} {}\n\n",
+            style.bold("Commit .ai/ and the generated files"),
+            style.dim("— teammates then need only git pull.")
+        ))?;
+    }
+    Ok(0)
 }
 
 fn prune(run: &mut Run, target: &str, retention: backup::Retention) -> Result<(), Error> {
@@ -757,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wizard_picks_tools_content_outputs_existing_and_ci_like_bash() {
+    fn the_wizard_picks_tools_content_outputs_and_existing_like_bash() {
         let (_dir, root) = project(&[
             (".github/x", ""),
             ("CLAUDE.md", "# Hand-written\n"),
@@ -801,7 +881,10 @@ mod tests {
                 .contains("   Enabled 2 tool(s): claude, cursor (selected)\n")
         );
         assert!(!Path::new(&root).join(".github/workflows").exists());
+    }
 
+    #[test]
+    fn the_wizard_offers_the_ci_gate_to_a_github_project() {
         let (_dir, root) = project(&[(".github/x", "")]);
         let ci = call(
             &root,
@@ -827,7 +910,10 @@ mod tests {
                 .join(".github/workflows/agentsync-check.yml")
                 .is_file()
         );
+    }
 
+    #[test]
+    fn the_wizard_declines_cancels_dry_runs_and_skips_under_yes() {
         let (_dir, root) = project(&[]);
         let declined = call(
             &root,

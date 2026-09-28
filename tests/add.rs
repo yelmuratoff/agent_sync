@@ -40,6 +40,78 @@ fn add_skill_creates_ai_src_skills_name_skill_md() {
 }
 
 #[test]
+fn add_skill_places_it_in_the_named_category() {
+    let project = seeded();
+    project
+        .agentsync()
+        .args(["add", "skill", "slivers", "--category", "flutter/ui"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            ".ai/src/skills/flutter/ui/slivers/SKILL.md",
+        ));
+    let content = project.read(".ai/src/skills/flutter/ui/slivers/SKILL.md");
+    assert!(content.contains("\nname: \"slivers\"\n"));
+}
+
+#[test]
+fn add_skill_refuses_a_name_another_category_holds() {
+    let project = seeded();
+    project
+        .agentsync()
+        .args(["add", "skill", "auth", "--category", "backend"])
+        .assert()
+        .success();
+    project
+        .agentsync()
+        .args(["add", "skill", "auth", "--category", "flutter", "--force"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Skill 'auth' already exists at .ai/src/skills/backend/auth/",
+        ));
+    project
+        .agentsync()
+        .args(["add", "skill", "auth"])
+        .assert()
+        .failure();
+    assert!(!project.exists(".ai/src/skills/flutter/auth"));
+    assert!(!project.exists(".ai/src/skills/auth"));
+}
+
+#[test]
+fn add_refuses_an_invalid_category_or_one_on_another_kind() {
+    let project = seeded();
+    for (args, message) in [
+        (
+            &["add", "skill", "x", "--category", "../out"][..],
+            "Category segments must be lowercase letters, digits, or single hyphens: '..' in ../out",
+        ),
+        (
+            &["add", "skill", "x", "--category", "a/b/c/d/e"][..],
+            "Category is deeper than 4 levels: a/b/c/d/e",
+        ),
+        (
+            &["add", "rule", "x", "--category", "flutter"][..],
+            "--category applies to skills, not rule",
+        ),
+        (
+            &["add", "skill", "x", "--category"][..],
+            "--category requires a value",
+        ),
+    ] {
+        project
+            .agentsync()
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(message));
+    }
+    assert!(!project.exists(".ai/src/skills/x"));
+    assert!(!project.exists(".ai/src/rules/x.md"));
+}
+
+#[test]
 fn add_skill_rejects_names_outside_the_agent_skills_spec() {
     let project = seeded();
     for name in ["MySkill", "my_skill", "my--skill", "my-skill-"] {
@@ -595,7 +667,7 @@ fn add_mcp_names_a_flag_that_is_missing_its_value() {
         .code(1)
         .stderr(predicate::str::contains("--url requires a value."))
         .stderr(predicate::str::contains(
-            "\n  USAGE\n    agentsync add <kind> <name> [--force]\n    agentsync add mcp <server>",
+            "\n  USAGE\n    agentsync add <kind> <name> [--category <path>] [--force]\n    agentsync add mcp <server>",
         ));
     assert!(!project.exists(".ai/src/mcp.json"));
 }

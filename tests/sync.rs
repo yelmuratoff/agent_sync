@@ -169,7 +169,7 @@ fn sync_windsurf_agents_md_exists_at_root() {
 #[test]
 fn sync_windsurf_rules_have_trigger_frontmatter() {
     let project = synced_project();
-    let first = first_file(&project, ".windsurf/rules", "md");
+    let first = first_file(&project, ".devin/rules", "md");
     assert!(contains(&first, "trigger: always_on"));
 }
 
@@ -343,7 +343,7 @@ fn sync_copilot_hooks_json_exists() {
 
 #[test]
 fn sync_windsurf_hooks_json_exists() {
-    assert!(synced_project().exists(".windsurf/hooks.json"));
+    assert!(synced_project().exists(".devin/hooks.json"));
 }
 
 // ── MCP / settings (per-tool) ────────────────────────────────────────────
@@ -452,7 +452,7 @@ fn sync_cursor_mcp_json_exists() {
 
 #[test]
 fn sync_windsurf_mcp_config_json_exists() {
-    assert!(synced_project().exists(".windsurf/mcp_config.json"));
+    assert!(synced_project().exists(".devin/mcp_config.json"));
 }
 
 #[test]
@@ -536,7 +536,7 @@ fn sync_path_scoped_rule_becomes_copilot_applyto_glob() {
 #[test]
 fn sync_path_scoped_rule_becomes_windsurf_glob_trigger() {
     let project = synced_project();
-    let content = project.read(".windsurf/rules/scoped-fixture.md");
+    let content = project.read(".devin/rules/scoped-fixture.md");
     assert!(content.contains("trigger: glob"));
     assert!(content.contains("globs: '**/*.dart'"));
 }
@@ -597,4 +597,281 @@ fn sync_re_sync_emits_no_churn_for_shared_dest_command_or_nested_agents() {
         .success()
         .stderr(predicate::str::contains("Kept .agents/skills/command-").not())
         .stdout(predicate::str::contains("Removed: .amazonq/rules/00-context.md").not());
+}
+
+// ── Kiro ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn sync_kiro_writes_steering_skills_agents_and_mcp() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["kiro"]);
+    project.write(".ai/src/rules/scoped-fixture.md", SCOPED_FIXTURE_RULE);
+    project.write(
+        ".ai/src/agents/reviewer.md",
+        "---\nname: reviewer\ndescription: Reviews\nmodel: sonnet\ntools: [Read, Grep, Bash]\n---\nReview.\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+
+    assert!(project.exists("AGENTS.md"));
+    assert!(
+        project
+            .read(".kiro/steering/core.md")
+            .starts_with("---\ninclusion: always\n---\n")
+    );
+    assert!(
+        project
+            .read(".kiro/steering/scoped-fixture.md")
+            .starts_with("---\ninclusion: fileMatch\nfileMatchPattern: ['**/*.dart']\n---\n")
+    );
+    assert!(project.exists(".kiro/skills/agentsync/SKILL.md"));
+    assert!(project.exists(".kiro/skills/command-review/SKILL.md"));
+    assert_eq!(
+        project.read(".kiro/agents/reviewer.md"),
+        "---\nname: \"reviewer\"\ndescription: \"Reviews\"\ntools: [read, shell]\n---\nReview.\n"
+    );
+    assert!(
+        project
+            .read(".kiro/settings/mcp.json")
+            .contains("\"mcpServers\"")
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.agentsync().arg("check").assert().success();
+}
+
+// ── Moved destinations ───────────────────────────────────────────────────
+
+#[test]
+fn sync_removes_what_it_generated_at_a_moved_destination_and_keeps_the_rest() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n  skills:\n    dest: \".windsurf/skills\"\n  hooks:\n    dest: \".windsurf/hooks.json\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".windsurf/rules/core.md"));
+    assert!(project.exists(".windsurf/hooks.json"));
+    project.write(".windsurf/rules/mine.md", "hand-written\n");
+
+    std::fs::remove_file(project.join(".ai/src/tools/windsurf.yaml")).unwrap();
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "earlier output(s) from .windsurf/rules/ (targets.rules moved)",
+        ));
+    assert!(project.exists(".devin/rules/core.md"));
+    assert!(!project.exists(".windsurf/rules/core.md"));
+    assert!(!project.exists(".windsurf/skills"));
+    assert!(!project.exists(".windsurf/hooks.json"));
+    assert_eq!(project.read(".windsurf/rules/mine.md"), "hand-written\n");
+    project.agentsync().arg("check").assert().success();
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".windsurf/rules/mine.md"), "hand-written\n");
+}
+
+#[test]
+fn rollback_restores_what_a_moved_destination_removed() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    let generated = project.read(".windsurf/rules/core.md");
+    std::fs::remove_file(project.join(".ai/src/tools/windsurf.yaml")).unwrap();
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".windsurf/rules/core.md"));
+
+    project
+        .agentsync()
+        .args(["rollback", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(project.read(".windsurf/rules/core.md"), generated);
+}
+
+#[test]
+fn sync_cline_writes_native_skills_and_moves_off_clinerules() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["cline"]);
+    project.write(
+        ".ai/src/tools/cline.yaml",
+        "targets:\n  agents:\n    dest: \".clinerules/00-context.md\"\n  rules:\n    dest: \".clinerules\"\n  commands:\n    dest: \".clinerules/workflows\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".clinerules/00-context.md"));
+    project.write(".clinerules/team.md", "hand-written\n");
+
+    std::fs::remove_file(project.join(".ai/src/tools/cline.yaml")).unwrap();
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        "---\nname: bloc\ndescription: Bloc\n---\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists("AGENTS.md"));
+    assert!(project.exists(".cline/rules/core.md"));
+    assert!(project.exists(".cline/skills/bloc/SKILL.md"));
+    assert!(project.exists(".cline/workflows/review.md"));
+    assert!(!project.exists(".clinerules/00-context.md"));
+    assert!(!project.exists(".clinerules/core.md"));
+    assert!(!project.exists(".clinerules/workflows"));
+    assert_eq!(project.read(".clinerules/team.md"), "hand-written\n");
+    assert!(!project.read("AGENTS.md").contains("## Skills"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_cline_leaves_a_single_file_clinerules_alone() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["cline"]);
+    project.write(".clinerules", "# hand-written Cline rules\n");
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".cline/rules/core.md"));
+    assert_eq!(project.read(".clinerules"), "# hand-written Cline rules\n");
+}
+
+#[test]
+fn a_failed_sync_restores_what_it_removed_at_a_moved_destination() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["windsurf"]);
+    project.write(
+        ".ai/src/tools/windsurf.yaml",
+        "targets:\n  rules:\n    dest: \".windsurf/rules\"\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    project.write(".ai/src/tools/windsurf.yaml", "post_sync: \"false\"\n");
+    project
+        .agentsync()
+        .env("AGENTSYNC_ALLOW_POST_SYNC", "true")
+        .arg("sync")
+        .assert()
+        .failure();
+    assert!(project.exists(".windsurf/rules/core.md"));
+    assert!(!project.exists(".devin/rules/core.md"));
+}
+
+// ── Command filters ──────────────────────────────────────────────────────
+
+#[test]
+fn sync_command_filters_apply_to_native_and_toml_command_dirs() {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["claude", "gemini"]);
+    for tool in ["claude", "gemini"] {
+        project.write(
+            &format!(".ai/src/tools/{tool}.yaml"),
+            "targets:\n  commands:\n    exclude:\n      - review.md\n",
+        );
+    }
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".claude/commands/review.md"));
+    assert!(project.exists(".claude/commands/fix-issue.md"));
+    assert!(!project.exists(".gemini/commands/review.toml"));
+    assert!(project.exists(".gemini/commands/fix-issue.toml"));
+    project.agentsync().arg("check").assert().success();
+}
+
+// ── Skill categories ─────────────────────────────────────────────────────
+
+fn skill(name: &str) -> String {
+    format!("---\nname: {name}\ndescription: The {name} fixture skill\n---\n\nBody.\n")
+}
+
+fn categorized_project() -> Project {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["claude", "codex"]);
+    project.write(".ai/src/skills/flutter/bloc/SKILL.md", &skill("bloc"));
+    project.write(
+        ".ai/src/skills/flutter/ui/slivers/SKILL.md",
+        &skill("slivers"),
+    );
+    project.write(
+        ".ai/src/skills/flutter/ui/slivers/references/grid.md",
+        "Grid.\n",
+    );
+    project.write(
+        ".ai/src/skills/cloudflare/wrangler/SKILL.md",
+        &skill("wrangler"),
+    );
+    project
+}
+
+#[test]
+fn sync_lands_categorized_skills_flat_by_name_in_every_skills_dir() {
+    let project = categorized_project();
+    project.agentsync().arg("sync").assert().success();
+    for dest in [".claude/skills", ".agents/skills"] {
+        assert_eq!(
+            project.read(&format!("{dest}/bloc/SKILL.md")),
+            skill("bloc")
+        );
+        assert!(project.exists(&format!("{dest}/slivers/references/grid.md")));
+        assert!(project.exists(&format!("{dest}/wrangler/SKILL.md")));
+        assert!(!project.exists(&format!("{dest}/flutter")));
+    }
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_groups_the_inlined_skill_index_by_category() {
+    let project = categorized_project();
+    project.enable_tools(&["amazonq"]);
+    project.agentsync().arg("sync").assert().success();
+    let index = project.read(".amazonq/rules/00-context.md");
+    assert!(index.contains(
+        "\n### cloudflare\n\n- `wrangler` — The wrangler fixture skill\n\n### flutter\n\n- `bloc` — The bloc fixture skill\n\n### flutter/ui\n\n- `slivers` — The slivers fixture skill\n"
+    ));
+    assert!(index.find("- `agentsync` — ").unwrap() < index.find("### ").unwrap());
+}
+
+#[test]
+fn sync_filters_a_whole_category_by_its_path() {
+    let project = categorized_project();
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  skills:\n    exclude:\n      - cloudflare/*\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".agents/skills/wrangler"));
+    assert!(project.exists(".agents/skills/bloc/SKILL.md"));
+    assert!(project.exists(".claude/skills/wrangler/SKILL.md"));
+}
+
+#[test]
+fn sync_ignores_a_shared_name_every_skills_consumer_filters_out() {
+    let project = categorized_project();
+    project.enable_tools(&["minimax"]);
+    project.write(".ai/src/skills/backend/bloc/SKILL.md", &skill("bloc"));
+    for tool in ["claude", "codex"] {
+        project.write(
+            &format!(".ai/src/tools/{tool}.yaml"),
+            "targets:\n  skills:\n    exclude:\n      - backend/*\n",
+        );
+    }
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(project.read(".claude/skills/bloc/SKILL.md"), skill("bloc"));
+}
+
+#[test]
+fn sync_refuses_two_skills_sharing_a_name_and_changes_nothing() {
+    let project = categorized_project();
+    project.agentsync().arg("sync").assert().success();
+    let before = project.sha256(".claude/skills/bloc/SKILL.md");
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        "---\nname: bloc\ndescription: Edited\n---\n",
+    );
+    project.write(".ai/src/skills/backend/bloc/SKILL.md", &skill("bloc"));
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "[ERROR] Skill name 'bloc' is claimed by skills/backend/bloc, skills/flutter/bloc; every tool installs skills flat by name\n  • Rename one skill of each pair: skill names are unique across categories\n",
+        ));
+    assert_eq!(project.sha256(".claude/skills/bloc/SKILL.md"), before);
 }

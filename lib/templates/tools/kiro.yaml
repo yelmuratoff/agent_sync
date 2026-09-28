@@ -1,0 +1,28 @@
+name: "Kiro"
+enabled: false
+
+# Kiro (IDE and CLI, successor to the Amazon Q Developer CLI) reads the root
+# AGENTS.md and project config under .kiro/: https://kiro.dev/docs/steering/
+targets:
+  agents:
+    dest: "AGENTS.md"
+
+  rules:
+    dest: ".kiro/steering"
+    header: "---\ninclusion: always\n---"
+    scoped_header: "---\ninclusion: fileMatch\nfileMatchPattern: {globs_list}\n---"
+
+  skills:
+    dest: ".kiro/skills"
+
+  # Every Kiro skill is also a slash command, in the IDE and the CLI alike.
+  commands:
+    as_skills: true
+
+  subagents:
+    dest: ".kiro/agents"
+    format: kiro_md
+
+  mcp:
+    source: ".ai/src/mcp/kiro.json"
+    dest: ".kiro/settings/mcp.json"

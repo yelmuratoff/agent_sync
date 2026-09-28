@@ -22,7 +22,7 @@ fn list_reads_project_skills_without_a_catalog() {
         .args(["skills", "list"])
         .assert()
         .success()
-        .stdout("name\tdescription\tpath\ndeploy\tDeploy the app safely\t.ai/src/skills/deploy/SKILL.md\n")
+        .stdout("name\tdescription\tpath\tcategory\ndeploy\tDeploy the app safely\t.ai/src/skills/deploy/SKILL.md\t\n")
         .stderr("");
 }
 
@@ -38,7 +38,7 @@ fn list_neutralizes_invisible_formatting_in_skill_metadata() {
         .args(["skills", "list"])
         .assert()
         .success()
-        .stdout("name\tdescription\tpath\ndeploy\tsafe spoof\t.ai/src/skills/deploy/SKILL.md\n");
+        .stdout("name\tdescription\tpath\tcategory\ndeploy\tsafe spoof\t.ai/src/skills/deploy/SKILL.md\t\n");
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn show_reports_unknown_and_invalid_skills() {
 }
 
 #[test]
-fn check_reports_missing_skill_file_at_project_path() {
+fn check_reports_a_directory_with_no_skill_at_any_depth() {
     let project = project();
     project.write(".ai/src/skills/empty/reference.md", "# Reference\n");
     project
@@ -326,10 +326,97 @@ fn check_reports_missing_skill_file_at_project_path() {
         .args(["skills", "check"])
         .assert()
         .failure()
+        .stdout(".ai/src/skills/empty/: no SKILL.md here or in any subdirectory\nChecked 0 skills: 1 issue(s)\n");
+}
+
+fn skill(name: &str) -> String {
+    format!("---\nname: {name}\ndescription: The {name} skill\n---\n")
+}
+
+fn categorized_project() -> Project {
+    let project = project();
+    project.write(".ai/src/skills/commit/SKILL.md", &skill("commit"));
+    project.write(".ai/src/skills/flutter/bloc/SKILL.md", &skill("bloc"));
+    project.write(
+        ".ai/src/skills/flutter/ui/slivers/SKILL.md",
+        &skill("slivers"),
+    );
+    project.write(".ai/src/skills/backend/auth/SKILL.md", &skill("auth"));
+    project
+}
+
+#[test]
+fn list_shows_each_category_and_filters_by_it() {
+    let project = categorized_project();
+    project
+        .agentsync()
+        .args(["skills", "list", "--include", "flutter/* commit"])
+        .assert()
+        .success()
+        .stdout(
+            "name\tdescription\tpath\tcategory\n\
+             commit\tThe commit skill\t.ai/src/skills/commit/SKILL.md\t\n\
+             bloc\tThe bloc skill\t.ai/src/skills/flutter/bloc/SKILL.md\tflutter\n\
+             slivers\tThe slivers skill\t.ai/src/skills/flutter/ui/slivers/SKILL.md\tflutter/ui\n",
+        );
+}
+
+#[test]
+fn show_names_the_category_of_a_categorized_skill() {
+    let project = categorized_project();
+    project
+        .agentsync()
+        .args(["skills", "show", "slivers"])
+        .assert()
+        .success()
+        .stdout(
+            "Name: slivers\nDescription: The slivers skill\nCategory: flutter/ui\nPath: .ai/src/skills/flutter/ui/slivers/SKILL.md\n",
+        );
+}
+
+#[test]
+fn check_reports_name_collisions_across_categories() {
+    let project = categorized_project();
+    project.write(".ai/src/skills/flutter/auth/SKILL.md", &skill("auth"));
+    project
+        .agentsync()
+        .args(["skills", "check"])
+        .assert()
+        .failure()
+        .stdout(
+            "auth: name claimed by .ai/src/skills/backend/auth, .ai/src/skills/flutter/auth — tools install skills flat by name\nChecked 5 skills: 1 issue(s)\n",
+        );
+}
+
+#[test]
+fn check_reports_a_category_name_add_would_refuse() {
+    let project = categorized_project();
+    project.write(
+        ".ai/src/skills/Mobile/navigation/SKILL.md",
+        &skill("navigation"),
+    );
+    project
+        .agentsync()
+        .args(["skills", "check"])
+        .assert()
+        .failure()
+        .stdout(
+            ".ai/src/skills/Mobile/: category name is not lowercase letters, digits, and single hyphens\nChecked 5 skills: 1 issue(s)\n",
+        );
+}
+
+#[test]
+fn check_reports_directories_below_the_category_limit() {
+    let project = categorized_project();
+    project.write(".ai/src/skills/a/b/c/d/e/f/SKILL.md", &skill("f"));
+    project
+        .agentsync()
+        .args(["skills", "check"])
+        .assert()
+        .failure()
         .stdout(predicate::str::contains(
-            ".ai/src/skills/empty/SKILL.md: missing SKILL.md",
-        ))
-        .stdout(predicate::str::contains("Checked 1 skills: 1 issue(s)"));
+            ".ai/src/skills/a/b/c/d/e/: deeper than 4 categories — not synced\n",
+        ));
 }
 
 #[test]

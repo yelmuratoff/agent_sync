@@ -57,81 +57,19 @@ pub(super) fn scaffold(
     s: Scaffold,
 ) -> Result<(), Failure> {
     let style = run.style;
-    let has = |section: &str| s.content.iter().any(|c| c == section);
     let src = format!("{}/src", s.ai_dir);
-
-    create_dir(&src)?;
-    if has("rules") {
-        create_dir(&format!("{src}/rules"))?;
-    }
-    if has("skills") {
-        create_dir(&format!("{src}/skills"))?;
-    }
-    if has("commands") {
-        create_dir(&format!("{src}/commands"))?;
-    }
-    if has("subagents") {
-        create_dir(&format!("{src}/agents"))?;
-    }
+    write_content(&s, &src)?;
     checkpoint(interrupt)?;
-
-    if s.no_templates {
-        if has("agents") {
-            std::fs::write(format!("{src}/AGENTS.md"), b"")
-                .map_err(|e| Error::io(format!("{src}/AGENTS.md"), e))?;
-        }
-    } else {
-        for (rel, bytes) in catalog::template_files() {
-            let (dir, _) = rel.rsplit_once('/').unwrap_or(("", rel.as_str()));
-            let wanted = match dir {
-                "" => has("agents"),
-                "rules" => has("rules"),
-                "commands" => has("commands"),
-                "agents" => has("subagents"),
-                _ => has("skills"),
-            };
-            if wanted {
-                write_template(Path::new(&format!("{src}/{rel}")), bytes)?;
-            }
-        }
-    }
+    let payload_lines = write_payloads(s.tools, &src)?;
     checkpoint(interrupt)?;
-
-    let mut payload_lines = Vec::new();
-    for resource in ["settings", "hooks"] {
-        for slug in s.tools {
-            for file in catalog::base_payloads(resource, slug) {
-                let name = file
-                    .path()
-                    .file_name()
-                    .map(|n| n.disk_text())
-                    .unwrap_or_default();
-                let ext = name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or(&name);
-                let rel = format!("tools/{slug}/{resource}.{ext}");
-                write_template(Path::new(&format!("{src}/{rel}")), file.contents())?;
-                payload_lines.push(rel);
-            }
-        }
-    }
-    checkpoint(interrupt)?;
-
-    let config_file = format!("{}/agent_sync.yaml", s.ai_dir);
-    if !Path::new(&config_file).is_file()
-        && !Path::new(&format!("{}/agent_sync.yaml", s.target)).is_file()
-    {
-        std::fs::write(
-            &config_file,
-            project_config_text(run.env.version, s.tools, s.outputs),
-        )
-        .map_err(|e| Error::io(&config_file, e))?;
-    }
+    write_project_config(&s, run.env.version)?;
     checkpoint(interrupt)?;
 
     let mut manifest = TemplateManifest::load(Path::new(s.target))?;
     let templates = catalog::template_files();
     manifest.heal_from_match(
         templates.iter().map(|(rel, bytes)| (rel.as_str(), *bytes)),
-        Path::new(&src),
+        |rel| Path::new(&src).join(rel),
     );
     manifest.write(Path::new(s.target))?;
     checkpoint(interrupt)?;
@@ -147,18 +85,84 @@ pub(super) fn scaffold(
     }
     checkpoint(interrupt)?;
 
-    run.say(&summary(
-        style,
-        s.ai_dir,
-        s.tools,
-        &payload_lines,
-        s.detect_source,
-        s.no_templates,
-        s.outputs,
-        s.run_sync,
-    ))?;
+    run.say(&summary(style, &s, &payload_lines))?;
     run.say(&format!("Backup: {}\n\n", s.shown_backup))?;
     Ok(())
+}
+
+/// The content directories `--content` names, then their shipped templates,
+/// or an empty `AGENTS.md` under `--no-templates`.
+fn write_content(s: &Scaffold, src: &str) -> Result<(), Error> {
+    let has = |section: &str| s.content.iter().any(|c| c == section);
+    create_dir(src)?;
+    for (section, dir) in [
+        ("rules", "rules"),
+        ("skills", "skills"),
+        ("commands", "commands"),
+        ("subagents", "agents"),
+    ] {
+        if has(section) {
+            create_dir(&format!("{src}/{dir}"))?;
+        }
+    }
+    if s.no_templates {
+        if has("agents") {
+            std::fs::write(format!("{src}/AGENTS.md"), b"")
+                .map_err(|e| Error::io(format!("{src}/AGENTS.md"), e))?;
+        }
+        return Ok(());
+    }
+    for (rel, bytes) in catalog::template_files() {
+        let (dir, _) = rel.rsplit_once('/').unwrap_or(("", rel.as_str()));
+        let wanted = match dir {
+            "" => has("agents"),
+            "rules" => has("rules"),
+            "commands" => has("commands"),
+            "agents" => has("subagents"),
+            _ => has("skills"),
+        };
+        if wanted {
+            write_template(Path::new(&format!("{src}/{rel}")), bytes)?;
+        }
+    }
+    Ok(())
+}
+
+/// Each enabled tool's shipped settings and hooks payloads; the paths written,
+/// below `src`.
+fn write_payloads(tools: &[String], src: &str) -> Result<Vec<String>, Error> {
+    let mut written = Vec::new();
+    for resource in ["settings", "hooks"] {
+        for slug in tools {
+            for file in catalog::base_payloads(resource, slug) {
+                let name = file
+                    .path()
+                    .file_name()
+                    .map(|n| n.disk_text())
+                    .unwrap_or_default();
+                let ext = name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or(&name);
+                let rel = format!("tools/{slug}/{resource}.{ext}");
+                write_template(Path::new(&format!("{src}/{rel}")), file.contents())?;
+                written.push(rel);
+            }
+        }
+    }
+    Ok(written)
+}
+
+/// `agent_sync.yaml`, unless the project already has one in `.ai/` or its root.
+fn write_project_config(s: &Scaffold, version: &str) -> Result<(), Error> {
+    let config_file = format!("{}/agent_sync.yaml", s.ai_dir);
+    if Path::new(&config_file).is_file()
+        || Path::new(&format!("{}/agent_sync.yaml", s.target)).is_file()
+    {
+        return Ok(());
+    }
+    std::fs::write(
+        &config_file,
+        project_config_text(version, s.tools, s.outputs),
+    )
+    .map_err(|e| Error::io(&config_file, e))
 }
 
 fn create_dir(path: &str) -> Result<(), Error> {

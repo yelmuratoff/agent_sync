@@ -76,6 +76,26 @@ fn base_skills_the_projects_own_copy_wins() {
 }
 
 #[test]
+fn base_skills_the_projects_categorized_copy_wins_without_a_collision() {
+    let project = synced_project();
+    project.write(
+        ".ai/src/skills/meta/agentsync/SKILL.md",
+        "---\nname: agentsync\ndescription: Project version\n---\n\nPROJECT OVERRIDE\n",
+    );
+    project
+        .agentsync()
+        .args(["sync", "--force"])
+        .assert()
+        .success();
+    assert!(
+        project
+            .read(".claude/skills/agentsync/SKILL.md")
+            .contains("PROJECT OVERRIDE")
+    );
+    assert!(!project.exists(".claude/skills/agentsync/references"));
+}
+
+#[test]
 fn base_skills_base_skills_false_leaves_it_out_entirely() {
     let project = synced_project();
     set_config(&project, "base_skills: false");

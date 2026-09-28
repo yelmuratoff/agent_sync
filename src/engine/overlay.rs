@@ -6,6 +6,7 @@ use crate::paths::DiskText;
 use std::path::{Path, PathBuf};
 
 use crate::engine::session::Session;
+use crate::engine::skill_tree;
 use crate::engine::workspace::{Content, Workspace};
 use crate::paths::{self, ENGINE_ROOT, OVERLAY_ROOT};
 use crate::{Error, config::profiles, config::yaml_subset};
@@ -126,10 +127,18 @@ fn fill_parent(
         if !ws.is_dir(&parent_dir) {
             continue;
         }
+        let shadowed = if *category == "skills" {
+            skill_tree::shadowed(
+                &skill_tree::discover(ws, &format!("{src}/skills")),
+                &skill_tree::discover(ws, &parent_dir),
+            )
+        } else {
+            Vec::new()
+        };
         for file in ws.files_under(&parent_dir) {
             let rel = &file[parent_dir.len() + 1..];
             let target = format!("{src}/{category}/{rel}");
-            if ws.exists(&target) {
+            if ws.exists(&target) || skill_tree::is_inside(rel, &shadowed) {
                 continue;
             }
             ws.create_dir_all(&paths::parent(&target))?;
@@ -333,11 +342,22 @@ pub fn merge_shared_parent(
         if !parent_dir.is_dir() {
             continue;
         }
+        let shadowed = if *category == "skills" {
+            skill_tree::shadowed(
+                &skill_tree::discover(ws, &format!("{child_src}/skills")),
+                &skill_tree::discover(
+                    &Workspace::on_disk(parent_src),
+                    &format!("{parent_src}/skills"),
+                ),
+            )
+        } else {
+            Vec::new()
+        };
         let mut files = Vec::new();
         collect_regular_files(&parent_dir, "", &mut files);
         for (rel, disk) in files {
             let target = format!("{child_src}/{category}/{rel}");
-            if !ws.exists(&target) {
+            if !ws.exists(&target) && !skill_tree::is_inside(&rel, &shadowed) {
                 ws.insert_file(&target, Content::Disk(disk));
             }
         }

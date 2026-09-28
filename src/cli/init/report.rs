@@ -2,19 +2,20 @@
 
 use std::path::Path;
 
+use super::Choices;
+use super::scaffold::Scaffold;
 use crate::config::catalog;
 use crate::output::style::Style;
 use crate::paths::DiskText;
 
 /// `_init_print_plan`.
-pub(super) fn plan(
-    style: &Style,
-    target: &str,
-    tools: &[String],
-    content: &[String],
-    detect_source: &str,
-    no_templates: bool,
-) -> String {
+pub(super) fn plan(style: &Style, target: &str, choices: &Choices, no_templates: bool) -> String {
+    let Choices {
+        tools,
+        content,
+        detect_source,
+        ..
+    } = choices;
     let mut text = format!(
         "{}\n  Target:   {}\n",
         style.bold("Plan:"),
@@ -98,17 +99,22 @@ fn count_dirs(dir: &Path) -> usize {
 }
 
 /// `_init_print_summary`.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn summary(
-    style: &Style,
-    ai_dir: &str,
-    tools: &[String],
-    payload_lines: &[String],
-    detect_source: &str,
-    no_templates: bool,
-    outputs: &str,
-    run_sync: bool,
-) -> String {
+pub(super) fn summary(style: &Style, scaffold: &Scaffold, payload_lines: &[String]) -> String {
+    let mut text = created_lines(style, scaffold, payload_lines);
+    text.push('\n');
+    text.push_str(&tools_line(style, scaffold.tools, scaffold.detect_source));
+    text.push_str(&next_steps(style, scaffold));
+    text
+}
+
+/// One `Created …` line per file and directory the scaffold wrote.
+fn created_lines(style: &Style, scaffold: &Scaffold, payload_lines: &[String]) -> String {
+    let Scaffold {
+        ai_dir,
+        no_templates,
+        outputs,
+        ..
+    } = *scaffold;
     let src = Path::new(ai_dir).join("src");
     let mut text = String::from("\n");
     if outputs == "committed" {
@@ -169,43 +175,47 @@ pub(super) fn summary(
             style.cyan(&format!(".ai/src/{line}"))
         ));
     }
-    text.push('\n');
+    text
+}
+
+/// The enabled tools and where the list came from.
+fn tools_line(style: &Style, tools: &[String], detect_source: &str) -> String {
     if tools.is_empty() {
-        text.push_str(&format!(
+        return format!(
             "   {}\n",
             style.dim("No tools enabled. Run 'agentsync enable <slug>' to opt in.")
-        ));
-    } else {
-        let joined = tools.join(", ");
-        let count = tools.len();
-        let line = match detect_source {
-            "detect" => format!(
-                "   {} {joined}\n",
-                style.green(&format!("Auto-detected {count} tool(s):"))
-            ),
-            "flag" => format!(
-                "   {} {joined} {}\n",
-                style.green(&format!("Enabled {count} tool(s):")),
-                style.dim("(from --tools)")
-            ),
-            "mixed" => format!(
-                "   {} {joined} {}\n",
-                style.green(&format!("Enabled {count} tool(s):")),
-                style.dim("(auto-detect + --tools)")
-            ),
-            "interactive" => format!(
-                "   {} {joined} {}\n",
-                style.green(&format!("Enabled {count} tool(s):")),
-                style.dim("(selected)")
-            ),
-            _ => format!(
-                "   {} {joined}\n",
-                style.green(&format!("Enabled {count} tool(s):"))
-            ),
-        };
-        text.push_str(&line);
+        );
     }
-    text.push_str(&format!("\n{}\n\nNext steps:\n", style.green("Done!")));
+    let joined = tools.join(", ");
+    let count = tools.len();
+    let origin = match detect_source {
+        "detect" => {
+            let label = style.green(&format!("Auto-detected {count} tool(s):"));
+            return format!("   {label} {joined}\n");
+        }
+        "flag" => "(from --tools)",
+        "mixed" => "(auto-detect + --tools)",
+        "interactive" => "(selected)",
+        _ => "",
+    };
+    let label = style.green(&format!("Enabled {count} tool(s):"));
+    if origin.is_empty() {
+        format!("   {label} {joined}\n")
+    } else {
+        format!("   {label} {joined} {}\n", style.dim(origin))
+    }
+}
+
+/// `Done!` and the numbered next steps, then the customize hints.
+fn next_steps(style: &Style, scaffold: &Scaffold) -> String {
+    let Scaffold {
+        ai_dir,
+        tools,
+        run_sync,
+        ..
+    } = *scaffold;
+    let agents = Path::new(ai_dir).join("src/AGENTS.md");
+    let mut text = format!("\n{}\n\nNext steps:\n", style.green("Done!"));
     let mut step = 1;
     if agents.is_file() {
         text.push_str(&format!(

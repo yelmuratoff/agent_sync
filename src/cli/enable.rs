@@ -109,6 +109,70 @@ fn scaffoldable(project: &Project, tool: &Tool) -> Vec<(PathBuf, &'static [u8])>
     work
 }
 
+/// The scaffold mode, `--yes`, and the slugs; `Err(None)` asks for the help,
+/// `Err(Some(flag))` names an unknown flag.
+fn enable_args(args: &[String]) -> Result<(Scaffold, bool, Vec<String>), Option<String>> {
+    let (mut scaffold, mut yes, mut tools) = (Scaffold::Auto, false, Vec::new());
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--scaffold" => scaffold = Scaffold::Always,
+            "--no-scaffold" => scaffold = Scaffold::Never,
+            "--yes" | "-y" => yes = true,
+            "--help" | "-h" => return Err(None),
+            "--" => tools.extend(rest.by_ref().cloned()),
+            flag if flag.starts_with('-') => return Err(Some(flag.to_string())),
+            slug => tools.push(slug.to_string()),
+        }
+    }
+    Ok((scaffold, yes, tools))
+}
+
+/// What `enable` did with each slug: enabled now, already enabled, or unknown.
+#[derive(Default)]
+struct Enabled {
+    added: Vec<String>,
+    already: usize,
+    unknown: Vec<String>,
+}
+
+fn enable_report(project: &Project, style: &Style, enabled: &Enabled) -> Result<String, Error> {
+    let Enabled {
+        added,
+        already,
+        unknown,
+    } = enabled;
+    let mut text = String::new();
+    if !added.is_empty() {
+        let heading = format!("Enabled {} tool(s)", added.len());
+        text.push_str(&format!("\n{}\n", style.green(&heading)));
+        for slug in added {
+            let tool = Tool::load(project, slug)?;
+            text.push_str(&format!(
+                "    {} {} {}\n",
+                style.green("●"),
+                tool.display_name(),
+                style.dim(&format!("({slug})"))
+            ));
+        }
+    }
+    if *already > 0 {
+        let note = format!("{already} tool(s) were already enabled");
+        text.push_str(&format!("\n{}\n", style.dim(&note)));
+    }
+    if !unknown.is_empty() {
+        text.push_str(&format!("\n{}\n", style.yellow("Unknown tool(s):")));
+        for slug in unknown {
+            text.push_str(&format!("    {slug}\n"));
+        }
+        text.push_str(&format!(
+            "\nRun {} to see available tool slugs.\n",
+            style.cyan("agentsync list")
+        ));
+    }
+    Ok(text)
+}
+
 pub fn enable(
     args: &[String],
     discover: &dyn Fn() -> Result<Project, Error>,
@@ -118,35 +182,25 @@ pub fn enable(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut scaffold = Scaffold::Auto;
-    let mut yes = false;
-    let mut tools: Vec<String> = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--scaffold" => scaffold = Scaffold::Always,
-            "--no-scaffold" => scaffold = Scaffold::Never,
-            "--yes" | "-y" => yes = true,
-            "--help" | "-h" => {
-                put(out, ENABLE_HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            "--" => tools.extend(rest.by_ref().cloned()),
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!(
-                        "{}: Unknown flag: {flag}\nUsage: {}\n",
-                        style.red("Error"),
-                        ENABLE_HELP.synopsis_line()
-                    )
-                    .as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            slug => tools.push(slug.to_string()),
+    let (mut scaffold, yes, tools) = match enable_args(args) {
+        Ok(parsed) => parsed,
+        Err(None) => {
+            put(out, ENABLE_HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
+        Err(Some(flag)) => {
+            put(
+                err,
+                format!(
+                    "{}: Unknown flag: {flag}\nUsage: {}\n",
+                    style.red("Error"),
+                    ENABLE_HELP.synopsis_line()
+                )
+                .as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     if tools.is_empty() {
         put(
             err,
@@ -170,73 +224,23 @@ pub fn enable(
     }
     let config = resolve_or_create_config(&project.root)?;
 
-    let (mut already, mut unknown, mut added) = (0usize, Vec::new(), Vec::new());
+    let mut enabled = Enabled::default();
     for slug in &tools {
         if !tool_exists(&project, slug)? {
-            unknown.push(slug.clone());
+            enabled.unknown.push(slug.clone());
         } else if project.enabled_tools()?.contains(slug) {
-            already += 1;
+            enabled.already += 1;
         } else {
             yaml_edit::list_append(&config, "tools.enabled", slug)?;
-            added.push(slug.clone());
+            enabled.added.push(slug.clone());
         }
     }
-
-    if !added.is_empty() {
-        put(
-            out,
-            format!(
-                "\n{}\n",
-                style.green(&format!("Enabled {} tool(s)", added.len()))
-            )
-            .as_bytes(),
-        )?;
-        for slug in &added {
-            let tool = Tool::load(&project, slug)?;
-            put(
-                out,
-                format!(
-                    "    {} {} {}\n",
-                    style.green("●"),
-                    tool.display_name(),
-                    style.dim(&format!("({slug})"))
-                )
-                .as_bytes(),
-            )?;
-        }
-    }
-    if already > 0 {
-        put(
-            out,
-            format!(
-                "\n{}\n",
-                style.dim(&format!("{already} tool(s) were already enabled"))
-            )
-            .as_bytes(),
-        )?;
-    }
-    if !unknown.is_empty() {
-        put(
-            out,
-            format!("\n{}\n", style.yellow("Unknown tool(s):")).as_bytes(),
-        )?;
-        for slug in &unknown {
-            put(out, format!("    {slug}\n").as_bytes())?;
-        }
-        put(
-            out,
-            format!(
-                "\nRun {} to see available tool slugs.\n",
-                style.cyan("agentsync list")
-            )
-            .as_bytes(),
-        )?;
-    }
-    let status = if unknown.is_empty() { 0 } else { 1 };
-    if added.is_empty() {
+    put(out, enable_report(&project, style, &enabled)?.as_bytes())?;
+    let status = u8::from(!enabled.unknown.is_empty());
+    if enabled.added.is_empty() {
         return Ok(status);
     }
-    for slug in &added {
+    for slug in &enabled.added {
         let tool = Tool::load(&project, slug)?;
         let work = scaffoldable(&project, &tool);
         let write = match scaffold {

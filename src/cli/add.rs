@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::put;
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::{Error, config::catalog, engine::staging};
@@ -14,7 +15,7 @@ pub const HELP: Help = Help {
     command: "add",
     tagline: "scaffold a rule, skill, command, subagent, or MCP server",
     synopsis: &[
-        "add <kind> <name> [--force]",
+        "add <kind> <name> [--category <path>] [--force]",
         "add mcp <server> (--url URL | --command CMD) [MCP OPTIONS] [--force]",
     ],
     description: &[
@@ -26,7 +27,10 @@ pub const HELP: Help = Help {
             title: "KINDS",
             entries: &[
                 ("rule", "Create .ai/src/rules/<name>.md"),
-                ("skill", "Create .ai/src/skills/<name>/SKILL.md"),
+                (
+                    "skill",
+                    "Create .ai/src/skills/[<category>/]<name>/SKILL.md",
+                ),
                 ("command", "Create .ai/src/commands/<name>.md"),
                 ("subagent", "Create .ai/src/agents/<name>.md"),
                 ("mcp", "Add an MCP server entry to .ai/src/mcp.json"),
@@ -44,6 +48,10 @@ pub const HELP: Help = Help {
         Section {
             title: "OPTIONS",
             entries: &[
+                (
+                    "--category <path>",
+                    "Place a skill in a category, e.g. flutter/ui",
+                ),
                 ("-f, --force", "Overwrite an existing file or server entry"),
                 ("-h, --help", "Show this help"),
             ],
@@ -52,6 +60,7 @@ pub const HELP: Help = Help {
     examples: &[
         "add rule testing",
         "add skill deploy",
+        "add skill slivers --category flutter/ui",
         "add mcp linear --url https://mcp.linear.app/sse",
         "add mcp github --command npx --args \"-y @github/mcp-server\"",
     ],
@@ -68,40 +77,105 @@ fn usage(message: &str, style: &Style, err: &mut dyn Write) -> Result<(), Error>
 }
 
 /// `_add_validate_name`: the refusal, or nothing.
-fn validate_name(name: &str, style: &Style) -> Option<String> {
-    let error = style.red("Error");
+fn validate_name(name: &str) -> Option<String> {
     if name.is_empty() {
-        return Some(format!("{error}: Name is empty.\n"));
+        return Some("Name is empty.".into());
     }
     if name.contains('/') || name.contains('\\') {
-        return Some(format!(
-            "{error}: Name cannot contain path separators: {name}\n"
-        ));
+        return Some(format!("Name cannot contain path separators: {name}"));
     }
     if name.contains("..") {
-        return Some(format!("{error}: Name cannot contain '..': {name}\n"));
+        return Some(format!("Name cannot contain '..': {name}"));
     }
     if name.starts_with('.') || name.starts_with('-') {
-        return Some(format!(
-            "{error}: Name cannot start with '.' or '-': {name}\n"
-        ));
+        return Some(format!("Name cannot start with '.' or '-': {name}"));
     }
     if !name
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
         return Some(format!(
-            "{error}: Name may only contain letters, digits, hyphens, and underscores: {name}\n"
+            "Name may only contain letters, digits, hyphens, and underscores: {name}"
         ));
     }
     None
 }
 
+/// Why `entry` cannot be scaffolded, checked in the order `cmd_add` reports.
+fn entry_refusal(entry: &Entry, root: &str) -> Option<ParseStop> {
+    let Entry { kind, name, .. } = entry;
+    if !matches!(kind.as_str(), "rule" | "skill" | "command" | "subagent") {
+        return Some(ParseStop::Error(format!(
+            "Unknown kind '{kind}'.\nValid kinds: rule, skill, command, subagent"
+        )));
+    }
+    if let Some(message) = validate_name(name) {
+        return Some(ParseStop::Error(message));
+    }
+    if kind == "skill" && !crate::config::skill_metadata::valid_name(name) {
+        return Some(ParseStop::Error(format!(
+            "Skill name must be 1–64 lowercase letters, digits, or single hyphens and cannot end with a hyphen: {name}"
+        )));
+    }
+    if kind != "skill" && entry.category.is_some() {
+        return Some(ParseStop::Usage(format!(
+            "--category applies to skills, not {kind}"
+        )));
+    }
+    if kind != "skill" {
+        return None;
+    }
+    skill_place_refusal(root, &entry.category_path(), name).map(ParseStop::Error)
+}
+
+/// Why `category` cannot hold a skill, or nothing; an empty one is the root.
+fn category_refusal(category: &str) -> Option<String> {
+    if category.is_empty() {
+        return None;
+    }
+    let segments: Vec<&str> = category.split('/').collect();
+    if let Some(bad) = segments
+        .iter()
+        .find(|segment| !crate::config::skill_metadata::valid_name(segment))
+    {
+        return Some(format!(
+            "Category segments must be lowercase letters, digits, or single hyphens: '{bad}' in {category}"
+        ));
+    }
+    (segments.len() > skill_tree::MAX_CATEGORY_DEPTH).then(|| {
+        format!(
+            "Category is deeper than {} levels: {category}",
+            skill_tree::MAX_CATEGORY_DEPTH
+        )
+    })
+}
+
+/// Why a skill named `name` cannot land in `category`, or nothing: a bad
+/// category path, or the name already taken at another path.
+fn skill_place_refusal(root: &str, category: &str, name: &str) -> Option<String> {
+    if let Some(refusal) = category_refusal(category) {
+        return Some(refusal);
+    }
+    let wanted = if category.is_empty() {
+        name.to_string()
+    } else {
+        format!("{category}/{name}")
+    };
+    let skills = format!("{root}/.ai/src/skills");
+    let tree = skill_tree::discover(&Workspace::on_disk(root), &skills);
+    let taken = tree.find(name).filter(|skill| skill.rel != wanted)?;
+    Some(format!(
+        "Skill '{name}' already exists at .ai/src/skills/{}/\n\nSkill names are unique across categories — every tool installs skills flat by name.",
+        taken.rel
+    ))
+}
+
 /// `_add_resolve_dest`, below `.ai/src/`.
-fn dest_rel(kind: &str, name: &str) -> String {
+fn dest_rel(kind: &str, category: &str, name: &str) -> String {
     match kind {
         "rule" => format!(".ai/src/rules/{name}.md"),
-        "skill" => format!(".ai/src/skills/{name}/SKILL.md"),
+        "skill" if category.is_empty() => format!(".ai/src/skills/{name}/SKILL.md"),
+        "skill" => format!(".ai/src/skills/{category}/{name}/SKILL.md"),
         "command" => format!(".ai/src/commands/{name}.md"),
         _ => format!(".ai/src/agents/{name}.md"),
     }
@@ -139,6 +213,70 @@ fn render(template: &str, name: &str) -> String {
         .join("\n")
 }
 
+struct Entry {
+    kind: String,
+    name: String,
+    category: Option<String>,
+    force: bool,
+}
+
+impl Entry {
+    /// The `--category` path without a trailing `/`, empty for the root.
+    fn category_path(&self) -> String {
+        self.category
+            .as_deref()
+            .map_or_else(String::new, |c| c.trim_end_matches('/').to_string())
+    }
+}
+
+/// How a command line that names no entry ends: help on stdout, a refusal
+/// followed by the usage, or a bare error line.
+enum ParseStop {
+    Help,
+    Usage(String),
+    Error(String),
+}
+
+fn parse_entry(args: &[String]) -> Result<Entry, ParseStop> {
+    let mut entry = Entry {
+        kind: String::new(),
+        name: String::new(),
+        category: None,
+        force: false,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--force" | "-f" => entry.force = true,
+            "--category" => match args.next().filter(|value| !value.starts_with('-')) {
+                Some(value) => entry.category = Some(value.clone()),
+                None => return Err(ParseStop::Usage("--category requires a value".into())),
+            },
+            "--help" | "-h" => return Err(ParseStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(ParseStop::Error(format!("Unknown flag: {flag}")));
+            }
+            positional if entry.kind.is_empty() => entry.kind = positional.to_string(),
+            positional if entry.name.is_empty() => entry.name = positional.to_string(),
+            positional => {
+                return Err(ParseStop::Usage(format!(
+                    "Unexpected argument: {positional}"
+                )));
+            }
+        }
+    }
+    if entry.kind.is_empty() {
+        return Err(ParseStop::Usage("missing <kind> and <name>".into()));
+    }
+    if entry.name.is_empty() {
+        return Err(ParseStop::Usage(format!(
+            "missing <name> for {}",
+            entry.kind
+        )));
+    }
+    Ok(entry)
+}
+
 /// `cmd_add`: the report on `out`, refusals on `err`, the status as the result.
 pub fn add(
     args: &[String],
@@ -150,69 +288,17 @@ pub fn add(
     if args.first().map(String::as_str) == Some("mcp") {
         return add_mcp(&args[1..], root, style, out, err);
     }
-    let mut force = false;
-    let mut kind = String::new();
-    let mut name = String::new();
-    for arg in args {
-        match arg.as_str() {
-            "--force" | "-f" => force = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!("{}: Unknown flag: {flag}\n", style.red("Error")).as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            positional => {
-                if kind.is_empty() {
-                    kind = positional.to_string();
-                } else if name.is_empty() {
-                    name = positional.to_string();
-                } else {
-                    usage(&format!("Unexpected argument: {positional}"), style, err)?;
-                    return Ok(1);
-                }
-            }
-        }
+    let entry = match parse_entry(args) {
+        Ok(entry) => entry,
+        Err(stop) => return report_stop(stop, style, out, err),
+    };
+    if let Some(stop) = entry_refusal(&entry, root) {
+        return report_stop(stop, style, out, err);
     }
-    if kind.is_empty() {
-        usage("missing <kind> and <name>", style, err)?;
-        return Ok(1);
-    }
-    if name.is_empty() {
-        usage(&format!("missing <name> for {kind}"), style, err)?;
-        return Ok(1);
-    }
-    if !matches!(kind.as_str(), "rule" | "skill" | "command" | "subagent") {
-        put(
-            err,
-            format!(
-                "{}: Unknown kind '{kind}'.\nValid kinds: rule, skill, command, subagent\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
-    if let Some(refusal) = validate_name(&name, style) {
-        put(err, refusal.as_bytes())?;
-        return Ok(1);
-    }
-    if kind == "skill" && !crate::config::skill_metadata::valid_name(&name) {
-        put(
-            err,
-            format!(
-                "{}: Skill name must be 1–64 lowercase letters, digits, or single hyphens and cannot end with a hyphen: {name}\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
+    let category = entry.category_path();
+    let Entry {
+        kind, name, force, ..
+    } = entry;
     let Some(template) = catalog::content_template(&kind) else {
         put(
             err,
@@ -225,7 +311,7 @@ pub fn add(
         )?;
         return Ok(1);
     };
-    let rel = dest_rel(&kind, &name);
+    let rel = dest_rel(&kind, &category, &name);
     let dest = PathBuf::from(format!("{root}/{rel}"));
     if dest.exists() && !force {
         put(
@@ -533,6 +619,96 @@ fn merge(content: &[u8], server: &str, entry: &str, force: bool) -> Result<Vec<u
     Ok(out)
 }
 
+struct McpArgs {
+    server: String,
+    url: String,
+    command: String,
+    args: String,
+    env: String,
+    force: bool,
+}
+
+fn parse_mcp(args: &[String]) -> Result<McpArgs, ParseStop> {
+    let mut parsed = McpArgs {
+        server: String::new(),
+        url: String::new(),
+        command: String::new(),
+        args: String::new(),
+        env: String::new(),
+        force: false,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            flag @ ("--url" | "--command" | "--args" | "--env") => {
+                let Some(value) = args.next() else {
+                    return Err(ParseStop::Usage(format!("{flag} requires a value.")));
+                };
+                let slot = match flag {
+                    "--url" => &mut parsed.url,
+                    "--command" => &mut parsed.command,
+                    "--args" => &mut parsed.args,
+                    _ => &mut parsed.env,
+                };
+                *slot = value.clone();
+            }
+            "--force" | "-f" => parsed.force = true,
+            "-h" | "--help" => return Err(ParseStop::Help),
+            flag if flag.starts_with('-') => {
+                return Err(ParseStop::Usage(format!("Unknown flag: {flag}")));
+            }
+            positional if parsed.server.is_empty() => parsed.server = positional.to_string(),
+            positional => {
+                return Err(ParseStop::Usage(format!(
+                    "Unexpected argument: {positional}"
+                )));
+            }
+        }
+    }
+    if parsed.server.is_empty() {
+        return Err(ParseStop::Usage("missing <server> for mcp".into()));
+    }
+    Ok(parsed)
+}
+
+/// Why `--url` and `--command` together name no single transport.
+fn transport_refusal(url: &str, command: &str) -> Option<ParseStop> {
+    match (url.is_empty(), command.is_empty()) {
+        (true, true) => Some(ParseStop::Usage(
+            "one of --url or --command is required.".into(),
+        )),
+        (false, false) => Some(ParseStop::Error(
+            "--url and --command are mutually exclusive.".into(),
+        )),
+        _ => None,
+    }
+}
+
+fn report_stop(
+    stop: ParseStop,
+    style: &Style,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> Result<u8, Error> {
+    match stop {
+        ParseStop::Help => {
+            put(out, HELP.render(style).as_bytes())?;
+            Ok(0)
+        }
+        ParseStop::Usage(message) => {
+            usage(&message, style, err)?;
+            Ok(1)
+        }
+        ParseStop::Error(message) => {
+            put(
+                err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            Ok(1)
+        }
+    }
+}
+
 /// `cmd_add_mcp`.
 fn add_mcp(
     args: &[String],
@@ -541,74 +717,22 @@ fn add_mcp(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
-    let mut server = String::new();
-    let mut url = String::new();
-    let mut command = String::new();
-    let mut args_str = String::new();
-    let mut env_str = String::new();
-    let mut force = false;
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        match arg {
-            "--url" | "--command" | "--args" | "--env" => {
-                let Some(value) = args.get(i + 1) else {
-                    usage(&format!("{arg} requires a value."), style, err)?;
-                    return Ok(1);
-                };
-                match arg {
-                    "--url" => url = value.clone(),
-                    "--command" => command = value.clone(),
-                    "--args" => args_str = value.clone(),
-                    _ => env_str = value.clone(),
-                }
-                i += 2;
-            }
-            "--force" | "-f" => {
-                force = true;
-                i += 1;
-            }
-            "-h" | "--help" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with('-') => {
-                usage(&format!("Unknown flag: {flag}"), style, err)?;
-                return Ok(1);
-            }
-            positional => {
-                if server.is_empty() {
-                    server = positional.to_string();
-                    i += 1;
-                } else {
-                    usage(&format!("Unexpected argument: {positional}"), style, err)?;
-                    return Ok(1);
-                }
-            }
-        }
+    let McpArgs {
+        server,
+        url,
+        command,
+        args: args_str,
+        env: env_str,
+        force,
+    } = match parse_mcp(args) {
+        Ok(parsed) => parsed,
+        Err(stop) => return report_stop(stop, style, out, err),
+    };
+    if let Some(message) = validate_name(&server) {
+        return report_stop(ParseStop::Error(message), style, out, err);
     }
-    if server.is_empty() {
-        usage("missing <server> for mcp", style, err)?;
-        return Ok(1);
-    }
-    if let Some(refusal) = validate_name(&server, style) {
-        put(err, refusal.as_bytes())?;
-        return Ok(1);
-    }
-    if url.is_empty() && command.is_empty() {
-        usage("one of --url or --command is required.", style, err)?;
-        return Ok(1);
-    }
-    if !url.is_empty() && !command.is_empty() {
-        put(
-            err,
-            format!(
-                "{}: --url and --command are mutually exclusive.\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+    if let Some(stop) = transport_refusal(&url, &command) {
+        return report_stop(stop, style, out, err);
     }
     let mcp_file = PathBuf::from(format!("{root}/.ai/src/mcp.json"));
     let mut created = false;
@@ -697,8 +821,19 @@ mod tests {
 
     #[test]
     fn names_are_refused_like_add_validate_name() {
-        let style = Style::plain();
-        let refusal = |name: &str| validate_name(name, &style).unwrap_or_default();
+        let refusal = |name: &str| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            if let Some(message) = validate_name(name) {
+                report_stop(
+                    ParseStop::Error(message),
+                    &Style::plain(),
+                    &mut out,
+                    &mut err,
+                )
+                .unwrap();
+            }
+            String::from_utf8(err).unwrap()
+        };
         assert_eq!(refusal(""), "Error: Name is empty.\n");
         assert_eq!(
             refusal("sub/dir"),
@@ -915,7 +1050,7 @@ mod tests {
     fn help_renders_both_forms_with_their_kinds_and_mcp_options() {
         assert_eq!(
             HELP.render(&Style::plain()),
-            "\n  agentsync add — scaffold a rule, skill, command, subagent, or MCP server\n\n  USAGE\n    agentsync add <kind> <name> [--force]\n    agentsync add mcp <server> (--url URL | --command CMD) [MCP OPTIONS] [--force]\n\n  DESCRIPTION\n    Scaffold a new entry under .ai/src/ from the shipped content templates,\n    or add one server entry to the shared .ai/src/mcp.json.\n\n    Edit the scaffold, then run agentsync sync to propagate.\n\n  KINDS\n    rule       Create .ai/src/rules/<name>.md\n    skill      Create .ai/src/skills/<name>/SKILL.md\n    command    Create .ai/src/commands/<name>.md\n    subagent   Create .ai/src/agents/<name>.md\n    mcp        Add an MCP server entry to .ai/src/mcp.json\n\n  MCP OPTIONS\n    --url URL            HTTP server endpoint\n    --command CMD        Command that starts the server\n    --args \"a b c\"       Command arguments, split on whitespace\n    --env K=V[,K=V...]   Environment variables for the server\n\n  OPTIONS\n    -f, --force   Overwrite an existing file or server entry\n    -h, --help    Show this help\n\n  EXAMPLES\n    agentsync add rule testing\n    agentsync add skill deploy\n    agentsync add mcp linear --url https://mcp.linear.app/sse\n    agentsync add mcp github --command npx --args \"-y @github/mcp-server\"\n\n"
+            "\n  agentsync add — scaffold a rule, skill, command, subagent, or MCP server\n\n  USAGE\n    agentsync add <kind> <name> [--category <path>] [--force]\n    agentsync add mcp <server> (--url URL | --command CMD) [MCP OPTIONS] [--force]\n\n  DESCRIPTION\n    Scaffold a new entry under .ai/src/ from the shipped content templates,\n    or add one server entry to the shared .ai/src/mcp.json.\n\n    Edit the scaffold, then run agentsync sync to propagate.\n\n  KINDS\n    rule       Create .ai/src/rules/<name>.md\n    skill      Create .ai/src/skills/[<category>/]<name>/SKILL.md\n    command    Create .ai/src/commands/<name>.md\n    subagent   Create .ai/src/agents/<name>.md\n    mcp        Add an MCP server entry to .ai/src/mcp.json\n\n  MCP OPTIONS\n    --url URL            HTTP server endpoint\n    --command CMD        Command that starts the server\n    --args \"a b c\"       Command arguments, split on whitespace\n    --env K=V[,K=V...]   Environment variables for the server\n\n  OPTIONS\n    --category <path>   Place a skill in a category, e.g. flutter/ui\n    -f, --force         Overwrite an existing file or server entry\n    -h, --help          Show this help\n\n  EXAMPLES\n    agentsync add rule testing\n    agentsync add skill deploy\n    agentsync add skill slivers --category flutter/ui\n    agentsync add mcp linear --url https://mcp.linear.app/sse\n    agentsync add mcp github --command npx --args \"-y @github/mcp-server\"\n\n"
         );
     }
 
