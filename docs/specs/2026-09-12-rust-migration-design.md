@@ -598,9 +598,9 @@ decision to make once rather than a bug to find twice.
     member, so a nested decoy makes the merge fail with `failed to update`.
 48. `add mcp` stops reading the server map at the first key that is not a
     string and drops the servers after it.
-49. `add mcp` creates `.ai/src/mcp.json` with an empty server map before it
-    validates `--env`, so a bad pair leaves the file behind; `--args` and
-    `--env` read only the first line of their value.
+49. *Fixed after 0.42.0.* `add mcp` created `.ai/src/mcp.json` with an empty
+    server map before it validated `--env`, so a bad pair left the file
+    behind; `--args` and `--env` read only the first line of their value.
 50. *Fixed after 0.42.0.* `import` stripped a `.git` suffix before a trailing
     `/`, so `https://github.com/user/repo.git/` downloaded the repository
     `repo.git`.

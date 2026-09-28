@@ -362,11 +362,6 @@ fn is_blank(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c')
 }
 
-/// `read -r` on a here-string: the first line only.
-fn first_line(text: &str) -> &str {
-    text.split('\n').next().unwrap_or("")
-}
-
 /// `_add_mcp_build_entry`: the compact-to-be JSON object, or the `--env`
 /// refusal.
 fn build_entry(
@@ -381,8 +376,8 @@ fn build_entry(
     } else {
         let mut fields = format!("\"command\": \"{}\"", json_escape(command));
         if !args.is_empty() {
-            let list = first_line(args)
-                .split([' ', '\t'])
+            let list = args
+                .split(is_blank)
                 .filter(|token| !token.is_empty())
                 .map(|token| format!("\"{}\"", json_escape(token)))
                 .collect::<Vec<_>>()
@@ -393,7 +388,7 @@ fn build_entry(
     };
     if !env.is_empty() {
         let mut members = Vec::new();
-        for pair in first_line(env).split(',') {
+        for pair in env.split([',', '\n']) {
             let pair = pair.trim_matches(is_blank);
             if pair.is_empty() {
                 continue;
@@ -734,6 +729,13 @@ fn add_mcp(
     if let Some(stop) = transport_refusal(&url, &command) {
         return report_stop(stop, style, out, err);
     }
+    let entry = match build_entry(&url, &command, &args_str, &env_str, style) {
+        Ok(entry) => entry,
+        Err(refusal) => {
+            put(err, refusal.as_bytes())?;
+            return Ok(1);
+        }
+    };
     let mcp_file = PathBuf::from(format!("{root}/.ai/src/mcp.json"));
     let mut created = false;
     if !mcp_file.is_file() {
@@ -742,13 +744,6 @@ fn add_mcp(
         std::fs::write(&mcp_file, EMPTY_MCP).map_err(|e| Error::io(&mcp_file, e))?;
         created = true;
     }
-    let entry = match build_entry(&url, &command, &args_str, &env_str, style) {
-        Ok(entry) => entry,
-        Err(refusal) => {
-            put(err, refusal.as_bytes())?;
-            return Ok(1);
-        }
-    };
     let content = std::fs::read(&mcp_file).map_err(|e| Error::io(&mcp_file, e))?;
     match merge(&content, &server, &entry, force) {
         Ok(bytes) => staging::write_beside(&mcp_file, &bytes)?,
@@ -899,6 +894,23 @@ mod tests {
             entry("", "c", "", "NOEQ").unwrap_err(),
             "Error: --env entry 'NOEQ' must be KEY=VALUE.\n"
         );
+        assert_eq!(
+            entry("", "c", "-y\n@pkg", "A=1\nB=2").unwrap(),
+            "{\"command\": \"c\", \"args\": [\"-y\", \"@pkg\"], \"env\": {\"A\": \"1\", \"B\": \"2\"}}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_env_leaves_no_mcp_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().disk_text();
+        let (status, _, err) = run(&root, &["mcp", "bad", "--command", "c", "--env", "NOEQ"]);
+        assert_eq!(
+            (status, err.as_str()),
+            (1, "Error: --env entry 'NOEQ' must be KEY=VALUE.\n")
+        );
+        assert!(!dir.path().join(".ai/src/mcp.json").exists());
     }
 
     fn merged(content: &str, server: &str, entry: &str, force: bool) -> String {
