@@ -510,10 +510,11 @@ decision to make once rather than a bug to find twice.
     `mode: strict` reads as `warn`: the reader answers the first `version_pin`
     key, so the nested lookup is empty and the scalar wins (`version.sh`,
     `version_pin_mode`).
-14. `enable` and `disable` edit `.ai/agent_sync.yaml`, or a root
-    `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selects another file,
-    while "already enabled" reads the selected one.
-15. `disable` creates `.ai/agent_sync.yaml` when the project has none.
+14. *Fixed after 0.42.0.* `enable` and `disable` edited `.ai/agent_sync.yaml`,
+    or a root `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selected
+    another file, while "already enabled" read the selected one.
+15. *Fixed after 0.42.0.* `disable` created `.ai/agent_sync.yaml` when the
+    project had none.
 16. `enable` under a `tools:` block without `enabled:` appends a second `tools:`
     block at the end of the file.
 17. *Fixed after 0.42.0.* `disable` listed every argument that was not
