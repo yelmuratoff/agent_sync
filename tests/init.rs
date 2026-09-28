@@ -375,7 +375,10 @@ fn init_writes_only_the_defaults_sync_reads() {
         .assert()
         .success();
     let config = project.read(".ai/agent_sync.yaml");
-    assert!(config.contains("\ndefaults:\n  cleanup: true\n"), "{config}");
+    assert!(
+        config.contains("\ndefaults:\n  cleanup: true\n"),
+        "{config}"
+    );
 }
 
 #[test]
