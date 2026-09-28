@@ -10,6 +10,7 @@ use super::put;
 use crate::config::payload::{self, Source};
 use crate::config::tool::Tool;
 use crate::engine::keyed::{self, Format, KeyPath, Owned};
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::output::help::{Help, Section};
 use crate::output::log::Log;
 use crate::output::style::Style;
@@ -476,7 +477,16 @@ impl<'a> Resolver<'a> {
             .strip_prefix(&format!("{dest_dir}/"))
             .unwrap_or(&found.dest_abs)
             .to_string();
-        if key != "skills" {
+        if key == "skills" {
+            let (name, rest) = match rel_inside.split_once('/') {
+                Some((name, rest)) => (name, format!("/{rest}")),
+                None => (rel_inside.as_str(), String::new()),
+            };
+            let tree = skill_tree::discover(&Workspace::on_disk(&src_root), &src_root);
+            if let Some(skill) = tree.find(name) {
+                rel_inside = format!("{}{rest}", skill.rel);
+            }
+        } else {
             let ext = value(&format!("targets.{key}.extension"));
             if !ext.is_empty()
                 && let Some(stem) = rel_inside.strip_suffix(&ext)

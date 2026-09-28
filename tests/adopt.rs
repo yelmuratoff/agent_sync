@@ -218,6 +218,31 @@ fn adopt_skill_file_round_trips() {
         .success();
 }
 
+#[test]
+fn adopt_returns_an_edit_to_the_skill_category_it_came_from() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude"]);
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        "---\nname: bloc\ndescription: Bloc\n---\n",
+    );
+    project.write(".ai/src/skills/flutter/bloc/references/r.md", "r\n");
+    project.agentsync().arg("sync").assert().success();
+    project.append(".claude/skills/bloc/references/r.md", "edited\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".claude/skills/bloc/references/r.md"])
+        .assert()
+        .success();
+    assert_eq!(
+        project.read(".ai/src/skills/flutter/bloc/references/r.md"),
+        "r\nedited\n"
+    );
+    assert!(!project.exists(".ai/src/skills/bloc"));
+    project.agentsync().arg("check").assert().success();
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 
 #[test]
