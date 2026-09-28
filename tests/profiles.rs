@@ -166,6 +166,50 @@ fn sync_base_rules_fill_into_profile_output_overlay_fill() {
 }
 
 #[test]
+fn sync_profile_filters_skills_by_category_and_shadows_by_name() {
+    let project = seeded();
+    add_hub(&project);
+    let skill = |name: &str, body: &str| format!("---\nname: {name}\ndescription: {body}\n---\n");
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        &skill("bloc", "Base"),
+    );
+    project.write(
+        ".ai/src/skills/backend/auth/SKILL.md",
+        &skill("auth", "Base"),
+    );
+    project.write(
+        ".ai/profiles/hub/src/skills/work/auth/SKILL.md",
+        &skill("auth", "Profile"),
+    );
+    let variant = project.read(".ai/src/tools/claude-hub.yaml");
+    let dest_line = variant
+        .lines()
+        .find(|line| line.trim() == "dest: \".claude-hub/skills\"")
+        .expect("variant skills dest");
+    let indent = &dest_line[..dest_line.len() - dest_line.trim_start().len()];
+    project.write(
+        ".ai/src/tools/claude-hub.yaml",
+        &variant.replace(
+            dest_line,
+            &format!("{dest_line}\n{indent}include: \"backend/* work/*\""),
+        ),
+    );
+
+    project.agentsync().arg("sync").assert().success();
+    assert_eq!(
+        project.read(".claude-hub/skills/auth/SKILL.md"),
+        skill("auth", "Profile")
+    );
+    assert!(!project.exists(".claude-hub/skills/bloc"));
+    assert_eq!(
+        project.read(".claude/skills/auth/SKILL.md"),
+        skill("auth", "Base")
+    );
+    assert!(project.exists(".claude/skills/bloc/SKILL.md"));
+}
+
+#[test]
 fn sync_profile_wins_on_path_collision_with_base() {
     let project = seeded();
     add_hub(&project);
