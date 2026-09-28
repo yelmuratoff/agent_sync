@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::put;
+use crate::config::project_config::{self, Selection};
 use crate::engine::{skill_tree, workspace::Workspace};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
@@ -20,15 +21,24 @@ struct Run<'a> {
     style: &'a Style,
     assume_yes: bool,
     templates: Vec<String>,
+    explicit_config: Option<&'a str>,
+    project_config: Option<String>,
     terminal: Option<Answer<'a>>,
     out: &'a mut dyn Write,
     err: &'a mut dyn Write,
 }
 
+/// Where `dedupe` runs: the working directory, the project root, and the
+/// `AGENTSYNC_CONFIG_PATH` value each project resolves its config by.
+pub struct Place<'a> {
+    pub cwd: &'a str,
+    pub root: &'a dyn Fn() -> Result<String, Error>,
+    pub config: Option<&'a str>,
+}
+
 pub fn dedupe<'a>(
     args: &[String],
-    cwd: &str,
-    root: &dyn Fn() -> Result<String, Error>,
+    place: &Place<'a>,
     style: &'a Style,
     terminal: Option<Answer<'a>>,
     out: &'a mut dyn Write,
@@ -69,6 +79,8 @@ pub fn dedupe<'a>(
         style,
         assume_yes: parsed.assume_yes,
         templates: catalog::template_sources(),
+        explicit_config: place.config,
+        project_config: None,
         terminal,
         out,
         err,
@@ -78,10 +90,10 @@ pub fn dedupe<'a>(
         format!("\n{}\n", style.bold("  AgentSync Dedupe")).as_bytes(),
     )?;
     if parsed.workspace {
-        return run_workspace(&mut run, cwd);
+        return run_workspace(&mut run, place.cwd);
     }
-    let repo_root = root()?;
-    run_one(&mut run, &repo_root, &parsed.against, cwd)
+    let repo_root = (place.root)()?;
+    run_one(&mut run, &repo_root, &parsed.against, place.cwd)
 }
 
 struct DedupeArgs {
@@ -170,16 +182,6 @@ fn run_workspace(run: &mut Run, cwd: &str) -> Result<u8, Error> {
     Ok(0)
 }
 
-/// `_dedupe_config_path`.
-fn config_path(repo_root: &str) -> Option<String> {
-    [
-        format!("{repo_root}/.ai/agent_sync.yaml"),
-        format!("{repo_root}/agent_sync.yaml"),
-    ]
-    .into_iter()
-    .find(|path| Path::new(path).is_file())
-}
-
 #[derive(Default)]
 struct Tally {
     deleted: usize,
@@ -199,6 +201,19 @@ fn run_one(run: &mut Run, repo_root: &str, against: &str, cwd: &str) -> Result<u
         )?;
         return Ok(0);
     }
+    let is_file = |path: &str| Path::new(path).is_file();
+    run.project_config = match project_config::select(repo_root, run.explicit_config, &is_file) {
+        Selection::Found(path) => Some(path),
+        Selection::None => None,
+        Selection::Missing(path) => {
+            let message = project_config::missing_message(&path);
+            put(
+                run.err,
+                format!("{}: {message}\n", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
     let (parent_src, from_shared) = match parent_for(run, repo_root, against, cwd)? {
         Ok(Some(found)) => found,
         Ok(None) => {
@@ -284,7 +299,9 @@ fn parent_for(
         }
     };
     if against.is_empty() {
-        let shared = config_path(repo_root)
+        let shared = run
+            .project_config
+            .as_ref()
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| {
                 overlay::shared_parent_src(&String::from_utf8_lossy(&bytes), repo_root)
@@ -326,7 +343,7 @@ fn resolve_identical(
 ) -> Result<(), Error> {
     let style = run.style;
     let child_src = format!("{repo_root}/.ai/src");
-    let config = config_path(repo_root);
+    let config = run.project_config.clone();
     let decline = |rel: &str| match &config {
         Some(config) => {
             yaml_edit::list_append(Path::new(config), "template_overrides.declined", rel)
@@ -481,12 +498,17 @@ fn walk_files(dir: &str, found: &mut Vec<String>) {
     }
 }
 
-/// `_dedupe_delete_and_prune`: `rm -f`, then `rmdir` up to `.ai/src`.
-fn delete_and_prune(file: &str, stop_at: &str) -> Result<(), Error> {
+/// `_dedupe_delete_and_prune`: `rm -f`, then `rmdir` up to the top-level
+/// directory under `src` that holds the file, such as `rules/` or `skills/`.
+fn delete_and_prune(file: &str, src: &str) -> Result<(), Error> {
     match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(Error::io(file, e)),
         _ => {}
     }
+    let stop_at = file
+        .strip_prefix(&format!("{src}/"))
+        .and_then(|rel| rel.split_once('/'))
+        .map_or_else(|| src.to_string(), |(top, _)| format!("{src}/{top}"));
     let mut dir = paths::parent(file);
     // `dir != "/"` alone names a root Windows does not have; stop at whatever
     // the platform's root is, which is the path that is its own parent.
@@ -758,10 +780,14 @@ mod tests {
         let mut replies = answers.unwrap_or_default().iter().map(|a| a.to_string());
         let mut answer = move || replies.next().unwrap_or_default();
         let (mut out, mut err) = (Vec::new(), Vec::new());
+        let place = Place {
+            cwd: &fx.child,
+            root: &root,
+            config: None,
+        };
         let status = dedupe(
             &args,
-            &fx.child,
-            &root,
+            &place,
             &Style::plain(),
             answers.map(|_| &mut answer as &mut dyn FnMut() -> String),
             &mut out,
@@ -804,6 +830,20 @@ mod tests {
         assert!(Path::new(&format!("{src}/skills/foo/.x")).is_file());
         assert!(!Path::new(&format!("{src}/skills/foo/ref")).exists());
         assert!(!Path::new(&format!("{src}/rules/shared.md")).exists());
+    }
+
+    #[test]
+    fn pruning_stops_at_the_top_level_source_directory() {
+        let fx = fixture(&[
+            ("rules/only.md", "rule\n", "rule\n"),
+            ("skills/flutter/bloc/SKILL.md", "skill\n", "skill\n"),
+        ]);
+        let (status, _, err) = call(&fx, &["--yes"], None);
+        assert_eq!((status, err.as_str()), (0, ""));
+        let src = format!("{}/.ai/src", fx.child);
+        assert!(Path::new(&format!("{src}/rules")).is_dir());
+        assert!(Path::new(&format!("{src}/skills")).is_dir());
+        assert!(!Path::new(&format!("{src}/skills/flutter")).exists());
     }
 
     #[test]

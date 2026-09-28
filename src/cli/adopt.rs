@@ -2,6 +2,7 @@
 //! manual edit in a generated file back into its source.
 
 use crate::paths::DiskText;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
@@ -295,6 +296,15 @@ impl<'a> Resolver<'a> {
                 let keyed = resource == "mcp" && tool.keyed("mcp", self.paths.root_is_home());
                 return Ok(Some(found.map(|found| Adoption { keyed, ..found })));
             }
+        }
+        if tool.value("targets.rules.merge_to_file") == "true"
+            && self.dest_for(tool, "rules").as_deref() == Some(abs)
+        {
+            return Ok(Some(self.dir_source(
+                tool,
+                self.adoption(tool, "rules", dest),
+                abs,
+            )));
         }
         let mut best: Option<(&'static str, String)> = None;
         for key in ["rules", "skills", "commands", "subagents"] {
@@ -1126,6 +1136,7 @@ fn all_plan_text(style: &Style, plan: &AllPlan) -> String {
 fn apply_all(run: &mut Run, plan: &AllPlan) -> Result<(), Error> {
     let style = run.style;
     put(run.out, b"\n")?;
+    let mut adopted = BTreeSet::new();
     for (found, current) in &plan.ready {
         match plan.keyed.iter().find(|(rel, _)| *rel == found.dest_rel) {
             Some((_, adoption)) => apply_keyed(run.root, found, adoption)?,
@@ -1133,6 +1144,9 @@ fn apply_all(run: &mut Run, plan: &AllPlan) -> Result<(), Error> {
                 copy_into_source(found)?;
                 manifest::update_entry(run.root, &found.dest_rel, current, None)?;
             }
+        }
+        if !adopted.insert(found.source_rel.as_str()) {
+            continue;
         }
         let line = format!(
             "{} {} {}\n",
@@ -1147,7 +1161,7 @@ fn apply_all(run: &mut Run, plan: &AllPlan) -> Result<(), Error> {
         format!(
             "\n{} Adopted {} file(s) into .ai/src/ and refreshed .ai/.sync-manifest\n\n{}",
             style.green("✓"),
-            plan.ready.len(),
+            adopted.len(),
             verify_hint(style)
         )
         .as_bytes(),

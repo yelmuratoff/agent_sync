@@ -102,7 +102,6 @@ pub fn diff(
             }
         }
     }
-    let project = discover()?;
     let resource = if resource.is_empty() {
         "tool".to_string()
     } else {
@@ -111,6 +110,7 @@ pub fn diff(
     if !VALID_RESOURCES.contains(&resource.as_str()) {
         return unknown_resource(style, &resource, err);
     }
+    let project = discover()?;
     if resource != "tool" {
         if slug.is_empty() {
             put(
@@ -123,7 +123,7 @@ pub fn diff(
     }
 
     let overrides = project.user_override_tools()?;
-    if overrides.is_empty() {
+    if overrides.is_empty() && slug.is_empty() {
         put(
             out,
             format!(
@@ -363,6 +363,19 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_resource_is_refused_before_the_project_is_looked_up() {
+        let args = ["cursor".to_string(), "nope".to_string()];
+        let discover = || Project::at("/nonexistent-agentsync-root");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = diff(&args, &discover, &Style::plain(), &mut out, &mut err).unwrap();
+        assert_eq!(status, 1);
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "Error: Unknown resource 'nope'.\nValid: tool hooks mcp settings\n"
+        );
+    }
+
+    #[test]
     fn diff_reports_overrides_inherited_fields_and_identical_payloads() {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap().disk_text();
@@ -378,6 +391,14 @@ mod tests {
         assert_eq!(
             call(&root, &[]).1,
             "\n  No user overrides — all tools inherit fully from base.\n\n"
+        );
+        assert_eq!(
+            call(&root, &["cursro"]),
+            (
+                1,
+                String::new(),
+                "Error: No override found for 'cursro'.\n".to_string()
+            )
         );
         std::fs::write(
             format!("{root}/.ai/src/tools/cursor.yaml"),

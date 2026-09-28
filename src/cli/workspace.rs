@@ -47,7 +47,7 @@ pub fn run(
     );
     emit(Stream::Err, "");
 
-    let mut last_failure = 0;
+    let mut max_status = 0;
     for ai in &projects {
         let root = paths::parent(ai);
         let rel = if root == cwd {
@@ -59,13 +59,11 @@ pub fn run(
         };
         emit(Stream::Err, &format!("  {} {rel}", style.cyan("→")));
         let status = sync::run(&root, args, env, colors, streams());
-        if status != 0 {
-            last_failure = status;
-        }
+        max_status = max_status.max(status);
         emit(Stream::Err, "");
     }
 
-    if last_failure == 0 {
+    if max_status == 0 {
         emit(
             Stream::Err,
             &format!(
@@ -78,11 +76,11 @@ pub fn run(
         emit(
             Stream::Err,
             &format!(
-                "  {} max exit code: {last_failure}",
+                "  {} max exit code: {max_status}",
                 style.yellow("Workspace sync finished with errors.")
             ),
         );
     }
     emit(Stream::Err, "");
-    last_failure
+    max_status
 }

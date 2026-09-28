@@ -274,9 +274,8 @@ source:
   subagents: \".ai/src/agents\"
   tools: \".ai/src/tools\"
 
-# Global defaults applied to all tools.
+# cleanup: remove a disabled tool's generated files on the next sync.
 defaults:
-  enabled: false
   cleanup: true
 
 # Post-sync hooks run arbitrary shell — enabling them requires the out-of-repo

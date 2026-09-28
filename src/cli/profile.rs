@@ -2,6 +2,7 @@
 //! scaffolds, lists, and removes config-home variants of tools.
 
 use crate::paths::DiskText;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -13,7 +14,8 @@ use crate::output::log::Log;
 use crate::output::style::Style;
 use crate::paths::Paths;
 use crate::project::Project;
-use crate::{Error, config::profiles, config::yaml_edit};
+use crate::transaction::manifest::Manifest;
+use crate::{Error, config::catalog, config::profiles, config::yaml_edit};
 
 pub const HELP: Help = Help {
     command: "profile",
@@ -138,31 +140,33 @@ fn usage_error(style: &Style, err: &mut dyn Write, message: &str) -> Result<u8, 
     Ok(2)
 }
 
-/// The profile name, `--tools`, and `--adopt`: `Err(None)` exits 1 without a
-/// message (`--tools` without a value), `Err(Some(message))` is a usage error.
-fn add_args(args: &[String]) -> Result<(String, String, bool), Option<String>> {
+/// The profile name, `--tools`, and `--adopt`; `Err(message)` is a usage error.
+fn add_args(args: &[String]) -> Result<(String, String, bool), String> {
     let (mut name, mut tools_csv, mut adopt) = (String::new(), String::new(), false);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
-            "--tools" => tools_csv = rest.next().cloned().ok_or(None)?,
+            "--tools" => {
+                tools_csv = rest
+                    .next()
+                    .cloned()
+                    .ok_or("--tools needs a comma-separated list of tools.")?;
+            }
             "--adopt" => adopt = true,
             "--yes" | "-y" => {}
-            flag if flag.starts_with('-') => return Err(Some(format!("unknown flag: {flag}"))),
+            flag if flag.starts_with('-') => return Err(format!("unknown flag: {flag}")),
             value if name.is_empty() => name = value.to_string(),
-            _ => return Err(Some("too many arguments.".into())),
+            _ => return Err("too many arguments.".into()),
         }
     }
     if name.is_empty() {
-        return Err(Some(
-            "agentsync profile add <name> [--tools a,b] [--adopt]".into(),
-        ));
+        return Err("agentsync profile add <name> [--tools a,b] [--adopt]".into());
     }
     if !name
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
-        return Err(Some("profile name must be [a-zA-Z0-9_-].".into()));
+        return Err("profile name must be [a-zA-Z0-9_-].".into());
     }
     Ok((name, tools_csv, adopt))
 }
@@ -180,10 +184,20 @@ fn base_tools(
     } else {
         tools_csv
             .split(',')
+            .map(str::trim)
             .filter(|t| !t.is_empty())
             .map(str::to_string)
             .collect()
     };
+    if let Some(unknown) = base_tools.iter().find(|slug| {
+        catalog::base_tool_yaml(slug).is_none() && !project.user_tool_file(slug).is_file()
+    }) {
+        let message = format!(
+            "unknown tool: {unknown}.\nRun {} to see available tools.",
+            style.cyan("agentsync list")
+        );
+        return usage_error(style, err, &message).map(Err);
+    }
     if base_tools.is_empty() {
         put(
             err,
@@ -228,8 +242,7 @@ fn add(
 ) -> Result<u8, Error> {
     let (name, tools_csv, adopt) = match add_args(args) {
         Ok(parsed) => parsed,
-        Err(None) => return Ok(1),
-        Err(Some(message)) => return usage_error(style, err, &message),
+        Err(message) => return usage_error(style, err, &message),
     };
     let project = match context(discover, style, err)? {
         Ok(project) => project,
@@ -364,7 +377,7 @@ fn register(
 ) -> Result<(), Error> {
     let child = format!(
         "  {name}:\n    overlay: \"{overlay_rel}\"\n    active: true\n    tools: [{}]\n",
-        variants.join(",")
+        variants.join(", ")
     );
     let bytes = std::fs::read(config).map_err(|e| Error::io(config, e))?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -461,6 +474,45 @@ fn adopt_home(
     Ok(())
 }
 
+/// Removes the files below `home` the manifest records, then the directories
+/// that leaves empty; `true` once `home` itself is gone.
+fn remove_generated(
+    paths: &Paths,
+    home: &Path,
+    recorded: &BTreeSet<String>,
+) -> Result<bool, Error> {
+    let mut files = Vec::new();
+    super::files_below(home, &mut files);
+    for file in files {
+        let generated = paths
+            .to_repo_relative(&file.disk_text())
+            .is_some_and(|rel| recorded.contains(&rel));
+        if generated {
+            std::fs::remove_file(&file).map_err(|e| Error::io(&file, e))?;
+        }
+    }
+    remove_empty_dirs(home)?;
+    Ok(!home.exists())
+}
+
+fn remove_empty_dirs(dir: &Path) -> Result<(), Error> {
+    let entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
+    for entry in entries {
+        let path = entry.map_err(|e| Error::io(dir, e))?.path();
+        if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_dir()) {
+            remove_empty_dirs(&path)?;
+        }
+    }
+    let empty = std::fs::read_dir(dir)
+        .map_err(|e| Error::io(dir, e))?
+        .next()
+        .is_none();
+    if empty {
+        std::fs::remove_dir(dir).map_err(|e| Error::io(dir, e))?;
+    }
+    Ok(())
+}
+
 /// `_profile_list`.
 fn list(
     discover: Discover,
@@ -508,7 +560,6 @@ fn list(
 }
 
 /// `_profile_remove`.
-#[allow(clippy::too_many_arguments)]
 fn remove(
     args: &[String],
     discover: Discover,
@@ -566,6 +617,9 @@ fn remove(
         return Ok(0);
     }
     let paths = Paths::on_disk(&project.root.disk_text());
+    let recorded = Manifest::load(&project.root.disk_text())?
+        .map(|manifest| manifest.paths())
+        .unwrap_or_default();
     for variant in &variants {
         let home = Tool::load(&project, variant)?.value("profile_home");
         if !home.is_empty() {
@@ -573,11 +627,13 @@ fn remove(
             let resolved =
                 paths.resolve_dest(&home, &format!("profile_home for {variant}"), &mut quiet);
             if let Some(abs) = resolved.filter(|abs| Path::new(abs).is_dir()) {
-                std::fs::remove_dir_all(&abs).map_err(|e| Error::io(&abs, e))?;
-                put(
-                    out,
-                    format!("    {} removed {home}/\n", style.green("✓")).as_bytes(),
-                )?;
+                let line = if remove_generated(&paths, Path::new(&abs), &recorded)? {
+                    format!("    {} removed {home}/\n", style.green("✓"))
+                } else {
+                    let why = "(it holds files AgentSync did not generate)";
+                    format!("    {} kept {home}/ {why}\n", style.dim("·"))
+                };
+                put(out, line.as_bytes())?;
             }
         }
         let file = project.user_tool_file(variant);
@@ -727,7 +783,11 @@ mod tests {
         );
         assert_eq!(
             call(&root, &["add", "hub", "--tools"]),
-            (1, String::new(), String::new())
+            (
+                2,
+                String::new(),
+                "Error: --tools needs a comma-separated list of tools.\n".to_string()
+            )
         );
         assert_eq!(
             call(&root, &["remove", "nope"]),
@@ -740,6 +800,29 @@ mod tests {
         assert_eq!(
             call(&root, &[]).1,
             "\n  No profiles. Create one with: agentsync profile add <name>\n"
+        );
+    }
+
+    #[test]
+    fn tools_are_trimmed_and_an_unknown_one_is_refused() {
+        let (_dir, root) = project();
+        assert_eq!(
+            call(&root, &["add", "hub", "--tools", "claude, nope"]),
+            (
+                2,
+                String::new(),
+                "Error: unknown tool: nope.\nRun agentsync list to see available tools.\n"
+                    .to_string()
+            )
+        );
+        assert!(!Path::new(&format!("{root}/.ai/src/tools")).exists());
+        let (status, _, err) = call(&root, &["add", "hub", "--tools", " claude , cursor"]);
+        assert_eq!((status, err.as_str()), (0, ""));
+        assert!(Path::new(&format!("{root}/.ai/src/tools/claude-hub.yaml")).is_file());
+        assert!(
+            std::fs::read_to_string(format!("{root}/.ai/agent_sync.yaml"))
+                .unwrap()
+                .contains("    tools: [claude-hub, cursor-hub]\n")
         );
     }
 

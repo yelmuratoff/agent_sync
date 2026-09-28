@@ -653,7 +653,7 @@ impl Run<'_, '_> {
         if remove && agent_dir.is_dir() {
             std::fs::remove_dir_all(agent_dir).map_err(|e| Error::io(agent_dir, e))?;
             self.say(&format!(
-                "{}\n",
+                "{}\n\n",
                 style.green("  removed .agent/ (pre-v0.6 layout)")
             ))?;
         }
@@ -991,7 +991,7 @@ mod tests {
         assert_eq!(
             applied.out,
             format!(
-                "{header}  removed .agent/ (pre-v0.6 layout)\n{plan}  consolidated .ai/src/mcp/claude.json → .ai/src/mcp.json\n  consolidated .ai/src/mcp/cursor.json → .ai/src/mcp.json\n  moved .ai/src/hooks/cursor.json → .ai/src/tools/cursor/hooks.json\n  moved .ai/src/settings/README → .ai/src/tools/README/settings.README\n  moved .ai/src/settings/claude.json → .ai/src/tools/claude/settings.json\n  skipped (target already exists) .ai/src/tools/cursor/settings.json\n\n  Migration complete.\n    moved:        5\n    skipped:      1 (target already existed)\n    consolidated: .ai/src/mcp.json\n\n  Run agentsync sync to confirm outputs are unchanged.\n\n"
+                "{header}  removed .agent/ (pre-v0.6 layout)\n\n{plan}  consolidated .ai/src/mcp/claude.json → .ai/src/mcp.json\n  consolidated .ai/src/mcp/cursor.json → .ai/src/mcp.json\n  moved .ai/src/hooks/cursor.json → .ai/src/tools/cursor/hooks.json\n  moved .ai/src/settings/README → .ai/src/tools/README/settings.README\n  moved .ai/src/settings/claude.json → .ai/src/tools/claude/settings.json\n  skipped (target already exists) .ai/src/tools/cursor/settings.json\n\n  Migration complete.\n    moved:        5\n    skipped:      1 (target already existed)\n    consolidated: .ai/src/mcp.json\n\n  Run agentsync sync to confirm outputs are unchanged.\n\n"
             )
         );
         assert_eq!(

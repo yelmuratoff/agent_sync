@@ -282,3 +282,22 @@ fn version_pin_upgrade_config_re_pins_to_the_running_engine_and_unblocks_sync() 
     project.agentsync().arg("upgrade-config").assert().success();
     project.agentsync().arg("sync").assert().success();
 }
+
+#[test]
+fn upgrade_config_pins_the_config_agentsync_config_path_names() {
+    let project = Project::seeded(&[]);
+    let before = project.read(".ai/agent_sync.yaml");
+    project.write("selected.yaml", "tools:\n  enabled: []\n");
+    project
+        .agentsync()
+        .env("AGENTSYNC_CONFIG_PATH", "selected.yaml")
+        .arg("upgrade-config")
+        .assert()
+        .success();
+    assert!(
+        project
+            .read("selected.yaml")
+            .starts_with("agentsync_version: ")
+    );
+    assert_eq!(project.read(".ai/agent_sync.yaml"), before);
+}

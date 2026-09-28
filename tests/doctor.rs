@@ -81,6 +81,20 @@ fn doctor_passes_on_fresh_init() {
 }
 
 #[test]
+fn doctor_advises_about_the_file_a_disabled_target_left_behind() {
+    let project = Project::seeded(&[]);
+    project.enable_tools(&["claude"]);
+    project.agentsync().arg("sync").assert().success();
+    project.write(
+        ".ai/src/tools/claude.yaml",
+        "targets:\n  agents:\n    enabled: false\n",
+    );
+    doctor(&project).success().stdout(predicate::str::contains(
+        "CLAUDE.md — left from claude targets.agents, which is disabled",
+    ));
+}
+
+#[test]
 fn doctor_reports_enabled_tools() {
     let project = Project::seeded(&[]);
     project.enable_tools(&["claude"]);

@@ -692,6 +692,22 @@ fn refresh_status_prints_persistent_declined_list() {
 }
 
 #[test]
+fn refresh_reads_template_overrides_from_the_config_agentsync_config_path_names() {
+    let project = seeded();
+    project.write(
+        "selected.yaml",
+        "tools:\n  enabled: []\n\ntemplate_overrides:\n  declined:\n    - rules/git.md\n",
+    );
+    project
+        .agentsync()
+        .env("AGENTSYNC_CONFIG_PATH", "selected.yaml")
+        .args(["refresh", "--status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rules/git.md"));
+}
+
+#[test]
 fn refresh_status_prints_nothing_declined_when_list_is_empty() {
     seeded()
         .agentsync()

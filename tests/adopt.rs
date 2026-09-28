@@ -259,6 +259,21 @@ fn adopt_refuses_cursor_rule_header_injection() {
 }
 
 #[test]
+fn adopt_refuses_a_merged_rules_file() {
+    let project = synced_project(&["zed"]);
+    project.append(".rules", "extra\n");
+
+    project
+        .agentsync()
+        .args(["adopt", "--yes", ".rules"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "zed merges rules into a single file. Edit the source rules in",
+        ));
+}
+
+#[test]
 fn adopt_refuses_codex_toml_subagent() {
     let project = synced_project(&["codex"]);
     let toml_file = first_file_in(&project, ".codex/agents");
@@ -412,6 +427,30 @@ fn adopt_all_promotes_every_drifted_1_to_1_output() {
         .success();
     assert!(project.read(".ai/src/rules/core.md").contains("Rule edit"));
     assert!(project.read(".ai/src/AGENTS.md").contains("Agents edit"));
+}
+
+#[test]
+fn adopt_all_names_a_source_two_outputs_share_once() {
+    let project = synced_project(&["claude", "cursor"]);
+    project.append(".claude/skills/agentsync/SKILL.md", "## Same edit\n");
+    project.append(".cursor/skills/agentsync/SKILL.md", "## Same edit\n");
+
+    let output = project
+        .agentsync()
+        .args(["adopt", "--all", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Adopted 1 file(s)"))
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+    assert_eq!(stdout.matches("✓ adopted").count(), 1, "{stdout}");
+    assert!(
+        project
+            .read(".ai/src/skills/agentsync/SKILL.md")
+            .contains("Same edit")
+    );
 }
 
 #[test]

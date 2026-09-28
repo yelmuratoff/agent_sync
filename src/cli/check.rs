@@ -6,12 +6,14 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 
+use super::stale_targets;
 use crate::engine::render::{self, Env};
 use crate::engine::session::Session;
 use crate::engine::workspace::Workspace;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::paths::Paths;
+use crate::project::Project;
 use crate::transaction::manifest::Manifest;
 use crate::{
     Error, config::project_config, config::version, config::yaml_subset, engine::overlay,
@@ -143,6 +145,13 @@ pub fn check(root: &str, env: &Env) -> Result<Report, Error> {
         return Ok(report);
     }
 
+    let project = Project::select(root, env.config_path.as_deref())?;
+    for stale in stale_targets::left_by_disabled_targets(&project, &manifest)? {
+        for line in stale_targets::lines(&stale) {
+            report.out(&line);
+        }
+    }
+
     let mut compare: BTreeSet<String> = manifest.into_iter().collect();
     for rel in session.touched() {
         if session.ws.is_file(&format!("{root}/{rel}")) {
@@ -208,11 +217,7 @@ fn version_pin_mismatch(
             )]);
         }
     };
-    let mut outputs = yaml_subset::value(config, "outputs").replace('"', "");
-    if outputs.is_empty() && yaml_subset::value(config, "gitignore.update") == "false" {
-        outputs = "committed".to_string();
-    }
-    let committed = outputs == "committed";
+    let committed = project_config::outputs_mode(config) == Ok("committed");
     if !committed && mode != version::Mode::Strict {
         return None;
     }

@@ -205,7 +205,10 @@ mod tests {
             &["--dry-run", "--no-detect", "--content", ","],
             quiet(),
         );
-        assert!(empty.out.contains("  Content:  (none)\n"));
+        assert_eq!(
+            (empty.status, empty.err.as_str()),
+            (1, "Error: --content requires a value\n")
+        );
         let kimi = call(
             &root,
             &["--dry-run", "--no-detect", "--tools", "kimi"],

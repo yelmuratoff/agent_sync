@@ -1,5 +1,7 @@
 //! `lib/helpers/project_config.sh`: which `agent_sync.yaml` a project uses.
 
+use crate::config::yaml_subset;
+
 /// What `project_config_path_r` answered.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Selection {
@@ -41,9 +43,40 @@ pub fn missing_message(path: &str) -> String {
     format!("AGENTSYNC_CONFIG_PATH is set but file not found: {path}")
 }
 
+/// Where a config keeps its generated files: `outputs:` when it says
+/// `committed` or `local`, else `committed` when `gitignore.update` is `false`,
+/// else `local`. `Err` holds an `outputs:` value that is neither.
+pub fn outputs_mode(config: &str) -> Result<&'static str, String> {
+    match yaml_subset::value(config, "outputs")
+        .replace('"', "")
+        .as_str()
+    {
+        "committed" => Ok("committed"),
+        "local" => Ok("local"),
+        "" if yaml_subset::value(config, "gitignore.update") == "false" => Ok("committed"),
+        "" => Ok("local"),
+        other => Err(other.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outputs_mode_falls_back_to_the_gitignore_setting() {
+        assert_eq!(outputs_mode("outputs: \"committed\"\n"), Ok("committed"));
+        assert_eq!(
+            outputs_mode("outputs: local\ngitignore:\n  update: false\n"),
+            Ok("local")
+        );
+        assert_eq!(
+            outputs_mode("gitignore:\n  update: false\n"),
+            Ok("committed")
+        );
+        assert_eq!(outputs_mode("tools: []\n"), Ok("local"));
+        assert_eq!(outputs_mode("outputs: shared\n"), Err("shared".to_string()));
+    }
 
     fn probe(files: &'static [&'static str]) -> impl Fn(&str) -> bool {
         move |path: &str| files.contains(&path)

@@ -318,6 +318,28 @@ fn simplify_dry_run_on_payloads_reports_byte_identical_files() {
 }
 
 #[test]
+fn simplify_reads_payload_overrides_from_the_configured_tools_directory() {
+    let project = Project::seeded(&[]);
+    project.write(
+        ".ai/agent_sync.yaml",
+        "tools:\n  enabled: [cursor]\nsource:\n  tools: custom/tools\n",
+    );
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let base_hooks = std::fs::read(repo_root.join("lib/templates/hooks/cursor.json")).unwrap();
+    std::fs::create_dir_all(project.join("custom/tools/cursor")).unwrap();
+    std::fs::write(project.join("custom/tools/cursor/hooks.json"), &base_hooks).unwrap();
+
+    project
+        .agentsync()
+        .args(["simplify", "--apply", "-y"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Payload overrides"));
+
+    assert!(!project.exists("custom/tools/cursor/hooks.json"));
+}
+
+#[test]
 fn simplify_flags_legacy_flat_layout_payloads_without_deleting_them() {
     let project = Project::seeded(&[]);
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));

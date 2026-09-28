@@ -88,15 +88,9 @@ fn load_run_config(s: &mut Session, env: &Env, selection: Selection) -> Result<R
             skip_post_sync = true;
         }
         update_gitignore = yaml_subset::value(text, "gitignore.update") != "false";
-        outputs = match yaml_subset::value(text, "outputs")
-            .replace('"', "")
-            .as_str()
-        {
-            "committed" => "committed",
-            "local" => "local",
-            "" if !update_gitignore => "committed",
-            "" => "local",
-            other => {
+        outputs = match project_config::outputs_mode(text) {
+            Ok(mode) => mode,
+            Err(other) => {
                 let shown = path
                     .strip_prefix(&format!("{root}/"))
                     .unwrap_or(path)

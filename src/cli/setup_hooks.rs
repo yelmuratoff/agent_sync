@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use super::put;
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
-use crate::{Error, config::yaml_subset};
+use crate::{Error, config::project_config};
 
 const BLOCK_START: &str = "# >>> AGENTSYNC AUTO SYNC START >>>";
 const BLOCK_END: &str = "# <<< AGENTSYNC AUTO SYNC END <<<";
@@ -153,14 +153,7 @@ fn outputs_mode(root: &str) -> &'static str {
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
-        let text = String::from_utf8_lossy(&bytes);
-        let mode = yaml_subset::value(&text, "outputs").replace('"', "");
-        return match mode.as_str() {
-            "committed" => "committed",
-            "local" => "local",
-            "" if yaml_subset::value(&text, "gitignore.update") == "false" => "committed",
-            _ => "local",
-        };
+        return project_config::outputs_mode(&String::from_utf8_lossy(&bytes)).unwrap_or("local");
     }
     "local"
 }
@@ -232,14 +225,14 @@ pub fn setup_hooks(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Error> {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        put(out, HELP.render(style).as_bytes())?;
+        return Ok(0);
+    }
     let mut pre_commit = false;
     for arg in args {
         match arg.as_str() {
             "--pre-commit" => pre_commit = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
             other => {
                 put(
                     err,
@@ -434,12 +427,15 @@ mod tests {
             )
         );
         assert!(!dir.path().join(".githooks/post-merge").exists());
-        let (status, _, err) = run(&root, &["--bogus", "--help"]);
+        let (status, _, err) = run(&root, &["--bogus"]);
         assert_eq!(status, 2);
         assert_eq!(
             err,
             "Error: Unknown option: --bogus\nUsage: agentsync setup-hooks [--pre-commit]\n"
         );
+        let (status, out, err) = run(&root, &["--bogus", "--help"]);
+        assert_eq!((status, err.as_str()), (0, ""));
+        assert!(out.contains("agentsync setup-hooks — install the git hooks"));
         let (status, out, _) = run(&root, &["--help"]);
         assert_eq!(status, 0);
         assert_eq!(

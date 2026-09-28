@@ -247,3 +247,41 @@ fn disable_removes_a_tool_from_an_inline_tools_enabled_list() {
     let config = project.read(".ai/agent_sync.yaml");
     assert!(config.lines().any(|line| line == "  enabled: [cursor]"));
 }
+
+#[test]
+fn enable_and_disable_write_the_config_agentsync_config_path_names() {
+    let project = Project::seeded(&[]);
+    let before = project.read(".ai/agent_sync.yaml");
+    project.write("selected.yaml", "tools:\n  enabled: []\n");
+    project
+        .agentsync()
+        .env("AGENTSYNC_CONFIG_PATH", "selected.yaml")
+        .args(["enable", "cursor", "--no-scaffold"])
+        .assert()
+        .success();
+    assert!(project.read("selected.yaml").contains("cursor"));
+    project
+        .agentsync()
+        .env("AGENTSYNC_CONFIG_PATH", "selected.yaml")
+        .args(["disable", "cursor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Disabled 1 tool(s)"));
+    assert!(!project.read("selected.yaml").contains("cursor"));
+    assert_eq!(project.read(".ai/agent_sync.yaml"), before);
+}
+
+#[test]
+fn disable_without_a_config_creates_none() {
+    let project = Project::empty();
+    project.write(".ai/src/AGENTS.md", "# Agent\n");
+    project.write(".ai/src/tools/kimi.yaml", "enabled: true\n");
+    project
+        .agentsync()
+        .args(["disable", "kimi"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Disabled 1 tool(s)"));
+    assert_eq!(project.read(".ai/src/tools/kimi.yaml"), "enabled: false\n");
+    assert!(!project.exists(".ai/agent_sync.yaml"));
+}

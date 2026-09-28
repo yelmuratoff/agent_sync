@@ -63,16 +63,28 @@ impl Style {
     }
 }
 
-/// Left-align `s` in `width` cells the way Bash `printf '%-Ns'` does: escape
-/// bytes of a styled string count, so coloured columns drift exactly as they
-/// do today (design spec, "Known quirks", item 6).
+/// Left-align `s` in `width` cells, counting only what the terminal shows: the
+/// `ESC [ … m` sequences a style adds take no cell.
 pub fn pad_right(s: &str, width: usize) -> String {
-    let len = s.chars().count();
+    let len = visible_width(s);
     if len >= width {
         s.to_string()
     } else {
         format!("{s}{}", " ".repeat(width - len))
     }
+}
+
+fn visible_width(s: &str) -> usize {
+    let mut width = 0;
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            chars.by_ref().find(|c| *c == 'm');
+        } else {
+            width += 1;
+        }
+    }
+    width
 }
 
 #[cfg(test)]
@@ -93,9 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn padding_counts_every_character_including_escapes() {
+    fn padding_counts_the_cells_a_terminal_shows() {
         assert_eq!(pad_right("ab", 4), "ab  ");
         assert_eq!(pad_right("abcdef", 4), "abcdef");
-        assert_eq!(pad_right(&Style { enabled: true }.dim("ab"), 12).len(), 12);
+        assert_eq!(pad_right("●b", 4), "●b  ");
+        let styled = Style { enabled: true }.dim("ab");
+        assert_eq!(pad_right(&styled, 12), format!("{styled}          "));
     }
 }

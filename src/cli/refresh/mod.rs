@@ -36,6 +36,9 @@ pub struct Env<'a> {
     pub interactive: bool,
     /// `read -r reply </dev/tty`, empty when the terminal cannot be read.
     pub read_line: &'a mut dyn FnMut() -> String,
+    /// `AGENTSYNC_CONFIG_PATH`, which picks the config `template_overrides`
+    /// comes from.
+    pub config_path: Option<&'a str>,
 }
 
 /// The source directory below `root`: `.ai/src`, else a flat `.ai`.
@@ -43,6 +46,14 @@ fn src_base(root: &str) -> Option<&'static str> {
     [".ai/src", ".ai"]
         .into_iter()
         .find(|dir| Path::new(root).join(dir).is_dir())
+}
+
+fn fail(err: &mut dyn Write, style: &Style, message: &str) -> Result<u8, Error> {
+    put(
+        err,
+        format!("{}: {message}\n", style.red("Error")).as_bytes(),
+    )?;
+    Ok(1)
 }
 
 pub fn refresh(
@@ -59,16 +70,11 @@ pub fn refresh(
     };
 
     let Some(src_base) = src_base(root) else {
-        put(
-            err,
-            format!(
-                "{}: No .ai/ directory found in {root}\nRun {} first.\n",
-                style.red("Error"),
-                style.cyan("agentsync init")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
+        let message = format!(
+            "No .ai/ directory found in {root}\nRun {} first.",
+            style.cyan("agentsync init")
+        );
+        return fail(err, style, &message);
     };
     let user_base_shown = format!("{root}/{src_base}");
     let locator = Locator::new(&user_base_shown);
@@ -80,7 +86,10 @@ pub fn refresh(
 
     let manifest = TemplateManifest::load(Path::new(root))?;
     let has_manifest = !manifest.is_empty();
-    let overrides = load_overrides(root);
+    let overrides = match load_overrides(root, env.config_path) {
+        Ok(overrides) => overrides,
+        Err(message) => return fail(err, style, &message),
+    };
     let templates = catalog::template_files();
     let changes = Classifier {
         locator: &locator,
@@ -186,6 +195,7 @@ mod tests {
         let mut env = Env {
             interactive,
             read_line: &mut read_line,
+            config_path: None,
         };
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let status = refresh(&args, root, &Style::plain(), &mut env, &mut out, &mut err).unwrap();

@@ -372,6 +372,28 @@ fn profile_remove_deletes_config_home_output_variant_file_and_config_entry() {
 }
 
 #[test]
+fn profile_remove_keeps_files_agentsync_did_not_generate_in_the_config_home() {
+    let project = seeded();
+    add_hub(&project);
+    project.agentsync().arg("sync").assert().success();
+    assert!(project.exists(".claude-hub/CLAUDE.md"));
+    project.write(".claude-hub/.credentials.json", "{\"token\":\"t\"}\n");
+    project
+        .agentsync()
+        .args(["profile", "remove", "hub", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "kept .claude-hub/ (it holds files AgentSync did not generate)",
+        ));
+    assert!(!project.exists(".claude-hub/CLAUDE.md"));
+    assert_eq!(
+        project.read(".claude-hub/.credentials.json"),
+        "{\"token\":\"t\"}\n"
+    );
+}
+
+#[test]
 fn sync_profile_flag_missing_value_is_a_usage_error() {
     let project = seeded();
     project

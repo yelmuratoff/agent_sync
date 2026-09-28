@@ -18,6 +18,35 @@
 
 ### Fixed
 
+- **`doctor` reports a secret beside an angle-bracket placeholder.** A line such as `host: <your-host> token: ghp_…` was skipped whole, so the token went unreported. Only the `<…>` span is skipped now, as `${…}` already was.
+- **`simplify` finds payload overrides under `source.tools`.** With the tool override directory moved, it looked in `.ai/src/tools` and reported no payloads to remove.
+- **`import https://github.com/user/repo.git/` downloads `repo`.** The trailing `/` hid the `.git` suffix, so the download asked for a repository named `repo.git`.
+- **`profile add --tools` trims names and refuses an unknown tool.** `--tools 'claude, nope'` wrote a variant named ` nope-hub`, space included, for a tool that does not exist; it now stops with `unknown tool: nope.` and exit status 2. A `--tools` with no value says so instead of exiting 1 in silence.
+- **`diff <slug>` no longer answers "No user overrides" for any slug.** In a project without overrides, a mistyped slug read as nothing to diff; it now fails with `No override found for '<slug>'`, as it already did when other tools had overrides.
+- **`show <slug> <resource>` labels an override by the file sync reads.** An override such as `.ai/src/tools/cursor/hooks.jsonc` was shown as `[base]` because its extension differed from the shipped template's.
+- **`disable` lists only the tools it disabled.** An unknown slug, and a slug named twice, appeared under `Disabled N tool(s)` beside the tools that were really switched off.
+- **`sync --workspace` exits with the highest status of its projects,** as its `max exit code` line says. It exited with the last failure's status, so an OpenCode composition error (26) followed by an ordinary failure (1) ended as 1.
+- **`adopt .rules` explains that Zed's rules file is merged.** It answered that `.rules` was not a recognised AgentSync output; it now says the tool merges rules into one file and names the source rules directory to edit.
+- **A file in the way of an output directory is named.** `init` or `sync` with, say, a file where a tool writes a directory stopped with `Backup target parent is not a directory: <target>`; the message now names the file and says to move or rename it. A single-file `.clinerules` no longer triggers it, since Cline writes to `.cline/`.
+- **`dedupe` keeps `.ai/src/rules/` and the other top-level source directories.** Deleting the last duplicate in one removed the directory itself; now only the empty folders below it go, such as a skill folder or a skill category left empty.
+- **`init --tools` and `--content` read what was typed.** A space inside a name was dropped, so `cla ude` enabled `claude`; it is now refused. An empty value such as `--tools=` or `--content ,` skipped the wizard and contributed nothing, and `--content ,` scaffolded a project without `AGENTS.md`; both now stop with `requires a value`.
+- **`add mcp` checks `--env` before creating `.ai/src/mcp.json`,** so a malformed pair no longer leaves an empty server map behind. `--args` and `--env` values that span lines are read whole: a newline separates arguments, and env pairs, like a space or a comma does.
+- **`profile remove` deletes only what AgentSync generated in the config home.** It removed the whole directory, such as `.claude-hub/`, with the credentials, history, and settings the tool kept there. Files the sync manifest does not record now stay, and the command says `kept .claude-hub/` when any do.
+- **`enable` and `disable` edit the config `AGENTSYNC_CONFIG_PATH` selects.** They wrote to `.ai/agent_sync.yaml` while every other command read the selected file, so a tool enabled there never synced. `disable` also no longer creates `.ai/agent_sync.yaml` in a project that has none; it switches the tool off in its own YAML only.
+- **`upgrade-config` pins the config `AGENTSYNC_CONFIG_PATH` selects,** not `.ai/agent_sync.yaml`; a variable naming a missing file now stops it with the same error the other commands give.
+- **`dedupe` reads `shared.path` from, and records declined templates in, the config `AGENTSYNC_CONFIG_PATH` selects,** resolved for each project under `--workspace`. A variable naming a missing file stops it.
+- **`refresh` reads `template_overrides` from the config `AGENTSYNC_CONFIG_PATH` selects,** so templates declined or pinned there stay declined or pinned. A variable naming a missing file stops it.
+- **`check` and `doctor` name the file a disabled target left behind.** With `targets.agents.enabled: false`, an earlier `CLAUDE.md` stayed on disk and in the manifest, nothing updated it, and `check` reported the project as synced. Both commands now say `CLAUDE.md is left from claude targets.agents, which is disabled` with the way out; neither changes its exit status, and sync still leaves the file alone.
+- **`list` columns line up on a colour terminal.** Padding counted the escape bytes of a coloured cell, so every column after one drifted.
+- **`diff <slug> <resource>` refuses an unknown resource before it looks for the project,** as `show` and `customize` do.
+- **Removing a key keeps the blank line that separated its neighbours.** `simplify --apply`, `resolve` and `profile remove` joined the key before a removed block to the one after it.
+- **`profile add` writes the profile's tools as `[a, b]`,** with the space every other flow list in the config has.
+- **`adopt --all` names each adopted source once.** The same edit in two tools' copies of a skill printed `✓ adopted` twice for one file and counted it twice in the total.
+- **`migrate --apply --yes` separates `removed .agent/` from the planned moves** with a blank line, as every other block of its report is.
+- **`generate` keeps a description ended with Ctrl-D.** Closing the input while describing the project exited 1 and dropped what was typed; it now ends the description and prints the prompt. Closing it at the menu says `Cancelled.` instead of exiting in silence.
+- **`setup-hooks --help` answers wherever `--help` appears,** as the other commands do.
+- **`release` explains an input that ends at its prompt:** `input ended before an answer; nothing was released.` It exited 1 in silence.
+- **`init` no longer writes `defaults.enabled`,** a key nothing ever read, so a new config does not suggest tools can be switched on there. An existing one keeps working; the key stays ignored. `defaults.cleanup` is read and stays.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 

@@ -484,16 +484,27 @@ decision to make once rather than a bug to find twice.
 
 1. `parse_yaml_list` on an empty block key keeps scanning and returns the next
    dash list anywhere later in the file (`yaml.sh:180-197`).
-2. An unquoted scalar is cut at the first `#`, even without a preceding space.
-3. `\n` in a quoted header stays literal until `printf '%b'` at write time.
+2. *Kept and documented after 0.42.0.* An unquoted scalar is cut at the first
+   `#`, even without a preceding space. Changing it would lengthen every
+   existing unquoted value holding a `#` without a migration, so the README
+   tells users to quote such values instead.
+3. *Kept after 0.42.0.* `\n` in a quoted header stays literal until
+   `printf '%b'` at write time. The only place it shows is `show`, which then
+   prints a header on one line; unescaping in the reader would make the writer
+   interpret the backslashes twice.
 4. `get_tool_value` cannot override a base value with an empty string, and
    never consults `base:` when a shipped file exists for the slug.
-5. `defaults.enabled` in `agent_sync.yaml` and the `defaults:` block in
-   `lib/config.yaml` are never read.
-6. Bash `printf '%-Ns'` pads styled strings including their escape bytes, so
-   coloured `list` columns drift; the native `pad_right` reproduces it.
-7. `outputs` absent means `local`, except when `gitignore.update: false`, which
-   means `committed`; the rule is duplicated in three files.
+5. *Fixed after 0.42.0.* `defaults.enabled` in `agent_sync.yaml` and the
+   `defaults:` block in `lib/config.yaml` were never read. `init` no longer
+   writes the key and the shipped block is gone; `defaults.cleanup` in the
+   project config is read and stays.
+6. *Fixed after 0.42.0.* Bash `printf '%-Ns'` padded styled strings including
+   their escape bytes, so coloured `list` columns drifted; `pad_right` now
+   counts only the cells a terminal shows.
+7. *Kept, de-duplicated after 0.42.0.* `outputs` absent means `local`, except
+   when `gitignore.update: false`, which means `committed`. The rule stands:
+   dropping it would flip a project relying on it to local outputs. It lived
+   in three files and now lives in `project_config::outputs_mode`.
 8. *Struck 2026-09-20: not a quirk.* Locale-ordered tool listings were
    ratified as an accepted deviation, below; the numbering stays as it is
    because source comments and tests cite these items by number.
@@ -503,85 +514,105 @@ decision to make once rather than a bug to find twice.
     has a bare `paths:` key, not only the items under `paths:`.
 11. The inline skill index strips `>` from `description: >-` and indexes the
     skill with the description `-`.
-12. `sync --workspace` reports the status of the last project that failed as
-    "max exit code" and exits with it (`bin/agentsync.sh`, `cmd_workspace_fanout`).
+12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last
+    project that failed as "max exit code" and exited with it
+    (`bin/agentsync.sh`, `cmd_workspace_fanout`).
 13. `version_pin: warn` followed later by a `version_pin:` mapping with
     `mode: strict` reads as `warn`: the reader answers the first `version_pin`
     key, so the nested lookup is empty and the scalar wins (`version.sh`,
     `version_pin_mode`).
-14. `enable` and `disable` edit `.ai/agent_sync.yaml`, or a root
-    `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selects another file,
-    while "already enabled" reads the selected one.
-15. `disable` creates `.ai/agent_sync.yaml` when the project has none.
+14. *Fixed after 0.42.0.* `enable` and `disable` edited `.ai/agent_sync.yaml`,
+    or a root `agent_sync.yaml`, even when `AGENTSYNC_CONFIG_PATH` selected
+    another file, while "already enabled" read the selected one.
+15. *Fixed after 0.42.0.* `disable` created `.ai/agent_sync.yaml` when the
+    project had none.
 16. `enable` under a `tools:` block without `enabled:` appends a second `tools:`
     block at the end of the file.
-17. `disable` lists every argument that is not enabled afterwards, unknown slugs
-    and repeated ones included.
-18. `diff <slug>` prints "No user overrides" and exits 0 when no tool has an
-    override, whatever the slug.
-19. `show <slug> <resource>` labels an override `base` when its extension
-    differs from the shipped template's.
-20. `diff` selects the project config before it validates the resource;
-    `customize` and `show` validate first.
-21. `simplify`'s payload pass scans `.ai/src/tools` even when `source.tools`
+17. *Fixed after 0.42.0.* `disable` listed every argument that was not
+    enabled afterwards, unknown slugs and repeated ones included.
+18. *Fixed after 0.42.0.* `diff <slug>` printed "No user overrides" and exited
+    0 when no tool had an override, whatever the slug.
+19. *Fixed after 0.42.0.* `show <slug> <resource>` labelled an override
+    `base` when its extension differed from the shipped template's.
+20. *Fixed after 0.42.0.* `diff` selected the project config before it
+    validated the resource; `customize` and `show` validate first.
+21. *Fixed after 0.42.0.* `simplify`'s payload pass scanned `.ai/src/tools` even when `source.tools`
     moves the tool override directory.
 22. *Fixed in 0.38.0.* `resolve` without a terminal ignored its tool filter
     and exited 0, having already cleared the queue; it is read-only now.
-23. `yaml_remove_key` (`simplify --apply`, `resolve` adopt) drops the blank
-    lines directly after the removed block.
+23. *Fixed after 0.42.0.* `yaml_remove_key` (`simplify --apply`, `resolve`
+    adopt) dropped the blank lines directly after the removed block. They stay
+    when a sibling came before the block and no blank line already separates
+    it from what follows.
 24. *Fixed in 0.38.0.* `resolve` in a project without overrides deleted
     `.ai/.pending-resolutions.yaml` whether or not it had a terminal.
 25. `simplify --apply` without a terminal deletes byte-identical payload copies
     but keeps an override file it emptied.
-26. `profile add --tools` keeps spaces around comma-separated names and accepts
-    unknown tools: `'claude, codex'` writes `.ai/src/tools/ codex-hub.yaml`.
-27. `profile add` writes the profile's `tools:` list as `[a,b]`, without spaces.
-28. `profile add <name> --tools` with no value exits 1 without a message.
-29. `profile remove` deletes an adopted config home, whose content was copied
-    into the overlay.
-30. `upgrade-config` rewrites every `agentsync_version:` line and ignores
-    `AGENTSYNC_CONFIG_PATH`.
-31. `dedupe` removes a category directory it emptied, such as `.ai/src/rules/`,
-    not only emptied skill folders.
-32. `dedupe` ignores `AGENTSYNC_CONFIG_PATH`, even a missing one: it reads
-    `shared.path` from and appends declined entries to `.ai/agent_sync.yaml`,
-    else a root `agent_sync.yaml`.
-33. `adopt` of a merged rules file such as Zed's `.rules` answers that it is not
-    a recognised output; the merge refusal is reachable only for a file inside
-    a rules directory.
-34. `adopt --all` prints one `✓ adopted` line per destination, so two identical
-    edits of one source name it twice.
-35. `migrate --apply --yes` prints `removed .agent/ (pre-v0.6 layout)` with no
-    blank line before `Planned moves:`.
+26. *Fixed after 0.42.0.* `profile add --tools` kept spaces around
+    comma-separated names and accepted unknown tools: `'claude, codex'` wrote
+    `.ai/src/tools/ codex-hub.yaml`.
+27. *Fixed after 0.42.0.* `profile add` wrote the profile's `tools:` list as
+    `[a,b]`, without spaces; it writes `[a, b]`.
+28. *Fixed after 0.42.0.* `profile add <name> --tools` with no value exited 1
+    without a message.
+29. *Fixed after 0.42.0.* `profile remove` deleted the whole config home, an
+    adopted one included, along with anything the tool itself kept there. It
+    now removes the files the manifest records and the directories that
+    leaves empty.
+30. *Fixed after 0.42.0 for `AGENTSYNC_CONFIG_PATH`.* `upgrade-config`
+    rewrote the default config whatever the variable selected. It still
+    rewrites every top-level `agentsync_version:` line: the reader takes the
+    first, and rewriting the others keeps no stale pin behind.
+31. *Fixed after 0.42.0.* `dedupe` removed a top-level source directory it
+    emptied, such as `.ai/src/rules/`, not only emptied skill folders. It now
+    stops below that directory; an emptied skill category still goes.
+32. *Fixed after 0.42.0.* `dedupe` ignored `AGENTSYNC_CONFIG_PATH`, even a
+    missing one: it read `shared.path` from and appended declined entries to
+    `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`.
+33. *Fixed after 0.42.0.* `adopt` of a merged rules file such as Zed's
+    `.rules` answered that it was not a recognised output; the merge refusal
+    was reachable only for a file inside a rules directory.
+34. *Fixed after 0.42.0.* `adopt --all` printed one `✓ adopted` line per
+    destination, so two identical edits of one source named it twice.
+35. *Fixed after 0.42.0.* `migrate --apply --yes` printed `removed .agent/
+    (pre-v0.6 layout)` with no blank line before `Planned moves:`.
 36. A legacy file without an extension, such as `.ai/src/settings/README`, moves
     to `.ai/src/tools/README/settings.README`.
 37. Off a terminal without `--yes`, `migrate --apply` consolidates identical MCP
     files but leaves `.agent/` in place.
-38. `refresh` heals `.ai/.template-manifest` with every shipped template that
-    matches its copy, including categories outside `--only` and `AGENTS.md`
-    without `--include-agents-md`.
+38. *Kept after 0.42.0.* `refresh` heals `.ai/.template-manifest` with every
+    shipped template that matches its copy, including categories outside
+    `--only` and `AGENTS.md` without `--include-agents-md`. The healing keeps
+    the manifest honest (`src/config/template_manifest.rs`); scoping it would
+    rewrite that committed file on every scoped refresh and buy nothing.
 39. Off a terminal without `--yes`, `refresh` applies pending auto-updates,
     because the TTY gate looks only at new files and conflicts; with
     `--include-deleted` and nothing else pending it prints each RESTORE prompt
     on stderr and declines it.
-40. `refresh` reads `template_overrides` from `.ai/agent_sync.yaml`, else a
-    root `agent_sync.yaml`, ignoring `AGENTSYNC_CONFIG_PATH`.
-41. A detected tool whose destination has a file where a directory is expected,
-    such as a legacy single-file `.clinerules`, makes `init` refuse at the
-    backup step with `Backup target parent is not a directory`.
-42. `init` drops every space inside a `--tools` or `--content` token, so
-    `cla ude` reads as `claude`; `--tools=` and `--content ''` skip the wizard
-    while contributing nothing.
+40. *Fixed after 0.42.0.* `refresh` read `template_overrides` from
+    `.ai/agent_sync.yaml`, else a root `agent_sync.yaml`, ignoring
+    `AGENTSYNC_CONFIG_PATH`.
+41. *Fixed after 0.42.0.* A detected tool whose destination had a file where a
+    directory was expected, such as a legacy single-file `.clinerules`, made
+    `init` refuse at the backup step with `Backup target parent is not a
+    directory`. Cline no longer writes below `.clinerules`, and the refusal
+    that remains for any other such file names it and says to move it.
+42. *Fixed after 0.42.0.* `init` dropped every space inside a `--tools` or
+    `--content` token, so `cla ude` read as `claude`; `--tools=` and
+    `--content ''` skipped the wizard while contributing nothing. Tokens are
+    now trimmed, a tool name with a space inside is refused, and an empty
+    value is refused as a missing one.
 43. `init` heals `.ai/.template-manifest` before it adopts existing outputs, so
     an adopted `AGENTS.md` carries the template's hash and `refresh` treats it
     as a silently kept edit.
 44. *Fixed in 0.38.0.* `doctor`'s secret scan listed only the lines of the
     first pattern with a hit, so an AWS key on line 1 hid an OpenAI key on
     line 2.
-45. *Fixed in 0.38.0 for `${…}`.* A line holding `${…}` anywhere was never
-    reported, however real the key beside the placeholder; the scan now reads
-    the line with those spans removed. The `<…>` rule stands: an angle-bracket
-    placeholder still suppresses the line unless it holds `sk-`.
+45. *Fixed in 0.38.0 for `${…}`, after 0.42.0 for `<…>`.* A line holding
+    `${…}` anywhere was never reported, however real the key beside the
+    placeholder, and a line holding `<…>` was never reported unless it held
+    `sk-`. The scan now reads the line with those spans removed; a `<…>` span
+    that holds `sk-` stays readable.
 46. `add mcp` re-emits only the `mcpServers` member of `.ai/src/mcp.json`,
     dropping every other top-level member, and replaces a file without a
     `"mcpServers"` substring with a fresh object holding the one server.
@@ -589,19 +620,24 @@ decision to make once rather than a bug to find twice.
     member, so a nested decoy makes the merge fail with `failed to update`.
 48. `add mcp` stops reading the server map at the first key that is not a
     string and drops the servers after it.
-49. `add mcp` creates `.ai/src/mcp.json` with an empty server map before it
-    validates `--env`, so a bad pair leaves the file behind; `--args` and
-    `--env` read only the first line of their value.
-50. `import` strips a `.git` suffix before a trailing `/`, so
-    `https://github.com/user/repo.git/` downloads the repository `repo.git`.
+49. *Fixed after 0.42.0.* `add mcp` created `.ai/src/mcp.json` with an empty
+    server map before it validated `--env`, so a bad pair left the file
+    behind; `--args` and `--env` read only the first line of their value.
+50. *Fixed after 0.42.0.* `import` stripped a `.git` suffix before a trailing
+    `/`, so `https://github.com/user/repo.git/` downloaded the repository
+    `repo.git`.
 51. A directory `import` copies the source project's `.ai/` alone, so a
     `source:` override pointing elsewhere in that project is not carried.
-52. `generate` ends with status 1 and no message when stdin closes before the
-    menu choice or the description is complete.
-53. `setup-hooks` reads its options in order and refuses the first unknown
-    one, so `--bogus --help` prints the unknown-option error, not the help.
-54. `release` exits 1 with nothing after its `Continue? [Y/n]:` prompt when
-    stdin ends there: `read -r confirm` fails and errexit ends the run.
+52. *Fixed after 0.42.0.* `generate` ended with status 1 and no message when
+    stdin closed before the menu choice or the description was complete. At
+    the menu it now says `Cancelled.`; in the description the end of input
+    ends the text, which then goes into the prompt.
+53. *Fixed after 0.42.0.* `setup-hooks` read its options in order and refused
+    the first unknown one, so `--bogus --help` printed the unknown-option
+    error, not the help.
+54. *Fixed after 0.42.0.* `release` exited 1 with nothing after its
+    `Continue? [Y/n]:` prompt when stdin ended there; it now says the input
+    ended and nothing was released.
 55. *Fixed in 0.38.0.* `update`'s changelog renderer matched a
     `## <version>` heading by prefix, so `## 9.9.90` rendered under `9.9.9`
     and ran on to the end of the file.

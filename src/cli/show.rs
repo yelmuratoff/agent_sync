@@ -275,7 +275,7 @@ impl Show<'_> {
         let (style, slug, project) = (self.style, self.slug, self.project);
         let tool = Tool::load(project, slug)?;
         let base = payload::base_source(&tool, resource);
-        let user_file = payload::override_path(project, &tool, resource).filter(|p| p.is_file());
+        let user_file = payload::find_new_override(project, slug, resource)?;
         let legacy =
             payload::legacy_override_path(project, &tool, resource).filter(|p| p.is_file());
         let (effective, warn) = payload::effective_source(project, &tool, resource)?;
@@ -438,6 +438,23 @@ mod tests {
             out,
             format!(
                 "\n  Cursor — hooks  [★ user override (legacy layout)]\n  effective: {root}/.ai/src/hooks/cursor.json\n  legacy:    {root}/.ai/src/hooks/cursor.json\n  base:      /<agentsync>/lib/templates/hooks/cursor.json\n\n    {{}}\n\n"
+            )
+        );
+    }
+
+    #[test]
+    fn an_override_with_its_own_extension_is_labelled_the_user_override() {
+        let (_dir, root) = project();
+        std::fs::create_dir_all(format!("{root}/.ai/src/tools/cursor")).unwrap();
+        std::fs::write(format!("{root}/.ai/src/tools/cursor/hooks.jsonc"), "{}\n").unwrap();
+        assert_eq!(
+            call(&root, &["cursor", "hooks"]),
+            (
+                0,
+                format!(
+                    "\n  Cursor — hooks  [★ user override]\n  effective: {root}/.ai/src/tools/cursor/hooks.jsonc\n  override:  {root}/.ai/src/tools/cursor/hooks.jsonc\n  base:      /<agentsync>/lib/templates/hooks/cursor.json\n\n    {{}}\n\n"
+                ),
+                String::new()
             )
         );
     }

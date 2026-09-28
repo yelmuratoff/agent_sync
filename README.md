@@ -431,6 +431,11 @@ repository never runs its hook. `AGENTSYNC_SKIP_POST_SYNC=true` or
 `post_sync.skip: true` in `agent_sync.yaml` disables it again, and `check`
 always skips it.
 
+Quote any value that holds a `#`. AgentSync reads an unquoted value up to the
+first `#`, with or without a space before it, so `url: https://x.dev/#top`
+reads as `https://x.dev/`; `url: "https://x.dev/#top"` keeps the whole URL.
+The same holds in `agent_sync.yaml`.
+
 ### Key Fields
 
 | Field                         | Purpose                                                                                                                      |
@@ -1041,9 +1046,10 @@ subagents, settings, hooks, and MCP are separate targets and are untouched.
 
 Delete the file as well as disabling the target. A `CLAUDE.md` left from an
 earlier sync keeps being read by Claude Code, and because nothing regenerates
-it, it quietly ages while `agentsync check` still reports the project as
-synced. Once it is gone, the next sync drops it from the manifest and `check`
-stays green.
+it, it quietly ages. Sync leaves it in place, so a file you froze on purpose
+survives; `agentsync check` and `agentsync doctor` name it as left from a
+disabled target without failing. Once it is gone, the next sync drops it from
+the manifest.
 
 ## Workspaces — nested AgentSync projects
 

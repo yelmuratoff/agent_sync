@@ -3,7 +3,7 @@
 
 use crate::paths::DiskText;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::put;
 use crate::config::tool::Tool;
@@ -65,16 +65,12 @@ enum Scaffold {
 }
 
 /// `_enable_resolve_or_create_config`.
-fn resolve_or_create_config(root: &Path) -> Result<PathBuf, Error> {
-    let config = root.join(".ai").join("agent_sync.yaml");
-    if config.is_file() {
-        return Ok(config);
+fn resolve_or_create_config(project: &Project) -> Result<PathBuf, Error> {
+    if let Some(config) = &project.config_path {
+        return Ok(config.clone());
     }
-    let legacy = root.join("agent_sync.yaml");
-    if legacy.is_file() {
-        return Ok(legacy);
-    }
-    let ai = root.join(".ai");
+    let ai = project.root.join(".ai");
+    let config = ai.join("agent_sync.yaml");
     std::fs::create_dir_all(&ai).map_err(|e| Error::io(&ai, e))?;
     std::fs::write(
         &config,
@@ -222,7 +218,7 @@ pub fn enable(
         }
         scaffold = Scaffold::Never;
     }
-    let config = resolve_or_create_config(&project.root)?;
+    let config = resolve_or_create_config(&project)?;
 
     let mut enabled = Enabled::default();
     for slug in &tools {
@@ -295,49 +291,44 @@ pub fn disable(
             }
         }
     }
-    let config = resolve_or_create_config(&project.root)?;
-
-    let (mut removed, mut not_enabled) = (0usize, 0usize);
+    let (mut disabled, mut not_enabled) = (Vec::new(), 0usize);
     for slug in args {
         if !project.enabled_tools()?.contains(slug) {
             not_enabled += 1;
             continue;
         }
-        yaml_edit::list_remove(&config, "tools.enabled", slug)?;
+        if let Some(config) = &project.config_path {
+            yaml_edit::list_remove(config, "tools.enabled", slug)?;
+        }
         let user_file = project.user_tool_file(slug);
         if user_file.is_file() && Tool::load(&project, slug)?.user_value("enabled") == "true" {
             yaml_edit::set_scalar(&user_file, "enabled", "false")?;
         }
-        removed += 1;
+        disabled.push(slug);
     }
 
     put(out, b"\n")?;
-    if removed > 0 {
-        put(
-            out,
-            format!("{}\n", style.yellow(&format!("Disabled {removed} tool(s)"))).as_bytes(),
-        )?;
-        let enabled = project.enabled_tools()?;
-        for slug in args {
-            if !enabled.contains(slug) {
-                put(
-                    out,
-                    format!(
-                        "    {} {} {}\n",
-                        style.dim("○"),
-                        Tool::load(&project, slug)?.display_name(),
-                        style.dim(&format!("({slug})"))
-                    )
-                    .as_bytes(),
-                )?;
-            }
+    if !disabled.is_empty() {
+        let heading = format!("Disabled {} tool(s)", disabled.len());
+        put(out, format!("{}\n", style.yellow(&heading)).as_bytes())?;
+        for slug in &disabled {
+            put(
+                out,
+                format!(
+                    "    {} {} {}\n",
+                    style.dim("○"),
+                    Tool::load(&project, slug)?.display_name(),
+                    style.dim(&format!("({slug})"))
+                )
+                .as_bytes(),
+            )?;
         }
         put(
             out,
             format!("\nRun {} to apply cleanup.\n", style.cyan("agentsync sync")).as_bytes(),
         )?;
     }
-    if not_enabled > 0 && removed == 0 {
+    if not_enabled > 0 && disabled.is_empty() {
         put(
             out,
             format!("{}\n", style.dim("No matching tools were enabled.")).as_bytes(),
@@ -428,11 +419,11 @@ mod tests {
         let (_dir, root) = project();
         std::fs::create_dir_all(root.join(".ai/src/tools")).unwrap();
         std::fs::write(root.join(".ai/src/tools/kimi.yaml"), "enabled: true\n").unwrap();
-        let run = call(&root, "disable", &["cursor", "kimi", "nope"]);
+        let run = call(&root, "disable", &["cursor", "kimi", "nope", "cursor"]);
         assert_eq!(run.status, 0);
         assert_eq!(
             run.out,
-            "\nDisabled 2 tool(s)\n    ○ Cursor (cursor)\n    ○ Kimi Code (kimi)\n    ○ nope (nope)\n\nRun agentsync sync to apply cleanup.\n\n"
+            "\nDisabled 2 tool(s)\n    ○ Cursor (cursor)\n    ○ Kimi Code (kimi)\n\nRun agentsync sync to apply cleanup.\n\n"
         );
         assert_eq!(
             std::fs::read_to_string(root.join(".ai/src/tools/kimi.yaml")).unwrap(),

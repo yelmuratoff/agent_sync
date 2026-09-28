@@ -29,6 +29,26 @@ fn check_passes_after_sync() {
 }
 
 #[test]
+fn check_warns_about_the_file_a_disabled_target_left_behind() {
+    let project = synced_project();
+    assert!(project.exists("CLAUDE.md"));
+    project.write(
+        ".ai/src/tools/claude.yaml",
+        "targets:\n  agents:\n    enabled: false\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    check(&project)
+        .success()
+        .stdout(predicate::str::contains(
+            "! CLAUDE.md is left from claude targets.agents, which is disabled; sync no longer updates it",
+        ))
+        .stdout(predicate::str::contains(
+            "  • Delete it, or set targets.agents.enabled back to true",
+        ))
+        .stdout(predicate::str::contains("AGENTS.md is left").not());
+}
+
+#[test]
 fn check_detects_minimax_mcp_drift() {
     let project = Project::seeded(&[]);
     project.enable_tools(&["minimax"]);
