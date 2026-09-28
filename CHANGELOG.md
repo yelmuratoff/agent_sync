@@ -17,6 +17,7 @@
 - **Cline gets native skills and its current layout.** Cline reads `AGENTS.md`, `.cline/rules/`, `.cline/skills/`, and `.cline/workflows/`, so skills are copied as skills instead of inlined as an index in `.clinerules/00-context.md`. The first sync removes the files it had recorded under `.clinerules/`.
 - **The config reader no longer borrows a list or a section from elsewhere in the file.** An empty key such as `enabled:` followed by another key read the next `- item` list anywhere below it, so `tools.enabled` could pick up an unrelated list; it now reads as empty. A key holding a value, such as `version_pin: warn`, no longer hides a later mapping with the same name, so `version_pin:` with `mode: strict` further down now applies. A config written either way reads differently after the upgrade.
 - **A tool override can set a field to empty.** `header: ""` or `exclude: []` in `.ai/src/tools/<tool>.yaml` used to fall back to the shipped value; a key you write now wins even when empty. A `base:` in an override of a shipped tool now fills the fields the shipped file leaves empty, where it used to be ignored.
+- **Frontmatter fields read the first occurrence and whole quoted values.** A field written twice in a rule or subagent took its last value, and `description: "use # with care"` was cut at the `#`; converted outputs such as Codex and Kiro agents now carry the first value, quoted text intact.
 
 ### Fixed
 

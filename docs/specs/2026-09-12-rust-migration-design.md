@@ -512,8 +512,9 @@ decision to make once rather than a bug to find twice.
 8. *Struck 2026-09-20: not a quirk.* Locale-ordered tool listings were
    ratified as an accepted deviation, below; the numbering stays as it is
    because source comments and tests cite these items by number.
-9. `read_frontmatter_field` returns the last occurrence of a key. (The Bash
-   comment promised the first; `src/convert.rs` documents the real behaviour.)
+9. *Fixed after 0.42.0.* `read_frontmatter_field` returned the last occurrence
+   of a key, and read `"x" # note` as `x"`. It now returns the first, and a
+   quoted value up to its closing quote.
 10. `_rule_paths_csv` collects every list item in a rule's frontmatter once it
     has a bare `paths:` key, not only the items under `paths:`.
 11. The inline skill index strips `>` from `description: >-` and indexes the

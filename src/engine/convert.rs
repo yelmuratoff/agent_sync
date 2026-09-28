@@ -120,11 +120,10 @@ fn inline_list(rest: &[u8]) -> Option<&[u8]> {
     }
 }
 
-/// `read_frontmatter_field`: the last value of `field` inside a leading
-/// `---` block, unquoted, cut at `#`, right-trimmed.
+/// `read_frontmatter_field`: the first value of `field` inside a leading
+/// `---` block, read by [`field_scalar`].
 pub fn read_field(source: &[u8], field: &str) -> Vec<u8> {
     let mut in_frontmatter = false;
-    let mut value: Vec<u8> = Vec::new();
     for line in text::lines(source) {
         if !in_frontmatter {
             if line != b"---" {
@@ -134,18 +133,29 @@ pub fn read_field(source: &[u8], field: &str) -> Vec<u8> {
             continue;
         }
         if line == b"---" {
-            return value;
+            break;
         }
         if let Some(rest) = after_key(line, field) {
-            let unquoted = strip_quotes(rest);
-            let cut = unquoted
-                .iter()
-                .position(|b| *b == b'#')
-                .map_or(unquoted, |idx| &unquoted[..idx]);
-            value = text::trim_end_space(cut).to_vec();
+            return field_scalar(rest).to_vec();
         }
     }
-    value
+    Vec::new()
+}
+
+/// A frontmatter value: the text between its quotes when quoted, else the
+/// text before a `#` comment, trimmed.
+fn field_scalar(rest: &[u8]) -> &[u8] {
+    let rest = text::trim_start_space(rest);
+    if let Some(&quote) = rest.first().filter(|b| **b == b'"' || **b == b'\'')
+        && let Some(close) = rest[1..].iter().position(|b| *b == quote)
+    {
+        return &rest[1..=close];
+    }
+    let cut = rest
+        .iter()
+        .position(|b| *b == b'#')
+        .map_or(rest, |idx| &rest[..idx]);
+    text::trim_end_space(cut)
 }
 
 /// Per-line `sed` substitution: every non-overlapping `from` becomes `to`.
@@ -455,9 +465,15 @@ mod tests {
 
     // Design spec, "Known quirks", item 9: reproduced on purpose until cutover.
     #[test]
-    fn read_field_takes_the_last_occurrence_like_bash_does() {
-        let src = b"---\ndescription: first\ndescription: \"second\" # note\n---\n";
-        assert_eq!(read_field(src, "description"), b"second\"");
+    fn read_field_takes_the_first_occurrence_and_whole_quoted_values() {
+        let src = b"---\ndescription: first\ndescription: second\n---\n";
+        assert_eq!(read_field(src, "description"), b"first");
+        let quoted = b"---\ndescription: \"use # with care\" # note\n---\n";
+        assert_eq!(read_field(quoted, "description"), b"use # with care");
+        let single = b"---\nname: 'reviewer'\n---\n";
+        assert_eq!(read_field(single, "name"), b"reviewer");
+        let plain = b"---\nmodel: sonnet # cheap\n---\n";
+        assert_eq!(read_field(plain, "model"), b"sonnet");
         assert_eq!(read_field(b"# no fm\n", "description"), b"");
     }
 
