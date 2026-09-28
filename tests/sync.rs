@@ -686,7 +686,11 @@ fn rollback_restores_what_a_moved_destination_removed() {
     project.agentsync().arg("sync").assert().success();
     assert!(!project.exists(".windsurf/rules/core.md"));
 
-    project.agentsync().args(["rollback", "--yes"]).assert().success();
+    project
+        .agentsync()
+        .args(["rollback", "--yes"])
+        .assert()
+        .success();
     assert_eq!(project.read(".windsurf/rules/core.md"), generated);
 }
 
