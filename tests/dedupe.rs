@@ -96,6 +96,25 @@ fn make_parent_child_identical(root: &Path) -> (std::path::PathBuf, std::path::P
 }
 
 #[test]
+fn dedupe_yes_deletes_a_parent_skill_the_child_keeps_in_a_category() {
+    let root = tempfile::tempdir().unwrap();
+    let (_parent, child) = make_parent_child_identical(root.path());
+    std::fs::create_dir_all(child.join(".ai/src/skills/meta")).unwrap();
+    std::fs::rename(
+        child.join(".ai/src/skills/foo"),
+        child.join(".ai/src/skills/meta/foo"),
+    )
+    .unwrap();
+
+    dedupe_in(&child, &["--yes"])
+        .success()
+        .stdout(predicate::str::contains("skills/foo/SKILL.md"));
+
+    assert!(!child.join(".ai/src/skills/meta/foo/SKILL.md").exists());
+    assert!(!child.join(".ai/src/skills/meta").exists());
+}
+
+#[test]
 fn dedupe_requires_tty_without_yes() {
     let root = tempfile::tempdir().unwrap();
     let (_parent, child) = make_parent_child_identical(root.path());

@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::put;
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::{
@@ -390,9 +391,16 @@ fn collect(child_src: &str, parent_src: &str) -> (Identical, Divergent) {
             .map(str::to_string)
     }));
 
+    let child_skills = skill_tree::discover(
+        &Workspace::on_disk(child_src),
+        &format!("{child_src}/skills"),
+    );
     let (mut identical, mut divergent) = (Vec::new(), Vec::new());
     for rel in parent_files {
-        let child_file = format!("{child_src}/{rel}");
+        let child_file = match rel.strip_prefix("skills/") {
+            Some(inside) => format!("{child_src}/skills/{}", child_skills.locate(inside)),
+            None => format!("{child_src}/{rel}"),
+        };
         let parent_file = format!("{parent_src}/{rel}");
         if !Path::new(&child_file).is_file() {
             continue;
