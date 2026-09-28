@@ -142,9 +142,21 @@ fn load_run_config(s: &mut Session, env: &Env, selection: Selection) -> Result<R
 
 /// `_resolve_sources`.
 fn resolve_sources(s: &mut Session, env: &Env, run: &mut Run) -> Step {
+    let config = run.config.as_deref();
+    let sources = source_paths(s, config);
+    register_explicit_sources(s, env, config)?;
+    s.tools_dir = tools_dir(s, config);
+    require_agents(s, &sources.agents)?;
+    run.sources = sources;
+    Ok(())
+}
+
+/// Each source from the global default, then the detected `.ai/src/` or
+/// `.ai/` entry, then the project config's `source.<key>` or bare `<key>`.
+fn source_paths(s: &Session, config: Option<&str>) -> Sources {
     let global = catalog::GLOBAL_CONFIG;
-    let root = s.paths.root.clone();
-    let detect = |s: &Session, is_file: bool, sub: &str| -> Option<String> {
+    let root = &s.paths.root;
+    let detect = |is_file: bool, sub: &str| -> Option<String> {
         [format!(".ai/src/{sub}"), format!(".ai/{sub}")]
             .into_iter()
             .find(|rel| {
@@ -170,90 +182,99 @@ fn resolve_sources(s: &mut Session, env: &Env, run: &mut Run) -> Step {
         (false, "commands", &mut sources.commands),
         (false, "agents", &mut sources.subagents),
     ] {
-        if let Some(found) = detect(s, is_file, sub) {
+        if let Some(found) = detect(is_file, sub) {
             *slot = found;
         }
     }
-    if let Some(text) = &run.config {
-        for (key, slot) in [
-            ("agents", &mut sources.agents),
-            ("rules", &mut sources.rules),
-            ("skills", &mut sources.skills),
-            ("commands", &mut sources.commands),
-            ("subagents", &mut sources.subagents),
-        ] {
-            let nested = yaml_subset::value(text, &format!("source.{key}"));
-            let chosen = if nested.is_empty() {
-                yaml_subset::value(text, key)
-            } else {
-                nested
-            };
-            if !chosen.is_empty() {
-                *slot = chosen;
-            }
+    let Some(text) = config else {
+        return sources;
+    };
+    for (key, slot) in [
+        ("agents", &mut sources.agents),
+        ("rules", &mut sources.rules),
+        ("skills", &mut sources.skills),
+        ("commands", &mut sources.commands),
+        ("subagents", &mut sources.subagents),
+    ] {
+        let nested = yaml_subset::value(text, &format!("source.{key}"));
+        let chosen = if nested.is_empty() {
+            yaml_subset::value(text, key)
+        } else {
+            nested
+        };
+        if !chosen.is_empty() {
+            *slot = chosen;
         }
     }
+    sources
+}
 
+/// Every `source.*` outside the project registered as an explicit root; one
+/// that is refused or untrusted stops the run.
+fn register_explicit_sources(s: &mut Session, env: &Env, config: Option<&str>) -> Step {
     s.paths
         .trust_external_roots(env.external_source_roots.as_deref());
     let mut explicit = Vec::new();
-    if let Some(text) = &run.config {
-        for key in [
-            "agents",
-            "rules",
-            "skills",
-            "tools",
-            "commands",
-            "subagents",
-        ] {
-            let raw = yaml_subset::value(text, &format!("source.{key}"));
-            if raw.is_empty() {
-                continue;
+    for key in [
+        "agents",
+        "rules",
+        "skills",
+        "tools",
+        "commands",
+        "subagents",
+    ] {
+        let raw = config
+            .map(|text| yaml_subset::value(text, &format!("source.{key}")))
+            .unwrap_or_default();
+        if raw.is_empty() {
+            continue;
+        }
+        match s.paths.classify_explicit_source(&raw) {
+            paths::ExplicitSource::Inside => {}
+            paths::ExplicitSource::Outside(canonical) => explicit.push(canonical),
+            paths::ExplicitSource::Refused(canonical) => {
+                s.log.error(&format!(
+                    "source.{key} must not be the filesystem root, the home directory, or the project root or its ancestor: {raw} -> {canonical}"
+                ));
+                return Err(Stop(1));
             }
-            match s.paths.classify_explicit_source(&raw) {
-                paths::ExplicitSource::Inside => {}
-                paths::ExplicitSource::Outside(canonical) => explicit.push(canonical),
-                paths::ExplicitSource::Refused(canonical) => {
-                    s.log.error(&format!(
-                        "source.{key} must not be the filesystem root, the home directory, or the project root or its ancestor: {raw} -> {canonical}"
-                    ));
-                    return Err(Stop(1));
-                }
-                paths::ExplicitSource::Untrusted(canonical) => {
-                    s.log.error(&format!(
-                        "source.{key} points outside the project at {canonical}, which AGENTSYNC_EXTERNAL_SOURCE_ROOTS does not list; add that directory (or a parent) to the variable to read from it"
-                    ));
-                    return Err(Stop(1));
-                }
+            paths::ExplicitSource::Untrusted(canonical) => {
+                s.log.error(&format!(
+                    "source.{key} points outside the project at {canonical}, which AGENTSYNC_EXTERNAL_SOURCE_ROOTS does not list; add that directory (or a parent) to the variable to read from it"
+                ));
+                return Err(Stop(1));
             }
         }
     }
     s.paths.register_explicit_roots(explicit);
-    let configured_tools = run
-        .config
-        .as_deref()
+    Ok(())
+}
+
+fn tools_dir(s: &Session, config: Option<&str>) -> String {
+    let configured = config
         .map(|text| yaml_subset::value(text, "source.tools"))
         .unwrap_or_default();
-    s.tools_dir = if configured_tools.is_empty() {
-        format!("{root}/.ai/src/tools")
+    if configured.is_empty() {
+        format!("{}/.ai/src/tools", s.paths.root)
     } else {
-        s.paths.absolute(&configured_tools)
-    };
+        s.paths.absolute(&configured)
+    }
+}
 
+fn require_agents(s: &mut Session, agents: &str) -> Step {
     let agents_abs = s
         .paths
         .clone()
-        .resolve_source(&sources.agents, "source.agents", &mut s.log)
+        .resolve_source(agents, "source.agents", &mut s.log)
         .ok_or(Stop(1))?;
-    if !s.ws.is_file(&agents_abs) {
-        s.log
-            .error(&format!("Source agents file not found: {agents_abs}"));
-        s.log
-            .error("Run 'agentsync init' or set source.agents in agent_sync.yaml");
-        return Err(Stop(1));
+    if s.ws.is_file(&agents_abs) {
+        return Ok(());
     }
-    run.sources = sources;
-    Ok(())
+    s.log
+        .error(&format!("Source agents file not found: {agents_abs}"));
+    s.log
+        .error("Run 'agentsync init' or set source.agents in agent_sync.yaml");
+    Err(Stop(1))
 }
 
 /// `_refuse_configless_cleanup_or_exit`: without a project config, a write run
