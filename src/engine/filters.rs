@@ -12,6 +12,16 @@ pub fn matches(filename: &str, include: &str, exclude: &str) -> bool {
     split_patterns(include).any(|pat| glob_match(pat, filename))
 }
 
+/// `matches` for a skill: a pattern names either the skill or its path below
+/// the skills root, so `cloudflare/*` filters a whole category.
+pub fn matches_skill(name: &str, rel: &str, include: &str, exclude: &str) -> bool {
+    let hit = |pat: &str| glob_match(pat, name) || glob_match(pat, rel);
+    if split_patterns(exclude).any(hit) {
+        return false;
+    }
+    include.is_empty() || split_patterns(include).any(hit)
+}
+
 fn split_patterns(list: &str) -> impl Iterator<Item = &str> {
     list.split([' ', '\t', '\n']).filter(|pat| !pat.is_empty())
 }
@@ -109,6 +119,31 @@ mod tests {
         assert!(matches("b.md", "a.md b.md", ""));
         assert!(!matches("c.md", "a.md\tb.md", ""));
         assert!(!matches("command-review", "", "legacy command-*"));
+    }
+
+    #[test]
+    fn a_skill_pattern_names_the_skill_or_its_category_path() {
+        assert!(!matches_skill(
+            "wrangler",
+            "cloudflare/wrangler",
+            "",
+            "cloudflare/*"
+        ));
+        assert!(!matches_skill(
+            "wrangler",
+            "cloudflare/wrangler",
+            "",
+            "wrangler"
+        ));
+        assert!(matches_skill("bloc", "flutter/bloc", "", "cloudflare/*"));
+        assert!(matches_skill(
+            "slivers",
+            "flutter/ui/slivers",
+            "flutter/*",
+            ""
+        ));
+        assert!(!matches_skill("auth", "backend/auth", "flutter/*", ""));
+        assert!(matches_skill("commit", "commit", "flutter/* commit", ""));
     }
 
     #[test]
