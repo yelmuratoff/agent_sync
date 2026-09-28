@@ -484,8 +484,14 @@ decision to make once rather than a bug to find twice.
 
 1. `parse_yaml_list` on an empty block key keeps scanning and returns the next
    dash list anywhere later in the file (`yaml.sh:180-197`).
-2. An unquoted scalar is cut at the first `#`, even without a preceding space.
-3. `\n` in a quoted header stays literal until `printf '%b'` at write time.
+2. *Kept and documented after 0.42.0.* An unquoted scalar is cut at the first
+   `#`, even without a preceding space. Changing it would lengthen every
+   existing unquoted value holding a `#` without a migration, so the README
+   tells users to quote such values instead.
+3. *Kept after 0.42.0.* `\n` in a quoted header stays literal until
+   `printf '%b'` at write time. The only place it shows is `show`, which then
+   prints a header on one line; unescaping in the reader would make the writer
+   interpret the backslashes twice.
 4. `get_tool_value` cannot override a base value with an empty string, and
    never consults `base:` when a shipped file exists for the slug.
 5. *Fixed after 0.42.0.* `defaults.enabled` in `agent_sync.yaml` and the
@@ -574,9 +580,11 @@ decision to make once rather than a bug to find twice.
     to `.ai/src/tools/README/settings.README`.
 37. Off a terminal without `--yes`, `migrate --apply` consolidates identical MCP
     files but leaves `.agent/` in place.
-38. `refresh` heals `.ai/.template-manifest` with every shipped template that
-    matches its copy, including categories outside `--only` and `AGENTS.md`
-    without `--include-agents-md`.
+38. *Kept after 0.42.0.* `refresh` heals `.ai/.template-manifest` with every
+    shipped template that matches its copy, including categories outside
+    `--only` and `AGENTS.md` without `--include-agents-md`. The healing keeps
+    the manifest honest (`src/config/template_manifest.rs`); scoping it would
+    rewrite that committed file on every scoped refresh and buy nothing.
 39. Off a terminal without `--yes`, `refresh` applies pending auto-updates,
     because the TTY gate looks only at new files and conflicts; with
     `--include-deleted` and nothing else pending it prints each RESTORE prompt

@@ -431,6 +431,11 @@ repository never runs its hook. `AGENTSYNC_SKIP_POST_SYNC=true` or
 `post_sync.skip: true` in `agent_sync.yaml` disables it again, and `check`
 always skips it.
 
+Quote any value that holds a `#`. AgentSync reads an unquoted value up to the
+first `#`, with or without a space before it, so `url: https://x.dev/#top`
+reads as `https://x.dev/`; `url: "https://x.dev/#top"` keeps the whole URL.
+The same holds in `agent_sync.yaml`.
+
 ### Key Fields
 
 | Field                         | Purpose                                                                                                                      |
