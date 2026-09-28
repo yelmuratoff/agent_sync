@@ -269,7 +269,7 @@ impl Payloads {
     fn of(project: &Project, filter: &str) -> Result<Self, Error> {
         let src = project.root.join(".ai").join("src");
         let mut payloads = Self::default();
-        for (tool, dir) in sorted_entries(&src.join("tools")) {
+        for (tool, dir) in sorted_entries(&project.user_tools_dir()) {
             if !dir.is_dir() || (!filter.is_empty() && tool != filter) {
                 continue;
             }

@@ -523,7 +523,7 @@ decision to make once rather than a bug to find twice.
     differs from the shipped template's.
 20. `diff` selects the project config before it validates the resource;
     `customize` and `show` validate first.
-21. `simplify`'s payload pass scans `.ai/src/tools` even when `source.tools`
+21. *Fixed after 0.42.0.* `simplify`'s payload pass scanned `.ai/src/tools` even when `source.tools`
     moves the tool override directory.
 22. *Fixed in 0.38.0.* `resolve` without a terminal ignored its tool filter
     and exited 0, having already cleared the queue; it is read-only now.
