@@ -34,67 +34,26 @@ pub fn dedupe<'a>(
     out: &'a mut dyn Write,
     err: &'a mut dyn Write,
 ) -> Result<u8, Error> {
-    let (mut against, mut workspace, mut assume_yes) = (String::new(), false, false);
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--against" => match rest.next() {
-                Some(path) => against = path.clone(),
-                None => {
-                    put(
-                        err,
-                        format!("{}: --against requires a path\n", style.red("Error")).as_bytes(),
-                    )?;
-                    return Ok(1);
-                }
-            },
-            "--workspace" => workspace = true,
-            "--yes" | "-y" => assume_yes = true,
-            "--help" | "-h" => {
-                put(out, HELP.render(style).as_bytes())?;
-                return Ok(0);
-            }
-            flag if flag.starts_with("--against=") => {
-                against = flag["--against=".len()..].to_string();
-            }
-            flag if flag.starts_with('-') => {
-                put(
-                    err,
-                    format!(
-                        "{}: Unknown option: {flag}\n{}",
-                        style.red("Error"),
-                        HELP.render(style)
-                    )
-                    .as_bytes(),
-                )?;
-                return Ok(1);
-            }
-            value => {
-                put(
-                    err,
-                    format!(
-                        "{}: Unexpected argument: {value}\n{}",
-                        style.red("Error"),
-                        HELP.render(style)
-                    )
-                    .as_bytes(),
-                )?;
-                return Ok(1);
-            }
+    let parsed = match parse_dedupe(args) {
+        Ok(parsed) => parsed,
+        Err(DedupeStop::Help) => {
+            put(out, HELP.render(style).as_bytes())?;
+            return Ok(0);
         }
-    }
-    if workspace && !against.is_empty() {
-        put(
-            err,
-            format!(
-                "{}: --workspace and --against are mutually exclusive.\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    }
-    if !assume_yes && terminal.is_none() {
+        Err(DedupeStop::Refuse { message, with_help }) => {
+            let help = if with_help {
+                HELP.render(style)
+            } else {
+                String::new()
+            };
+            put(
+                err,
+                format!("{}: {message}\n{help}", style.red("Error")).as_bytes(),
+            )?;
+            return Ok(1);
+        }
+    };
+    if !parsed.assume_yes && terminal.is_none() {
         put(
             err,
             format!(
@@ -106,10 +65,9 @@ pub fn dedupe<'a>(
         )?;
         return Ok(1);
     }
-
     let mut run = Run {
         style,
-        assume_yes,
+        assume_yes: parsed.assume_yes,
         templates: catalog::template_sources(),
         terminal,
         out,
@@ -119,45 +77,97 @@ pub fn dedupe<'a>(
         run.out,
         format!("\n{}\n", style.bold("  AgentSync Dedupe")).as_bytes(),
     )?;
-
-    if workspace {
-        let ai_dirs = paths::find_workspace_ai_dirs(cwd);
-        if ai_dirs.is_empty() {
-            put(
-                run.err,
-                format!(
-                    "  {}: No .ai/ directories found below {cwd}\n",
-                    style.red("Error")
-                )
-                .as_bytes(),
-            )?;
-            return Ok(1);
-        }
-        put(
-            run.out,
-            format!("  Found {} project(s) below {cwd}\n\n", ai_dirs.len()).as_bytes(),
-        )?;
-        for ai_dir in &ai_dirs {
-            let project_root = paths::parent(ai_dir);
-            let rel = if project_root == cwd {
-                "."
-            } else {
-                project_root
-                    .strip_prefix(&format!("{cwd}/"))
-                    .unwrap_or(&project_root)
-            };
-            put(run.out, format!("  {} {rel}\n", style.cyan("→")).as_bytes())?;
-            let status = run_one(&mut run, &project_root, "", cwd)?;
-            if status != 0 {
-                return Ok(status);
-            }
-            put(run.out, b"\n")?;
-        }
-        return Ok(0);
+    if parsed.workspace {
+        return run_workspace(&mut run, cwd);
     }
-
     let repo_root = root()?;
-    run_one(&mut run, &repo_root, &against, cwd)
+    run_one(&mut run, &repo_root, &parsed.against, cwd)
+}
+
+struct DedupeArgs {
+    against: String,
+    workspace: bool,
+    assume_yes: bool,
+}
+
+/// How a command line that dedupes nothing ends: help on stdout, or an error
+/// line on stderr followed by the help when `with_help`.
+enum DedupeStop {
+    Help,
+    Refuse { message: String, with_help: bool },
+}
+
+fn parse_dedupe(args: &[String]) -> Result<DedupeArgs, DedupeStop> {
+    let refuse = |message: String, with_help: bool| DedupeStop::Refuse { message, with_help };
+    let mut parsed = DedupeArgs {
+        against: String::new(),
+        workspace: false,
+        assume_yes: false,
+    };
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--against" => match rest.next() {
+                Some(path) => parsed.against = path.clone(),
+                None => return Err(refuse("--against requires a path".into(), false)),
+            },
+            "--workspace" => parsed.workspace = true,
+            "--yes" | "-y" => parsed.assume_yes = true,
+            "--help" | "-h" => return Err(DedupeStop::Help),
+            flag if flag.starts_with("--against=") => {
+                parsed.against = flag["--against=".len()..].to_string();
+            }
+            flag if flag.starts_with('-') => {
+                return Err(refuse(format!("Unknown option: {flag}"), true));
+            }
+            value => return Err(refuse(format!("Unexpected argument: {value}"), true)),
+        }
+    }
+    if parsed.workspace && !parsed.against.is_empty() {
+        return Err(refuse(
+            "--workspace and --against are mutually exclusive.".into(),
+            false,
+        ));
+    }
+    Ok(parsed)
+}
+
+/// `--workspace`: every project below `cwd`, stopping at the first failure.
+fn run_workspace(run: &mut Run, cwd: &str) -> Result<u8, Error> {
+    let style = run.style;
+    let ai_dirs = paths::find_workspace_ai_dirs(cwd);
+    if ai_dirs.is_empty() {
+        put(
+            run.err,
+            format!(
+                "  {}: No .ai/ directories found below {cwd}\n",
+                style.red("Error")
+            )
+            .as_bytes(),
+        )?;
+        return Ok(1);
+    }
+    put(
+        run.out,
+        format!("  Found {} project(s) below {cwd}\n\n", ai_dirs.len()).as_bytes(),
+    )?;
+    for ai_dir in &ai_dirs {
+        let project_root = paths::parent(ai_dir);
+        let rel = if project_root == cwd {
+            "."
+        } else {
+            project_root
+                .strip_prefix(&format!("{cwd}/"))
+                .unwrap_or(&project_root)
+        };
+        put(run.out, format!("  {} {rel}\n", style.cyan("→")).as_bytes())?;
+        let status = run_one(run, &project_root, "", cwd)?;
+        if status != 0 {
+            return Ok(status);
+        }
+        put(run.out, b"\n")?;
+    }
+    Ok(0)
 }
 
 /// `_dedupe_config_path`.
@@ -168,6 +178,14 @@ fn config_path(repo_root: &str) -> Option<String> {
     ]
     .into_iter()
     .find(|path| Path::new(path).is_file())
+}
+
+#[derive(Default)]
+struct Tally {
+    deleted: usize,
+    kept: usize,
+    skipped: usize,
+    cancelled: bool,
 }
 
 /// `_dedupe_run_one`.
@@ -181,70 +199,27 @@ fn run_one(run: &mut Run, repo_root: &str, against: &str, cwd: &str) -> Result<u
         )?;
         return Ok(0);
     }
-
-    let logical = |path: &str| {
-        if crate::paths::is_absolute(path) {
-            paths::normalize(path)
-        } else {
-            paths::normalize(&format!("{cwd}/{path}"))
-        }
-    };
-    let (parent_src, from_shared) = if against.is_empty() {
-        let shared = config_path(repo_root)
-            .and_then(|path| std::fs::read(path).ok())
-            .and_then(|bytes| {
-                overlay::shared_parent_src(&String::from_utf8_lossy(&bytes), repo_root)
-            });
-        match shared {
-            Some(parent) => (Some(parent), true),
-            None => (paths::find_parent_ai_src(repo_root), false),
-        }
-    } else if Path::new(&format!("{against}/.ai/src")).is_dir() {
-        (Some(logical(&format!("{against}/.ai/src"))), false)
-    } else if Path::new(against).is_dir() && paths::leaf(against) == "src" {
-        (Some(logical(against)), false)
-    } else {
-        let problem = if Path::new(against).is_dir() {
-            "has no .ai/src/"
-        } else {
-            "does not exist"
-        };
-        put(
-            run.err,
-            format!(
-                "{}: --against path {problem}: {against}\n",
-                style.red("Error")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(1);
-    };
-
-    let Some(parent_src) = parent_src else {
-        put(
-            run.out,
-            format!(
+    let (parent_src, from_shared) = match parent_for(run, repo_root, against, cwd)? {
+        Ok(Some(found)) => found,
+        Ok(None) => {
+            let text = format!(
                 "  {} no parent .ai/src/ found for {repo_root}\n",
                 style.dim("·")
-            )
-            .as_bytes(),
-        )?;
-        return Ok(0);
+            );
+            put(run.out, text.as_bytes())?;
+            return Ok(0);
+        }
+        Err(status) => return Ok(status),
     };
-
     let (identical, divergent) = collect(&child_src, &parent_src);
     if identical.is_empty() && divergent.is_empty() {
-        put(
-            run.out,
-            format!(
-                "  {} nothing shared with parent {parent_src}\n",
-                style.green("✓")
-            )
-            .as_bytes(),
-        )?;
+        let text = format!(
+            "  {} nothing shared with parent {parent_src}\n",
+            style.green("✓")
+        );
+        put(run.out, text.as_bytes())?;
         return Ok(0);
     }
-
     let origin_hint = if from_shared {
         format!(" {}", style.dim("(from shared.path)"))
     } else {
@@ -262,82 +237,11 @@ fn run_one(run: &mut Run, repo_root: &str, against: &str, cwd: &str) -> Result<u
         )
         .as_bytes(),
     )?;
-
-    let config = config_path(repo_root);
-    let (mut deleted, mut kept, mut skipped, mut cancelled) = (0, 0, 0, false);
-
-    for (rel, child_file) in &identical {
-        if cancelled {
-            break;
-        }
-        let is_template = run.templates.iter().any(|path| path == rel);
-        if run.assume_yes {
-            delete_and_prune(child_file, &child_src)?;
-            if is_template && let Some(config) = &config {
-                yaml_edit::list_append(Path::new(config), "template_overrides.declined", rel)?;
-            }
-            put(
-                run.out,
-                format!("  {} {rel} {}\n", style.green("−"), style.dim("(deleted)")).as_bytes(),
-            )?;
-            deleted += 1;
-            continue;
-        }
-        match prompt_identical(run, rel, child_file, is_template)? {
-            Choice::Delete => {
-                delete_and_prune(child_file, &child_src)?;
-                if is_template && let Some(config) = &config {
-                    yaml_edit::list_append(Path::new(config), "template_overrides.declined", rel)?;
-                    put(
-                        run.out,
-                        format!("    {}\n", style.green("deleted + declined.")).as_bytes(),
-                    )?;
-                } else {
-                    put(
-                        run.out,
-                        format!("    {}\n", style.green("deleted.")).as_bytes(),
-                    )?;
-                }
-                deleted += 1;
-            }
-            Choice::Keep => {
-                put(run.out, format!("    {}\n", style.dim("kept.")).as_bytes())?;
-                kept += 1;
-            }
-            Choice::Quit => cancelled = true,
-        }
-    }
-
-    for (rel, child_file, parent_file) in &divergent {
-        if cancelled {
-            break;
-        }
-        if run.assume_yes {
-            put(
-                run.out,
-                format!(
-                    "  {} {rel} {}\n",
-                    style.yellow("~"),
-                    style.dim("(divergent — skipped under --yes; review interactively)")
-                )
-                .as_bytes(),
-            )?;
-            skipped += 1;
-            continue;
-        }
-        if prompt_diverge(run, rel, child_file, parent_file)? {
-            cancelled = true;
-        } else {
-            put(
-                run.out,
-                format!("    {}\n", style.dim("skipped.")).as_bytes(),
-            )?;
-            skipped += 1;
-        }
-    }
-
+    let mut tally = Tally::default();
+    resolve_identical(run, &identical, repo_root, &mut tally)?;
+    resolve_divergent(run, &divergent, &mut tally)?;
     put(run.out, b"\n")?;
-    if cancelled {
+    if tally.cancelled {
         put(
             run.out,
             format!(
@@ -347,6 +251,12 @@ fn run_one(run: &mut Run, repo_root: &str, against: &str, cwd: &str) -> Result<u
             .as_bytes(),
         )?;
     }
+    let Tally {
+        deleted,
+        kept,
+        skipped,
+        ..
+    } = tally;
     put(
         run.out,
         format!(
@@ -356,6 +266,138 @@ fn run_one(run: &mut Run, repo_root: &str, against: &str, cwd: &str) -> Result<u
         .as_bytes(),
     )?;
     Ok(0)
+}
+
+/// The parent `.ai/src/` to compare against, and whether `shared.path` named
+/// it: `--against`, else `shared.path`, else the nearest parent.
+fn parent_for(
+    run: &mut Run,
+    repo_root: &str,
+    against: &str,
+    cwd: &str,
+) -> Result<Result<Option<(String, bool)>, u8>, Error> {
+    let logical = |path: &str| {
+        if crate::paths::is_absolute(path) {
+            paths::normalize(path)
+        } else {
+            paths::normalize(&format!("{cwd}/{path}"))
+        }
+    };
+    if against.is_empty() {
+        let shared = config_path(repo_root)
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| {
+                overlay::shared_parent_src(&String::from_utf8_lossy(&bytes), repo_root)
+            });
+        return Ok(Ok(match shared {
+            Some(parent) => Some((parent, true)),
+            None => paths::find_parent_ai_src(repo_root).map(|parent| (parent, false)),
+        }));
+    }
+    if Path::new(&format!("{against}/.ai/src")).is_dir() {
+        return Ok(Ok(Some((logical(&format!("{against}/.ai/src")), false))));
+    }
+    if Path::new(against).is_dir() && paths::leaf(against) == "src" {
+        return Ok(Ok(Some((logical(against), false))));
+    }
+    let problem = if Path::new(against).is_dir() {
+        "has no .ai/src/"
+    } else {
+        "does not exist"
+    };
+    put(
+        run.err,
+        format!(
+            "{}: --against path {problem}: {against}\n",
+            run.style.red("Error")
+        )
+        .as_bytes(),
+    )?;
+    Ok(Err(1))
+}
+
+/// Deletes each identical copy by `--yes` or by answer, declining a template
+/// the project config can record.
+fn resolve_identical(
+    run: &mut Run,
+    identical: &Identical,
+    repo_root: &str,
+    tally: &mut Tally,
+) -> Result<(), Error> {
+    let style = run.style;
+    let child_src = format!("{repo_root}/.ai/src");
+    let config = config_path(repo_root);
+    let decline = |rel: &str| match &config {
+        Some(config) => {
+            yaml_edit::list_append(Path::new(config), "template_overrides.declined", rel)
+                .map(|()| true)
+        }
+        None => Ok(false),
+    };
+    for (rel, child_file) in identical {
+        if tally.cancelled {
+            break;
+        }
+        let is_template = run.templates.iter().any(|path| path == rel);
+        if run.assume_yes {
+            delete_and_prune(child_file, &child_src)?;
+            if is_template {
+                decline(rel)?;
+            }
+            let line = format!("  {} {rel} {}\n", style.green("−"), style.dim("(deleted)"));
+            put(run.out, line.as_bytes())?;
+            tally.deleted += 1;
+            continue;
+        }
+        match prompt_identical(run, rel, child_file, is_template)? {
+            Choice::Delete => {
+                delete_and_prune(child_file, &child_src)?;
+                let declined = is_template && decline(rel)?;
+                let note = if declined {
+                    "deleted + declined."
+                } else {
+                    "deleted."
+                };
+                put(run.out, format!("    {}\n", style.green(note)).as_bytes())?;
+                tally.deleted += 1;
+            }
+            Choice::Keep => {
+                put(run.out, format!("    {}\n", style.dim("kept.")).as_bytes())?;
+                tally.kept += 1;
+            }
+            Choice::Quit => tally.cancelled = true,
+        }
+    }
+    Ok(())
+}
+
+/// Skips each divergent copy, showing its diff on request; nothing is deleted.
+fn resolve_divergent(run: &mut Run, divergent: &Divergent, tally: &mut Tally) -> Result<(), Error> {
+    let style = run.style;
+    for (rel, child_file, parent_file) in divergent {
+        if tally.cancelled {
+            break;
+        }
+        if run.assume_yes {
+            let note = style.dim("(divergent — skipped under --yes; review interactively)");
+            put(
+                run.out,
+                format!("  {} {rel} {note}\n", style.yellow("~")).as_bytes(),
+            )?;
+            tally.skipped += 1;
+            continue;
+        }
+        if prompt_diverge(run, rel, child_file, parent_file)? {
+            tally.cancelled = true;
+        } else {
+            put(
+                run.out,
+                format!("    {}\n", style.dim("skipped.")).as_bytes(),
+            )?;
+            tally.skipped += 1;
+        }
+    }
+    Ok(())
 }
 
 type Identical = Vec<(String, String)>;
