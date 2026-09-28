@@ -2,7 +2,7 @@
 //! prune an extraneous entry only when `Session::may_prune` allows it.
 
 use crate::engine::session::Session;
-use crate::{Error, engine::filters, paths};
+use crate::{Error, engine::filters, engine::skill_tree, paths};
 
 /// `cleanup_path`: removes `target` when it exists; true when something went.
 /// A failed removal is not an error: Bash calls it inside an `if`, where
@@ -57,9 +57,10 @@ pub fn copy_file_noted(s: &mut Session, src: &str, dest: &str, note: &str) -> Re
     Ok(())
 }
 
-/// `sync_dir`: copy every filtered top-level entry, then prune entries the
-/// filter owns that the source no longer has and this run did not write.
-pub fn sync_dir(
+/// `sync_dir` for skills: copy every filtered skill flat to `dest/<name>` and
+/// every root file as it is, then prune entries the filter owns that the
+/// source no longer has and this run did not write.
+pub fn sync_skills_dir(
     s: &mut Session,
     src: &str,
     dest: &str,
@@ -76,9 +77,15 @@ pub fn sync_dir(
         s.ws.create_dir_all(dest)?;
     }
 
+    let tree = skill_tree::discover(&s.ws, src);
+    let entries = tree
+        .skills
+        .iter()
+        .map(|skill| (skill.name.clone(), skill.rel.clone()))
+        .chain(tree.files.iter().map(|file| (file.clone(), file.clone())));
     let mut source_items: Vec<String> = Vec::new();
-    for name in s.ws.glob(src) {
-        if !filters::matches(&name, include, exclude) {
+    for (name, rel) in entries {
+        if !filters::matches_skill(&name, &rel, include, exclude) {
             continue;
         }
         source_items.push(name.clone());
@@ -87,7 +94,7 @@ pub fn sync_dir(
         }
         let target = format!("{dest}/{name}");
         let _ = s.ws.remove(&target);
-        s.ws.copy(&format!("{src}/{name}"), &target)?;
+        s.ws.copy(&format!("{src}/{rel}"), &target)?;
         if s.ws.is_dir(&target) {
             s.record_tree(&target);
         } else {
@@ -97,7 +104,8 @@ pub fn sync_dir(
 
     let mut cleaned = 0usize;
     for name in s.ws.glob(dest) {
-        if source_items.contains(&name) || !filters::matches(&name, include, exclude) {
+        let rel = tree.find(&name).map_or(name.as_str(), |skill| &skill.rel);
+        if source_items.contains(&name) || !filters::matches_skill(&name, rel, include, exclude) {
             continue;
         }
         let item = format!("{dest}/{name}");
@@ -179,9 +187,9 @@ mod tests {
     }
 
     #[test]
-    fn sync_dir_warns_on_a_missing_source() {
+    fn sync_skills_dir_warns_on_a_missing_source() {
         let mut s = test_session();
-        sync_dir(&mut s, "/proj/nope", "/proj/out", "", "").unwrap();
+        sync_skills_dir(&mut s, "/proj/nope", "/proj/out", "", "").unwrap();
         assert_eq!(
             s.log.tail(1),
             ["[WARNING] Source directory not found: /proj/nope"]
@@ -201,14 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn sync_dir_copies_trees_and_prunes_only_what_the_filter_owns() {
+    fn sync_skills_dir_copies_trees_and_prunes_only_what_the_filter_owns() {
         let mut s = test_session();
         file(&mut s, "/proj/.ai/src/skills/a/SKILL.md", "a");
         file(&mut s, "/proj/.ai/src/skills/a/references/r.md", "r");
         file(&mut s, "/proj/.ai/src/skills/.hidden/SKILL.md", "h");
         file(&mut s, "/proj/.claude/skills/stale/SKILL.md", "s");
         file(&mut s, "/proj/.claude/skills/command-review/SKILL.md", "c");
-        sync_dir(
+        sync_skills_dir(
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
@@ -231,6 +239,55 @@ mod tests {
     }
 
     #[test]
+    fn sync_skills_dir_lands_categorized_skills_flat_by_name() {
+        let mut s = test_session();
+        file(&mut s, "/proj/.ai/src/skills/flutter/bloc/SKILL.md", "b");
+        file(
+            &mut s,
+            "/proj/.ai/src/skills/flutter/ui/slivers/SKILL.md",
+            "s",
+        );
+        file(
+            &mut s,
+            "/proj/.ai/src/skills/flutter/ui/slivers/references/r.md",
+            "r",
+        );
+        file(&mut s, "/proj/.ai/src/skills/flutter/notes.md", "n");
+        file(
+            &mut s,
+            "/proj/.ai/src/skills/cloudflare/wrangler/SKILL.md",
+            "w",
+        );
+        file(&mut s, "/proj/.claude/skills/wrangler/SKILL.md", "old");
+        s.activate_manifest(BTreeSet::from([
+            ".claude/skills/wrangler/SKILL.md".to_string()
+        ]));
+        sync_skills_dir(
+            &mut s,
+            "/proj/.ai/src/skills",
+            "/proj/.claude/skills",
+            "",
+            "cloudflare/*",
+        )
+        .unwrap();
+        assert_eq!(
+            s.ws.read("/proj/.claude/skills/bloc/SKILL.md").unwrap(),
+            b"b"
+        );
+        assert!(s.ws.is_file("/proj/.claude/skills/slivers/references/r.md"));
+        assert!(!s.ws.exists("/proj/.claude/skills/flutter"));
+        assert!(!s.ws.exists("/proj/.claude/skills/cloudflare"));
+        assert_eq!(
+            s.ws.read("/proj/.claude/skills/wrangler/SKILL.md").unwrap(),
+            b"old"
+        );
+        assert_eq!(
+            s.log.tail(1),
+            ["   .ai/src/skills/ → .claude/skills/ (2 updated)"]
+        );
+    }
+
+    #[test]
     fn cleanup_path_reports_whether_anything_was_removed() {
         let mut s = test_session();
         file(&mut s, "/proj/.cursor/rules/core.mdc", "x");
@@ -247,7 +304,7 @@ mod tests {
         file(&mut s, "/proj/.claude/skills/stale/SKILL.md", "s");
         file(&mut s, "/proj/.cursor/rules/core.mdc", "x");
         copy_file(&mut s, "/proj/.ai/src/AGENTS.md", "/proj/CLAUDE.md").unwrap();
-        sync_dir(
+        sync_skills_dir(
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",
@@ -273,13 +330,13 @@ mod tests {
     }
 
     #[test]
-    fn sync_dir_keeps_an_entry_the_manifest_never_recorded() {
+    fn sync_skills_dir_keeps_an_entry_the_manifest_never_recorded() {
         let mut s = test_session();
         file(&mut s, "/proj/.ai/src/skills/a/SKILL.md", "a");
         file(&mut s, "/proj/.claude/skills/mine/SKILL.md", "m");
         file(&mut s, "/proj/.claude/skills/old/SKILL.md", "o");
         s.activate_manifest(BTreeSet::from([".claude/skills/old/SKILL.md".to_string()]));
-        sync_dir(
+        sync_skills_dir(
             &mut s,
             "/proj/.ai/src/skills",
             "/proj/.claude/skills",

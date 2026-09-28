@@ -598,3 +598,78 @@ fn sync_re_sync_emits_no_churn_for_shared_dest_command_or_nested_agents() {
         .stderr(predicate::str::contains("Kept .agents/skills/command-").not())
         .stdout(predicate::str::contains("Removed: .amazonq/rules/00-context.md").not());
 }
+
+// ── Skill categories ─────────────────────────────────────────────────────
+
+fn skill(name: &str) -> String {
+    format!("---\nname: {name}\ndescription: The {name} fixture skill\n---\n\nBody.\n")
+}
+
+fn categorized_project() -> Project {
+    let project = Project::seeded(&["--outputs", "local"]);
+    project.enable_tools(&["claude", "codex"]);
+    project.write(".ai/src/skills/flutter/bloc/SKILL.md", &skill("bloc"));
+    project.write(
+        ".ai/src/skills/flutter/ui/slivers/SKILL.md",
+        &skill("slivers"),
+    );
+    project.write(
+        ".ai/src/skills/flutter/ui/slivers/references/grid.md",
+        "Grid.\n",
+    );
+    project.write(
+        ".ai/src/skills/cloudflare/wrangler/SKILL.md",
+        &skill("wrangler"),
+    );
+    project
+}
+
+#[test]
+fn sync_lands_categorized_skills_flat_by_name_in_every_skills_dir() {
+    let project = categorized_project();
+    project.agentsync().arg("sync").assert().success();
+    for dest in [".claude/skills", ".agents/skills"] {
+        assert_eq!(
+            project.read(&format!("{dest}/bloc/SKILL.md")),
+            skill("bloc")
+        );
+        assert!(project.exists(&format!("{dest}/slivers/references/grid.md")));
+        assert!(project.exists(&format!("{dest}/wrangler/SKILL.md")));
+        assert!(!project.exists(&format!("{dest}/flutter")));
+    }
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
+fn sync_filters_a_whole_category_by_its_path() {
+    let project = categorized_project();
+    project.write(
+        ".ai/src/tools/codex.yaml",
+        "targets:\n  skills:\n    exclude:\n      - cloudflare/*\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(!project.exists(".agents/skills/wrangler"));
+    assert!(project.exists(".agents/skills/bloc/SKILL.md"));
+    assert!(project.exists(".claude/skills/wrangler/SKILL.md"));
+}
+
+#[test]
+fn sync_refuses_two_skills_sharing_a_name_and_changes_nothing() {
+    let project = categorized_project();
+    project.agentsync().arg("sync").assert().success();
+    let before = project.sha256(".claude/skills/bloc/SKILL.md");
+    project.write(
+        ".ai/src/skills/flutter/bloc/SKILL.md",
+        "---\nname: bloc\ndescription: Edited\n---\n",
+    );
+    project.write(".ai/src/skills/backend/bloc/SKILL.md", &skill("bloc"));
+    project
+        .agentsync()
+        .arg("sync")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "Skill name 'bloc' is claimed by skills/backend/bloc, skills/flutter/bloc. Tools install skills flat by name — rename one.",
+        ));
+    assert_eq!(project.sha256(".claude/skills/bloc/SKILL.md"), before);
+}

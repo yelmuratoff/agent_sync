@@ -41,18 +41,18 @@ impl Tree {
     pub fn find(&self, name: &str) -> Option<&Skill> {
         self.skills.iter().find(|skill| skill.name == name)
     }
+}
 
-    /// Every name more than one skill claims, with the paths that claim it.
-    pub fn collisions(&self) -> Vec<(&str, Vec<&str>)> {
-        let mut by_name: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for skill in &self.skills {
-            by_name.entry(&skill.name).or_default().push(&skill.rel);
-        }
-        by_name
-            .into_iter()
-            .filter(|(_, rels)| rels.len() > 1)
-            .collect()
+/// Every name more than one skill claims, with the paths that claim it.
+pub fn collisions(skills: &[Skill]) -> Vec<(&str, Vec<&str>)> {
+    let mut by_name: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for skill in skills {
+        by_name.entry(&skill.name).or_default().push(&skill.rel);
     }
+    by_name
+        .into_iter()
+        .filter(|(_, rels)| rels.len() > 1)
+        .collect()
 }
 
 pub fn discover(ws: &Workspace, root: &str) -> Tree {
@@ -176,7 +176,7 @@ mod tests {
             "bloc/SKILL.md",
         ]);
         assert_eq!(
-            found.collisions(),
+            collisions(&found.skills),
             [("auth", vec!["backend/auth", "flutter/auth"])]
         );
         assert_eq!(

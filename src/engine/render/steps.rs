@@ -6,6 +6,7 @@ use crate::config::tool::Tool;
 use crate::engine::keyed;
 use crate::engine::rules::{self, Conversion, RuleOptions};
 use crate::engine::session::Session;
+use crate::engine::{filters, skill_tree};
 use crate::{config::payload, engine::codex_toml, engine::file_ops, engine::opencode_json, paths};
 
 pub(super) fn sync_rules_step(
@@ -216,6 +217,32 @@ fn inline_skills_into_file(
     Ok(())
 }
 
+/// Stops when two filtered skills share a name: every tool installs skills
+/// flat by name, so one would silently replace the other.
+fn refuse_skill_collisions(s: &mut Session, src: &str, include: &str, exclude: &str) -> Step {
+    let filtered: Vec<_> = skill_tree::discover(&s.ws, src)
+        .skills
+        .into_iter()
+        .filter(|skill| filters::matches_skill(&skill.name, &skill.rel, include, exclude))
+        .collect();
+    let collisions = skill_tree::collisions(&filtered);
+    if collisions.is_empty() {
+        return Ok(());
+    }
+    let shown = s.display(src);
+    for (name, rels) in collisions {
+        let claims = rels
+            .iter()
+            .map(|rel| format!("{shown}/{rel}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        s.log.error(&format!(
+            "Skill name '{name}' is claimed by {claims}. Tools install skills flat by name — rename one."
+        ));
+    }
+    Err(Stop(1))
+}
+
 pub(super) fn sync_skills_step(
     s: &mut Session,
     run: &Run,
@@ -226,6 +253,7 @@ pub(super) fn sync_skills_step(
     let src_skills = tool_source(s, tool, "skills", &run.sources.skills, display)?;
     let include = tool.filter("targets.skills.include");
     let exclude = tool.filter("targets.skills.exclude");
+    refuse_skill_collisions(s, &src_skills, &include, &exclude)?;
 
     if !dests.skills.is_empty() {
         let effective = if exclude.is_empty() {
@@ -233,7 +261,7 @@ pub(super) fn sync_skills_step(
         } else {
             format!("{exclude} command-*")
         };
-        return file_ops::sync_dir(s, &src_skills, &dests.skills, &include, &effective)
+        return file_ops::sync_skills_dir(s, &src_skills, &dests.skills, &include, &effective)
             .map_err(|e| io(s, e));
     }
     if tool.value("targets.skills.inline_into_agents") == "true" && s.ws.is_dir(&src_skills) {
