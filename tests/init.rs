@@ -367,6 +367,22 @@ fn init_auto_detects_existing_tool_markers() {
 }
 
 #[test]
+fn init_detects_cline_from_a_single_file_clinerules_and_keeps_it() {
+    let project = Project::empty();
+    project.write(".clinerules", "# hand-written Cline rules\n");
+    project.agentsync().arg("init").assert().success();
+
+    assert!(
+        project
+            .read(".ai/agent_sync.yaml")
+            .lines()
+            .any(|l| l == "    - cline")
+    );
+    assert!(project.exists(".cline/rules"));
+    assert_eq!(project.read(".clinerules"), "# hand-written Cline rules\n");
+}
+
+#[test]
 fn init_backs_up_existing_destinations_for_enabled_tools() {
     let project = Project::empty();
     std::fs::create_dir_all(project.join(".claude")).unwrap();

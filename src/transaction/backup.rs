@@ -143,8 +143,11 @@ pub(crate) fn safe_target_path(
         probe = up;
     }
     if !Path::new(&probe).is_dir() {
+        let blocker = probe
+            .strip_prefix(&format!("{canonical_root}/"))
+            .unwrap_or(&probe);
         return Err(refuse(format!(
-            "Backup target parent is not a directory: {rel}"
+            "{blocker} is a file where {rel} needs a directory; move or rename it, then run the command again"
         )));
     }
     let resolved = canonical_dir(Path::new(&probe))
@@ -877,6 +880,18 @@ mod tests {
         assert_eq!(days_from_civil(2020, 1, 1), 18_262);
         assert_eq!(snapshot_day("20200101T000000Z-sync-1"), Some(18_262));
         assert_eq!(snapshot_day("not-a-timestamp"), None);
+    }
+
+    #[test]
+    fn a_file_in_the_way_of_a_target_is_named() {
+        let project = Project::new();
+        project.write(".clinerules", "rules\n");
+        assert_eq!(
+            safe_target_path(&project.root, ".clinerules/sub/00-context.md", false)
+                .unwrap_err()
+                .to_string(),
+            ".clinerules is a file where .clinerules/sub/00-context.md needs a directory; move or rename it, then run the command again"
+        );
     }
 
     #[test]

@@ -569,9 +569,11 @@ decision to make once rather than a bug to find twice.
     on stderr and declines it.
 40. `refresh` reads `template_overrides` from `.ai/agent_sync.yaml`, else a
     root `agent_sync.yaml`, ignoring `AGENTSYNC_CONFIG_PATH`.
-41. A detected tool whose destination has a file where a directory is expected,
-    such as a legacy single-file `.clinerules`, makes `init` refuse at the
-    backup step with `Backup target parent is not a directory`.
+41. *Fixed after 0.42.0.* A detected tool whose destination had a file where a
+    directory was expected, such as a legacy single-file `.clinerules`, made
+    `init` refuse at the backup step with `Backup target parent is not a
+    directory`. Cline no longer writes below `.clinerules`, and the refusal
+    that remains for any other such file names it and says to move it.
 42. `init` drops every space inside a `--tools` or `--content` token, so
     `cla ude` reads as `claude`; `--tools=` and `--content ''` skip the wizard
     while contributing nothing.
