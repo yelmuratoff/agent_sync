@@ -79,6 +79,29 @@ fn sync_workspace_dry_run_touches_every_project_in_bottom_up_alpha_order() {
 }
 
 #[test]
+fn sync_workspace_exits_with_the_highest_project_status() {
+    let project = Project::empty();
+    let (root, leaf) = workspace_init_pair(&project);
+    agentsync_at(&leaf)
+        .args(["enable", "opencode", "--no-scaffold"])
+        .assert()
+        .success();
+    std::fs::write(
+        leaf.join(".ai/src/mcp.json"),
+        "{\"mcpServers\":{\"x\":{}}}\n",
+    )
+    .unwrap();
+    agentsync_at(&leaf).arg("sync").assert().code(26);
+    std::fs::remove_file(root.join(".ai/src/AGENTS.md")).unwrap();
+
+    agentsync_at(&root)
+        .args(["sync", "--workspace"])
+        .assert()
+        .code(26)
+        .stderr(predicate::str::contains("max exit code: 26"));
+}
+
+#[test]
 fn sync_workspace_writes_outputs_in_every_project() {
     let project = Project::empty();
     let (root, leaf) = workspace_init_pair(&project);

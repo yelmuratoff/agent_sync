@@ -503,8 +503,9 @@ decision to make once rather than a bug to find twice.
     has a bare `paths:` key, not only the items under `paths:`.
 11. The inline skill index strips `>` from `description: >-` and indexes the
     skill with the description `-`.
-12. `sync --workspace` reports the status of the last project that failed as
-    "max exit code" and exits with it (`bin/agentsync.sh`, `cmd_workspace_fanout`).
+12. *Fixed after 0.42.0.* `sync --workspace` reported the status of the last
+    project that failed as "max exit code" and exited with it
+    (`bin/agentsync.sh`, `cmd_workspace_fanout`).
 13. `version_pin: warn` followed later by a `version_pin:` mapping with
     `mode: strict` reads as `warn`: the reader answers the first `version_pin`
     key, so the nested lookup is empty and the scalar wins (`version.sh`,

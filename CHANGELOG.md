@@ -25,6 +25,7 @@
 - **`diff <slug>` no longer answers "No user overrides" for any slug.** In a project without overrides, a mistyped slug read as nothing to diff; it now fails with `No override found for '<slug>'`, as it already did when other tools had overrides.
 - **`show <slug> <resource>` labels an override by the file sync reads.** An override such as `.ai/src/tools/cursor/hooks.jsonc` was shown as `[base]` because its extension differed from the shipped template's.
 - **`disable` lists only the tools it disabled.** An unknown slug, and a slug named twice, appeared under `Disabled N tool(s)` beside the tools that were really switched off.
+- **`sync --workspace` exits with the highest status of its projects,** as its `max exit code` line says. It exited with the last failure's status, so an OpenCode composition error (26) followed by an ordinary failure (1) ended as 1.
 - **`targets.commands.include` and `.exclude` now filter a native or TOML commands directory,** as `_TEMPLATE.yaml` documents. They applied only to generated `command-*` skills and the inlined command index, so an excluded command still reached Claude Code, Cursor, Gemini CLI, and the other tools with a commands directory.
 - **`doctor` no longer suggests `agentsync simplify` for an empty skill directory.** `simplify` never touched skill directories; the advisory still says to populate or remove it.
 
