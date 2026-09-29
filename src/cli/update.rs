@@ -656,6 +656,19 @@ fn queued_hint(style: &Style) -> String {
     )
 }
 
+/// Shipped templates copied into `.ai/src/` change only through `refresh`.
+fn refresh_hint(project_dir: &Path, style: &Style) -> String {
+    if !project_dir.join(".ai/.template-manifest").is_file() {
+        return String::new();
+    }
+    format!(
+        "  {} {} {}\n\n",
+        style.dim("Rule, skill, and command templates in .ai/src/ update separately — run"),
+        style.cyan("agentsync refresh"),
+        style.dim("to review them.")
+    )
+}
+
 /// `cmd_update`.
 pub fn update(
     args: &[String],
@@ -743,6 +756,7 @@ pub fn update(
         }
     }
     put(out, b"\n")?;
+    put(out, refresh_hint(project_dir, style).as_bytes())?;
     put(out, migration_banner(project_dir, style).as_bytes())?;
     Ok(u8::from(strict && !conflicts.is_empty()))
 }
@@ -968,6 +982,19 @@ mod tests {
                 2,
                 "Error: Unexpected argument: 2.0.0\nUsage: agentsync update [<version>] [--strict]\n"
             )
+        );
+    }
+
+    #[test]
+    fn the_refresh_hint_needs_a_template_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let style = Style::plain();
+        assert_eq!(refresh_hint(dir.path(), &style), "");
+        std::fs::create_dir_all(dir.path().join(".ai")).unwrap();
+        std::fs::write(dir.path().join(".ai/.template-manifest"), "").unwrap();
+        assert_eq!(
+            refresh_hint(dir.path(), &style),
+            "  Rule, skill, and command templates in .ai/src/ update separately — run agentsync refresh to review them.\n\n"
         );
     }
 
