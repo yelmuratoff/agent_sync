@@ -6,6 +6,7 @@
 mod common;
 
 use common::Project;
+use predicates::prelude::*;
 
 fn synced_project() -> Project {
     Project::seeded(&["--tools", "claude", "--yes"])
@@ -93,6 +94,37 @@ fn base_skills_the_projects_categorized_copy_wins_without_a_collision() {
             .contains("PROJECT OVERRIDE")
     );
     assert!(!project.exists(".claude/skills/agentsync/references"));
+}
+
+#[test]
+fn base_skills_a_categorized_extension_adds_to_the_engine_skill_and_keeps_updating() {
+    let project = synced_project();
+    project.write(
+        ".ai/src/skills/meta/agentsync/SKILL.append.md",
+        "## Team notes\n\nRead `references/team.md` before a release.\n",
+    );
+    project.write(".ai/src/skills/meta/agentsync/references/team.md", "TEAM\n");
+    project
+        .agentsync()
+        .args(["sync", "--force"])
+        .assert()
+        .success();
+
+    let skill = project.read(".claude/skills/agentsync/SKILL.md");
+    assert!(skill.starts_with("---\nname: agentsync\n"));
+    assert!(skill.ends_with("\n\n## Team notes\n\nRead `references/team.md` before a release.\n"));
+    assert_eq!(
+        project.read(".claude/skills/agentsync/references/team.md"),
+        "TEAM\n"
+    );
+    assert!(project.exists(".claude/skills/agentsync/references/maintenance.md"));
+    assert!(!project.exists(".claude/skills/agentsync/SKILL.append.md"));
+    project.agentsync().arg("check").assert().success();
+    project
+        .agentsync()
+        .arg("doctor")
+        .assert()
+        .stdout(predicate::str::contains("missing SKILL.md").not());
 }
 
 #[test]

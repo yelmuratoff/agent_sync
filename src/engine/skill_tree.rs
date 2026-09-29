@@ -12,6 +12,9 @@ use crate::paths;
 /// Category levels walked below the skills root.
 pub const MAX_CATEGORY_DEPTH: usize = 4;
 
+/// Text a project appends to the `SKILL.md` of an inherited skill it extends.
+pub const APPENDIX: &str = "SKILL.append.md";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Skill {
     pub name: String,
@@ -51,15 +54,47 @@ impl Tree {
         self.skills.iter().find(|skill| skill.name == name)
     }
 
+    /// The category named `name` that holds no skill: it extends an inherited
+    /// skill of that name instead of replacing it.
+    pub fn extension(&self, name: &str) -> Option<&str> {
+        self.empty_categories
+            .iter()
+            .map(String::as_str)
+            .find(|rel| paths::leaf(rel) == name)
+    }
+
     /// `rel` below the skills root as a flat `<name>/…` path, moved into the
-    /// category that holds the skill of that name; unchanged when none does.
+    /// category that holds the skill or extension of that name; unchanged when
+    /// none does.
     pub fn locate(&self, rel: &str) -> String {
         let (name, rest) = rel.split_once('/').unwrap_or((rel, ""));
-        match self.find(name) {
-            Some(skill) if rest.is_empty() => skill.rel.clone(),
-            Some(skill) => format!("{}/{rest}", skill.rel),
+        let found = self
+            .find(name)
+            .map(|skill| skill.rel.as_str())
+            .or_else(|| self.extension(name));
+        match found {
+            Some(at) if rest.is_empty() => at.to_string(),
+            Some(at) => format!("{at}/{rest}"),
             None => rel.to_string(),
         }
+    }
+
+    /// `empty_categories` without the extensions of the skills `inherited`
+    /// names, the directories inside them, and the categories holding them.
+    pub fn empty_categories_besides(&self, inherited: &[String]) -> Vec<&str> {
+        let extensions: Vec<String> = inherited
+            .iter()
+            .filter_map(|name| self.extension(name).map(str::to_string))
+            .collect();
+        self.empty_categories
+            .iter()
+            .map(String::as_str)
+            .filter(|rel| {
+                !extensions
+                    .iter()
+                    .any(|ext| ext == rel || below(rel, ext) || below(ext, rel))
+            })
+            .collect()
     }
 
     /// Category paths whose last segment breaks the lowercase-kebab naming
@@ -103,12 +138,40 @@ pub fn shadowed(child: &Tree, parent: &Tree) -> Vec<String> {
         .collect()
 }
 
+/// Where each `parent` skill lands in the `child` tree when the child has no
+/// `SKILL.md` of that name, as `(parent path, child path)`: at the child's
+/// extension of that name, else at the parent's own path.
+pub fn placements(child: &Tree, parent: &Tree) -> Vec<(String, String)> {
+    parent
+        .skills
+        .iter()
+        .filter(|skill| child.find(&skill.name).is_none())
+        .map(|skill| {
+            let target = child.extension(&skill.name).unwrap_or(&skill.rel);
+            (skill.rel.clone(), target.to_string())
+        })
+        .collect()
+}
+
+/// `rel` below the parent skills root, moved to where `placements` lands its skill.
+pub fn relocate(rel: &str, placements: &[(String, String)]) -> String {
+    placements
+        .iter()
+        .find(|(from, _)| below(rel, from))
+        .map_or_else(
+            || rel.to_string(),
+            |(from, to)| format!("{to}{}", &rel[from.len()..]),
+        )
+}
+
 /// Whether the source path `rel` lies inside one of the skill paths in `skills`.
 pub fn is_inside(rel: &str, skills: &[String]) -> bool {
-    skills.iter().any(|skill| {
-        rel.strip_prefix(skill.as_str())
-            .is_some_and(|rest| rest.starts_with('/'))
-    })
+    skills.iter().any(|skill| below(rel, skill))
+}
+
+fn below(rel: &str, dir: &str) -> bool {
+    rel.strip_prefix(dir)
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Every name more than one skill claims, with the paths that claim it.
@@ -224,6 +287,40 @@ mod tests {
         assert_eq!(found.skills[2].category(), "flutter/ui");
         assert_eq!(found.skills[0].category(), "");
         assert!(found.files.is_empty());
+    }
+
+    #[test]
+    fn a_directory_named_after_an_inherited_skill_without_skill_md_extends_it() {
+        let parent = tree(&["base/SKILL.md", "other/SKILL.md", "gone/SKILL.md"]);
+        let child = tree(&[
+            "meta/base/SKILL.append.md",
+            "meta/base/references/r.md",
+            "cat/gone/SKILL.md",
+        ]);
+        assert_eq!(child.extension("base"), Some("meta/base"));
+        assert_eq!(
+            child.empty_categories_besides(&["base".to_string()]),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            child.empty_categories_besides(&[]),
+            ["meta/base/references", "meta/base", "meta"]
+        );
+        let placed = placements(&child, &parent);
+        assert_eq!(
+            placed,
+            [
+                ("base".to_string(), "meta/base".to_string()),
+                ("other".to_string(), "other".to_string()),
+            ]
+        );
+        assert_eq!(relocate("base/SKILL.md", &placed), "meta/base/SKILL.md");
+        assert_eq!(relocate("base-x/SKILL.md", &placed), "base-x/SKILL.md");
+        assert_eq!(relocate("gone/SKILL.md", &placed), "gone/SKILL.md");
+        assert_eq!(
+            child.locate("base/references/r.md"),
+            "meta/base/references/r.md"
+        );
     }
 
     #[test]

@@ -11,7 +11,8 @@ use crate::engine::{skill_tree, workspace::Workspace};
 use crate::paths::{self, DiskText};
 use crate::transaction::manifest::{self, Manifest};
 use crate::{
-    Error, config::template_manifest, config::yaml_subset, engine::convert, engine::overlay,
+    Error, config::catalog, config::template_manifest, config::yaml_subset, engine::convert,
+    engine::overlay,
 };
 
 /// `_DOCTOR_OUTPUT_DIR_MAP`.
@@ -182,7 +183,17 @@ impl Doctor<'_> {
                 style.dim("(not synced — move it up)")
             ))?;
         }
-        for rel in &tree.empty_categories {
+        let base_skills = self
+            .config
+            .as_deref()
+            .is_none_or(|config| yaml_subset::value(config, "base_skills") != "false");
+        let inherited = if base_skills {
+            catalog::base_src_skills()
+        } else {
+            Vec::new()
+        };
+        let empty = tree.empty_categories_besides(&inherited);
+        for rel in &empty {
             self.advise(&format!(
                 "skills/{rel}/ — missing SKILL.md {}",
                 style.dim("(empty skill — populate or remove)")
@@ -197,7 +208,7 @@ impl Doctor<'_> {
         }
         if collisions.is_empty()
             && tree.too_deep.is_empty()
-            && tree.empty_categories.is_empty()
+            && empty.is_empty()
             && nonstandard.is_empty()
         {
             self.ok("All skill directories contain SKILL.md")

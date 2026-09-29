@@ -127,25 +127,55 @@ fn fill_parent(
         if !ws.is_dir(&parent_dir) {
             continue;
         }
-        let shadowed = if *category == "skills" {
-            skill_tree::shadowed(
-                &skill_tree::discover(ws, &format!("{src}/skills")),
-                &skill_tree::discover(ws, &parent_dir),
+        let (shadowed, placements) = if *category == "skills" {
+            let child = skill_tree::discover(ws, &format!("{src}/skills"));
+            let parent = skill_tree::discover(ws, &parent_dir);
+            (
+                skill_tree::shadowed(&child, &parent),
+                skill_tree::placements(&child, &parent),
             )
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         for file in ws.files_under(&parent_dir) {
             let rel = &file[parent_dir.len() + 1..];
-            let target = format!("{src}/{category}/{rel}");
-            if ws.exists(&target) || skill_tree::is_inside(rel, &shadowed) {
+            if skill_tree::is_inside(rel, &shadowed) {
+                continue;
+            }
+            let target = format!(
+                "{src}/{category}/{}",
+                skill_tree::relocate(rel, &placements)
+            );
+            if ws.exists(&target) {
                 continue;
             }
             ws.create_dir_all(&paths::parent(&target))?;
             ws.copy(&file, &target)?;
         }
+        for (_, rel) in &placements {
+            append_skill_additions(ws, &format!("{src}/skills/{rel}"))?;
+        }
     }
     Ok(())
+}
+
+/// Appends the project's `SKILL.append.md` to the inherited `SKILL.md` it
+/// extends; the appendix itself never reaches a tool.
+fn append_skill_additions(ws: &mut Workspace, skill: &str) -> Result<(), Error> {
+    let appendix = format!("{skill}/{}", skill_tree::APPENDIX);
+    let skill_md = format!("{skill}/SKILL.md");
+    if !ws.is_file(&appendix) || !ws.is_file(&skill_md) {
+        return Ok(());
+    }
+    let mut text = ws.read(&skill_md)?;
+    text.truncate(text.trim_ascii_end().len());
+    text.extend_from_slice(b"\n\n");
+    text.extend(ws.read(&appendix)?);
+    if !text.ends_with(b"\n") {
+        text.push(b'\n');
+    }
+    ws.write(&skill_md, text)?;
+    ws.remove(&appendix)
 }
 
 /// `_overlay_rewrite_sources`: only the paths the overlay materialised.
@@ -342,24 +372,35 @@ pub fn merge_shared_parent(
         if !parent_dir.is_dir() {
             continue;
         }
-        let shadowed = if *category == "skills" {
-            skill_tree::shadowed(
-                &skill_tree::discover(ws, &format!("{child_src}/skills")),
-                &skill_tree::discover(
-                    &Workspace::on_disk(parent_src),
-                    &format!("{parent_src}/skills"),
-                ),
+        let (shadowed, placements) = if *category == "skills" {
+            let child = skill_tree::discover(ws, &format!("{child_src}/skills"));
+            let parent = skill_tree::discover(
+                &Workspace::on_disk(parent_src),
+                &format!("{parent_src}/skills"),
+            );
+            (
+                skill_tree::shadowed(&child, &parent),
+                skill_tree::placements(&child, &parent),
             )
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         let mut files = Vec::new();
         collect_regular_files(&parent_dir, "", &mut files);
         for (rel, disk) in files {
-            let target = format!("{child_src}/{category}/{rel}");
-            if !ws.exists(&target) && !skill_tree::is_inside(&rel, &shadowed) {
+            if skill_tree::is_inside(&rel, &shadowed) {
+                continue;
+            }
+            let target = format!(
+                "{child_src}/{category}/{}",
+                skill_tree::relocate(&rel, &placements)
+            );
+            if !ws.exists(&target) {
                 ws.insert_file(&target, Content::Disk(disk));
             }
+        }
+        for (_, rel) in &placements {
+            append_skill_additions(ws, &format!("{child_src}/skills/{rel}"))?;
         }
     }
     Ok(())
@@ -510,6 +551,88 @@ mod tests {
         assert_eq!(sources.rules, "/<agentsync-overlay>/base-src/src/rules");
         assert!(s.ws.is_file("/<agentsync-overlay>/base-src/src/rules/r.md"));
         assert!(s.ws.is_file("/<agentsync-overlay>/base-src/src/skills/agentsync/SKILL.md"));
+    }
+
+    #[test]
+    fn an_engine_skill_extension_in_a_category_adds_files_and_appends_to_skill_md() {
+        let mut s = test_session();
+        let ext = "/proj/.ai/src/skills/meta/agentsync";
+        file(
+            &mut s.ws,
+            &format!("{ext}/SKILL.append.md"),
+            "## Local\n\nOurs.",
+        );
+        file(&mut s.ws, &format!("{ext}/references/local.md"), "local\n");
+        file(
+            &mut s.ws,
+            &format!("{ext}/references/maintenance.md"),
+            "mine\n",
+        );
+        file(
+            &mut s.ws,
+            "/proj/.ai/src/skills/meta/sub/own/SKILL.md",
+            "own\n",
+        );
+        let mut sources = Sources {
+            skills: ".ai/src/skills".into(),
+            ..Sources::default()
+        };
+        setup_base_src(&mut s, None, "/proj/.ai/src", &mut sources).unwrap();
+
+        let skill = "/<agentsync-overlay>/base-src/src/skills/meta/agentsync";
+        let bundled =
+            s.ws.read("/<agentsync>/lib/templates/base-src/skills/agentsync/SKILL.md")
+                .unwrap();
+        let mut expected = bundled.trim_ascii_end().to_vec();
+        expected.extend_from_slice(b"\n\n## Local\n\nOurs.\n");
+        assert_eq!(s.ws.read(&format!("{skill}/SKILL.md")).unwrap(), expected);
+        assert!(!s.ws.exists(&format!("{skill}/SKILL.append.md")));
+        assert_eq!(
+            s.ws.read(&format!("{skill}/references/maintenance.md"))
+                .unwrap(),
+            b"mine\n"
+        );
+        assert_eq!(
+            s.ws.read(&format!("{skill}/references/local.md")).unwrap(),
+            b"local\n"
+        );
+        assert!(s.ws.is_file(&format!("{skill}/references/writing-skills.md")));
+        assert!(
+            !s.ws
+                .exists("/<agentsync-overlay>/base-src/src/skills/agentsync")
+        );
+        assert!(s.ws.is_file("/<agentsync-overlay>/base-src/src/skills/meta/sub/own/SKILL.md"));
+    }
+
+    #[test]
+    fn an_engine_skill_copy_with_its_own_skill_md_in_a_category_replaces_it() {
+        let mut s = test_session();
+        let copy = "/proj/.ai/src/skills/meta/agentsync";
+        file(&mut s.ws, &format!("{copy}/SKILL.md"), "mine\n");
+        file(
+            &mut s.ws,
+            &format!("{copy}/SKILL.append.md"),
+            "kept as a file\n",
+        );
+        let mut sources = Sources {
+            skills: ".ai/src/skills".into(),
+            ..Sources::default()
+        };
+        setup_base_src(&mut s, None, "/proj/.ai/src", &mut sources).unwrap();
+
+        let skills = "/<agentsync-overlay>/base-src/src/skills";
+        assert_eq!(
+            s.ws.files_under(skills),
+            [
+                format!("{skills}/meta/agentsync/SKILL.append.md"),
+                format!("{skills}/meta/agentsync/SKILL.md"),
+            ]
+        );
+        assert_eq!(
+            s.ws.read(&format!("{skills}/meta/agentsync/SKILL.md"))
+                .unwrap(),
+            b"mine\n"
+        );
     }
 
     #[test]
