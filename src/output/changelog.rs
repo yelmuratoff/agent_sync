@@ -6,10 +6,21 @@ use std::cmp::Ordering;
 
 use crate::output::style::Style;
 
-/// `_md_plain`: `**` and backticks removed, and `[text](url)` reduced to what
-/// it says — a terminal has nothing to click, and Bash printed the syntax raw.
+/// `_md_plain`: backticks removed, and outside a code span `**` dropped and
+/// `[text](url)` reduced to what it says — a terminal has nothing to click.
+/// Inside a code span every character stays, so a glob keeps its `**`.
 pub fn md_plain(text: &str) -> String {
-    plain_links(&text.replace("**", "").replace('`', ""))
+    plain_links(text)
+        .split('`')
+        .enumerate()
+        .map(|(index, part)| {
+            if index % 2 == 0 {
+                part.replace("**", "")
+            } else {
+                part.to_string()
+            }
+        })
+        .collect()
 }
 
 /// `[text](url)` becomes `text`, or `text (url)` when the url adds something.
@@ -28,7 +39,7 @@ fn plain_links(text: &str) -> String {
         let url = &rest[after..after + end];
         out.push_str(&rest[..open]);
         out.push_str(label);
-        if !url.is_empty() && url != label {
+        if !url.is_empty() && url != label.replace('`', "") {
             out.push_str(&format!(" ({url})"));
         }
         rest = &rest[after + end + 1..];
@@ -200,6 +211,8 @@ pub fn sections(changelog: &str, versions: &[String], width: usize, style: &Styl
                     "      ",
                     width,
                 ));
+            } else if let Some(rest) = line.strip_prefix("  - ") {
+                out.push_str(&wrap(&md_plain(rest), "      - ", "        ", width));
             } else if !line.is_empty() {
                 out.push_str(&wrap(&md_plain(line), "    ", "    ", width));
             }
@@ -253,6 +266,18 @@ mod tests {
             md_plain("plain text — with an em dash"),
             "plain text — with an em dash"
         );
+        assert_eq!(
+            md_plain("**Scoped.** `paths: [\"src/**\"]` and `src/**` too"),
+            "Scoped. paths: [\"src/**\"] and src/** too"
+        );
+    }
+
+    #[test]
+    fn a_nested_bullet_keeps_its_indent_on_every_line() {
+        let changelog = "## 1.0.0\n\n- Parent.\n  - A nested item long enough that it has to wrap onto a second line here.\n";
+        let out = sections(changelog, &["1.0.0".to_string()], 50, &Style::plain());
+        assert!(out.contains("    • Parent.\n      - A nested item long enough that it has to\n        wrap onto a second line here.\n"), "{out}");
+        assert!(out.lines().all(|line| line.chars().count() <= 50), "{out}");
     }
 
     #[test]

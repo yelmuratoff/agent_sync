@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`update` prints code in the changelog as written.** The release notes it shows dropped every `**` along with the bold markers, so a glob such as `src/**` read as `src/`; text inside backticks now keeps every character. A nested bullet also wraps under its own text instead of starting its continuation lines to the left of it.
+
 ## 0.43.0
 
 ### Breaking
