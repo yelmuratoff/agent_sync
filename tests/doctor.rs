@@ -355,6 +355,29 @@ fn doctor_advises_on_empty_skill_directory_no_skill_md() {
 }
 
 #[test]
+fn doctor_advises_when_a_project_copy_replaces_the_bundled_skill() {
+    let project = Project::seeded(&["--no-detect"]);
+    let replaced = "skills/meta/agentsync/ — replaces the bundled skill";
+    project.write(".ai/src/skills/meta/agentsync/SKILL.append.md", "Notes.\n");
+    doctor(&project)
+        .success()
+        .stdout(predicate::str::contains(replaced).not());
+
+    project.write(
+        ".ai/src/skills/meta/agentsync/SKILL.md",
+        "---\nname: agentsync\ndescription: Mine\n---\n",
+    );
+    doctor(&project)
+        .success()
+        .stdout(predicate::str::contains(replaced));
+
+    project.append(".ai/agent_sync.yaml", "base_skills: false\n");
+    doctor(&project)
+        .success()
+        .stdout(predicate::str::contains(replaced).not());
+}
+
+#[test]
 fn doctor_accepts_categories_and_warns_on_a_name_two_skills_share() {
     let project = Project::seeded(&["--no-detect"]);
     let skill = "---\nname: auth\ndescription: Auth\n---\n";
