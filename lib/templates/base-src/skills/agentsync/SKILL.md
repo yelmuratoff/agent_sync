@@ -1,6 +1,6 @@
 ---
 name: agentsync
-description: Create or edit AgentSync configuration — AGENTS.md, rules, skills, commands, subagents, settings, MCP servers, hooks, or per-tool configs. Use this skill when adding a rule, creating or scaffolding a skill, writing a slash command, defining a subagent persona, editing permissions, configuring an MCP server, setting up the `.ai/src/` directory, or running `agentsync sync` / `rollback` / `add` / `customize` / `resolve` / `simplify` / `profile` — even when the user does not name "AgentSync" explicitly but is editing files in `.ai/src/`, `.claude/`, `.cursor/`, or another tool-config directory.
+description: AgentSync config — AGENTS.md, rules, skills, commands, subagents, settings, hooks, MCP, syncing .ai/src to Claude, Codex, Cursor, OpenCode. Use when editing them or asking why a skill did not load.
 ---
 
 # Working with AgentSync
@@ -47,12 +47,11 @@ Use `agentsync add <kind> <name>` to create a new file with the correct frontmat
 
 - `agentsync add rule <name>` — creates `.ai/src/rules/<name>.md`
 - `agentsync add skill <name> [--category <path>]` — creates `.ai/src/skills/[<category>/]<name>/SKILL.md`
-- `agentsync skills list` / `show <name>` / `check` — inspect effective skills and check their metadata without changing sync output
 - `agentsync add command <name>` — creates `.ai/src/commands/<name>.md`
 - `agentsync add subagent <name>` — creates `.ai/src/agents/<name>.md`
 - `agentsync add mcp <name> (--command CMD [--args '…'] [--env K=V,…] | --url URL)` — adds a server to the shared `.ai/src/mcp.json`
 
-The command refuses to overwrite existing files; pass `--force` (or `-f`) to replace them. Names must contain only letters, digits, hyphens, and underscores — no path separators, no `..`, no leading `.` or `-`.
+The command refuses to overwrite existing files; pass `--force` (or `-f`) to replace them. Names must contain only letters, digits, hyphens, and underscores — no path separators, no `..`, no leading `.` or `-`. `agentsync skills list` / `show <name>` / `check` inspect the effective skills and their metadata without changing sync output.
 
 ## Writing AGENTS.md
 
@@ -61,8 +60,8 @@ The agent's identity. Every sentence should change behavior.
 - **Be specific** — "Senior React/TypeScript Engineer" not "software engineer".
 - **Include the stack** — The agent needs to know what it's working with.
 - **Actionable principles** — "Prefer composition over inheritance" not "Write good code".
-- **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase positively when practical; reserve `do not` for cases where the wrong action is genuinely tempting. Grant the safe workflows explicitly ("the local tests use disposable fixtures and have no production access — run them and rerun affected tests without asking at each step"): ask-first language written to rein in an older model reads to a current one (GPT-6 Astra in OpenAI's guidance) as a stop sign, and it stops where you wanted it to continue.
-- **Point to docs contextually** — "use `database.md` for schema changes, `deployment.md` when preparing a release"; a rule that reads three docs before every edit spends that context on a typo fix too. Revisit each line regularly and drop the ones a current model no longer needs.
+- **Boundaries** — Call out hard limits as required behavior ("treat `db/migrations/` as append-only", "every endpoint goes through `auth.requireUser`"). Phrase boundaries as required behavior wherever practical, and grant the safe workflows explicitly ("the local tests use disposable fixtures and have no production access — run them and rerun affected tests without asking at each step"): ask-first language written to rein in an older model reads to a current one (GPT-6 Astra in OpenAI's guidance) as a stop sign, and it stops where you wanted it to continue. Point to docs contextually ("use `database.md` for schema changes, `deployment.md` when preparing a release"); a rule that reads three docs before every edit spends that context on a typo fix too. When one person works across risk tiers, the file carries this repo's tier — "no unattended merges", the load-bearing paths named, a plan before edits — so the constraint lives in the file rather than in your memory of which mode you are in.
+- **Start from a blank file, not a generated draft.** The model reads the code, so a directory tour or stack summary restates what it already infers and costs attention on every turn. A line earns its place by carrying what the code cannot show — a tooling gotcha, a non-obvious convention, why `legacy/` stays — and by tracing to something that went wrong; remove it once the underlying problem is fixed. Two studies agree: a developer-written `AGENTS.md` cut agent runtime ~29% and output tokens ~17% across 124 real PRs ([Lulla et al.](https://arxiv.org/abs/2601.20404)), while an ETH benchmark ([Gloaguen et al.](https://www.sri.inf.ethz.ch/publications/gloaguen2026agentsmd)) found context files adding over 20% inference cost with no success gain and concluded that a human-written file should carry only minimal requirements.
 - 40–70 lines. No generic filler.
 
 ## Writing Rules
@@ -72,21 +71,25 @@ Always-on constraints. One file per topic in `.ai/src/rules/`.
 - **One concern per file** — `testing.md`, `security.md`. Not `everything.md`.
 - **Imperative and specific** — "Use `snake_case` for DB columns" not "Follow naming conventions".
 - **Constraints, not tutorials** — Tell the agent what behavior to produce. Skip concept explanations the model already knows.
-- **Prefer positive instructions** — Per Anthropic's prompt-engineering guidance, "respond in flowing prose" works better than "don't use bullet points". Phrase rules as what to do; reserve explicit `do not` for genuinely tempting wrong actions where the positive form would lose information.
+- **Prefer positive instructions** — Per Anthropic's prompt-engineering guidance, "respond in flowing prose" works better than a prohibition. Phrase rules as what to do; express hard boundaries as required behavior.
 - **20–50 lines per file** — If it grows beyond that, split by topic. Multiple small focused files beat one large catch-all.
-- **Always-on by default — scope domain rules with `paths:`** — A rule with no frontmatter loads on every task. For a domain rule (state, routing, data…), add `paths:` frontmatter (a list of globs) so it loads only when matching files are touched. AgentSync translates `paths:` to each tool's native trigger (Claude `paths:`, Cursor `globs`+`alwaysApply:false`, Copilot `applyTo`, Windsurf/Antigravity `trigger: glob`). Keep the always-on set lean — a wall of always-on rules dilutes attention and the agent starts ignoring individual instructions.
+- **Always-on by default — scope domain rules with `paths:`** — A rule with no frontmatter loads on every task. For a domain rule (state, routing, data…), add `paths:` frontmatter (a list of globs) so it loads only when matching files are touched. AgentSync translates `paths:` to each tool's native trigger (Claude `paths:`, Cursor `globs`+`alwaysApply:false`, Copilot `applyTo`, Devin Desktop/Antigravity `trigger: glob`). Keep the always-on set lean — a wall of always-on rules dilutes attention and the agent starts ignoring individual instructions. Before adding an always-on line, apply the removal test — _would deleting this let a likely mistake through?_ If not, it's noise; cut it or scope it with `paths:`.
+- **Add a line only after a real failure, and after cheaper remedies** — first fix the code or the misused API behind the slip; then let a hook, lint, or test enforce the behavior deterministically (_Settings, permissions, and hooks_ below); add a rule line last. The failure it prevents justifies the line, and the line leaves when a code fix or a stronger model makes it redundant — the addition test that pairs with the removal test above.
+- **Compose rules by level in a workspace** — put broad infra/governance constraints in the parent `.ai/src/rules/` (inherited via `shared:` — `references/workspaces-and-profiles.md`) and keep feature-specific rules scoped at the leaf project. Layering this way keeps each level's always-on set minimal instead of one project carrying every rule.
 
 ## Writing Skills — The Most Important Part
 
 Skills are the highest-leverage configuration. AgentSync skills follow the open [agentskills.io](https://agentskills.io) format — a portable standard supported by Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, and ~30 other agents. Validate with `skills-ref validate <path>`.
 
-The **description is the trigger** — vague descriptions never activate. Open with the domain keywords the user would say, then the "Use when…" conditions; be pushy about phrasings (list cases where the user doesn't name the domain) and keyword-rich, but keep the domain itself narrow: as short as it can be while the trigger is unambiguous. OpenAI's GPT-6 Astra example — "Use when adding or changing a migration, or reviewing its rollout", not "Use when working with databases, queries, models, or persistence" — the broad form loads the skill on every database task. Hosts shorten descriptions once many skills are installed, so the first 50 characters carry the match on their own. Hard limit: 1024 chars.
+The **description is the trigger** — vague descriptions never activate. Open with the domain keywords the user would say (`Flutter authentication — login, logout, session restore…`), then the "Use when…" conditions; be pushy about phrasings (list cases where the user doesn't name the domain) and keyword-rich, but keep the domain itself narrow: as short as it can be while the trigger is unambiguous. OpenAI's example for GPT-6 Astra — "Use when adding or changing a migration, or reviewing its rollout", not "Use when working with databases, queries, models, or persistence" — the broad form loads the skill whenever the model touches a database, and an over-emphasised description loads instructions that don't help the task. Hosts shorten descriptions once the skill listing is over budget — Codex shortens every description once many skills are installed — so the first 50 characters carry the match on their own, and "Use this skill when" spends them on nothing. Hard limit: 1024 chars.
 
-The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand docs), `scripts/` (executable code), `assets/` (templates). Keep `SKILL.md` ≤ 500 lines / ≤ 5000 tokens; move detail behind explicit triggers ("read `references/X.md` when Y").
+The **directory layout** is `SKILL.md` + optional `references/` (load-on-demand docs), `scripts/` (executable code), `assets/` (templates). Keep `SKILL.md` ≤ 500 lines / ≤ 5000 tokens; move detail behind explicit triggers ("read `references/maintenance.md` when investigating override drift").
 
 **When creating or editing a skill in `.ai/src/skills/<name>/`, read [`references/writing-skills.md`](references/writing-skills.md)** — it covers the full agentskills.io spec, frontmatter constraints, structure templates, calibration principles (procedures-over-declarations, defaults-not-menus, match-specificity-to-fragility), reusable patterns (Gotchas, Templates, Checklists, Validation loops, Plan-validate-execute), and the iteration loop with evals.
 
-**Rule of three:** don't create a skill for everything. Three manual repetitions, *then* a skill.
+**When a skill is high-stakes, under-triggers, or you need to prove a new version beats the old, read [`references/evaluating-skills.md`](references/evaluating-skills.md)** — the measurement half of the loop: with-skill-vs-baseline runs, discriminating assertions, reading the benchmark, blind comparison, and trigger-query optimization.
+
+**Rule of three:** wait for three manual repetitions of a workflow before turning it into a skill.
 
 ## Writing Commands
 
@@ -104,9 +107,10 @@ argument-hint: "<optional-arg>"
 Key features:
 
 - `$ARGUMENTS` — replaced with text after the command name.
-- `` !`shell command` `` — runs a shell command and embeds output into the prompt.
+- `` !`shell command` `` — runs a shell command and embeds its output into the prompt.
 - Keep commands focused — one workflow per command.
-- Good commands: `review`, `fix-issue`, `deploy`, `migrate`.
+- Keep `description:` a single inline line and avoid `: ` (colon-space) inside it (see Gotchas).
+- Good commands: `changelog`, `fix-issue`, `deploy`, `migrate`.
 
 ## Writing Agents (Subagent Personas)
 
@@ -115,8 +119,7 @@ Specialized AI personas in `.ai/src/agents/`. Each `.md` file defines an agent w
 ```markdown
 ---
 name: code-reviewer
-description: >
-  Expert code reviewer. USE PROACTIVELY when reviewing PRs or validating implementations.
+description: Use proactively when reviewing PRs or validating implementations — expert code reviewer.
 model: sonnet # Cheaper model for focused tasks
 tools: [Read, Grep, Glob] # Restrict to read-only tools
 ---
@@ -126,199 +129,47 @@ You are a senior code reviewer...
 
 Guidelines:
 
-- Restrict `tools` to what the agent actually needs. Read-only agents shouldn't have Write.
+- Restrict `tools` to what the agent actually needs. Read-only agents stay read-only.
 - Use `model: sonnet` or `model: haiku` for focused tasks to save cost.
-- Only create agents for distinct specializations — don't duplicate what skills already do.
+- Create agents only for distinct specializations — workflows that fit an existing skill stay as skills.
 
-## Settings & Permissions
+## MCP, inline options, and new tools
 
-Each tool ships with base settings. To diverge, scaffold an override with `agentsync enable <tool>` or `agentsync customize <tool> settings` — it writes `.ai/src/tools/<tool>/settings.json`, which wins over the base on sync. Delete the file to go back to inheriting the base.
+**Read [`references/mcp-and-tool-targets.md`](references/mcp-and-tool-targets.md) when registering an MCP server, when a tool has no native rules / skills / commands directory, or when onboarding a new tool.** It covers the shared `.ai/src/mcp.json`, the per-host routing that decides whether a server is actually live (Claude's project-only `.mcp.json`, Codex's `config.toml`, OpenCode's composed config), key ownership in files a tool also writes, the `inline_into_agents` / `as_skills` / `prepend_agents` / `legacy_dest` options with the tools that use each, and the steps to add a target.
 
-Example `.ai/src/tools/claude/settings.json`:
+## Settings, permissions, and hooks
 
-```json
-{
-  "permissions": {
-    "allow": ["Bash(npm run *)", "Read", "Write", "Edit"],
-    "deny": ["Bash(rm -rf *)", "Read(.env)"]
-  }
-}
-```
+A rule in `AGENTS.md`/`rules/` is **advisory** — context the model can ignore under pressure; a hook is **enforced** — the harness runs it every time. Reach for a hook when something _must_ happen, not merely _should_.
 
-## MCP Configs
+**Read [`references/settings-hooks-and-harness.md`](references/settings-hooks-and-harness.md) when overriding a tool's settings or permissions, writing a hook, or turning an agent mistake into a harness change.** It covers `enable` / `customize` overrides, three-valued `allow` / `ask` / `deny` tiered by consequence, Claude Code's hook events (`SessionStart`, `PreToolUse` blocking on exit 2, `PostToolUse`, `Stop`), the guard hook that keeps edits in `.ai/src/`, and the slip → missing component → smallest fix → stacked-layers loop.
 
-One shared `.ai/src/mcp.json` reaches every enabled tool, so you define a server once. Add servers with `agentsync add mcp <name>` or edit the file directly:
+## Maintenance
 
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-playwright"]
-    }
-  }
-}
-```
+**Read [`references/maintenance.md`](references/maintenance.md) when running `agentsync update`, `resolve`, `simplify`, `check`, `doctor`, `rollback`, `migrate`, or `upgrade-config`, or when investigating stale-override or upstream-drift problems.** It covers `.ai/.pending-resolutions.yaml`, `--strict` in CI, simplify's dry-run and idempotency, backups, rollback and retention, version pins, where outputs live, and the recommended cadence.
 
-When one tool needs a different server map, `.ai/src/tools/<tool>/mcp.json` shadows the shared file for that tool only. `agentsync customize <tool> mcp` scaffolds it when the target ships a copyable base.
+**Recovering a directly-edited generated file.** `agentsync sync` records every generated file in `.ai/.sync-manifest` (SHA-256), so a generated file edited by hand — or one a tool writes into out of band — makes the next sync abort instead of overwriting it. Run `agentsync adopt <file>` (or `adopt --all`) to promote the current content into `.ai/src/`, then sync again. `adopt` refuses to run non-interactively without `--yes`.
 
-OpenCode is composed rather than copied: canonical `{ "mcpServers": { ... } }` input becomes the top-level `mcp` map in `opencode.json`. Put a divergent map at `.ai/src/tools/opencode/mcp.json`. Keep `mcp` out of the OpenCode settings override while canonical MCP exists; `sync` and `doctor` reject ambiguous ownership instead of overwriting either source.
-
-OpenCode hooks use `.ai/src/tools/opencode/hooks.ts` → `.opencode/plugins/agentsync.ts`. AgentSync owns only that plugin file. Kimi hooks are global-only in `$KIMI_CODE_HOME/config.toml` and remain outside project sync.
-
-## Inline Options
-
-For tools without separate rules/skills directories, use inline options:
-
-- **`inline_into_agents: true`** (rules) — appends lightweight rule REFERENCES (name + title) to the agents file instead of syncing rules as separate files. Used by: Codex, Gemini, Junie, Kimi Code, OpenCode.
-- **`inline_into_agents: true`** (skills) — appends lightweight skill INDEX (name + description) to the agents file instead of syncing skills as directories. Used by: Amazon Q, Zed.
-- **`as_skills: true`** (commands) — emits each `.ai/src/commands/<name>.md` as a generated skill at `<targets.skills.dest>/command-<name>/SKILL.md`. For tools that have a skills dir but no native slash-command surface. Requires `targets.skills.dest`. Used by: Codex, Kimi Code.
-- **`inline_into_agents: true`** (commands) — appends a `## Commands` index (one `` `/<name>` — description `` line per command) to the agents file. For tools that have neither a commands dir nor a skills dir. Requires `targets.agents.dest` (or `rules.merge_to_file` fallback). Used by: Amazon Q, Zed.
-- **`prepend_agents: true`** (rules with `merge_to_file`) — prepends AGENTS.md content before merged rules in a single output file. Used by: Zed.
-- **`00-context.md` pattern** — for directory-based tools without separate agents support, AGENTS.md is copied as `00-context.md` inside the rules directory. Used by: Amazon Q.
-- **`legacy_dest`** (any target) — the path an earlier release of the tool config wrote that target to. Sync removes only the files there that the previous manifest records, then the directories that leaves empty, so a tool reading both paths does not load them twice; hand-written files stay, and a failed sync restores them. Used by: Windsurf (`.windsurf/` → `.devin/`), Cline (`.clinerules/` → `.cline/`).
-
-## Adding a New Tool
-
-1. Start from the closest shipped tool: `agentsync customize <tool> --full`
-   writes `.ai/src/tools/<tool>.yaml`, which you copy to
-   `.ai/src/tools/<new>.yaml`. Every field is documented in
-   `lib/templates/tools/_TEMPLATE.yaml` in the AgentSync repository; a
-   project has no copy of it, and a `_`-prefixed file is never read as a tool.
-2. Set `name`, `enabled: true`, and configure `targets`.
-3. Run `agentsync sync --only <tool>` to test.
-
-## Maintenance: drift, resolve, simplify
-
-`agentsync update` snapshots the tool catalog and reports upstream changes to fields you've overridden into `.ai/.pending-resolutions.yaml`. Run `agentsync resolve` to walk and adopt or reject each one. Pass `--strict` to `agentsync update` in CI to fail the build when conflicts exist.
-
-`agentsync simplify` drops user-override fields that already match the current base, surfacing only true divergences. Dry-run by default; `--apply` to write, `-y` to auto-delete emptied files.
-
-**When running `agentsync update`, `resolve`, or `simplify`, or when investigating stale-override / upstream-drift problems, read [`references/maintenance.md`](references/maintenance.md)** for full file format, command semantics, idempotency rules, comment-preservation gotcha, and recommended cadence.
-
-**Recovering a directly-edited generated file.** `agentsync sync` records every generated file in `.ai/.sync-manifest` (SHA-256), so a generated file edited by hand — or one a tool writes into out of band (e.g. a plugin registering itself in `.claude/settings.json`) — makes the next sync **abort** instead of overwriting it. Run `agentsync adopt <file>` to pull the current content back into `.ai/src/`, then sync again.
-
-## Pulling new template content into an existing project
-
-`agentsync refresh` walks the shipped templates (rules, skills, commands, agents) and compares each file against your `.ai/src/`. Use it after upgrading the CLI to inherit newly added rules/skills without re-running `init`.
-
-It uses **three-way diff** via `.ai/.template-manifest` (written by `init` and updated on every refresh): the manifest records the template hash at scaffold/last-refresh time, so refresh can tell whether you've touched a file since the last sync.
-
-- **Auto-update (silent)**: file you haven't touched + template moved → applied without a prompt.
-- **NEW (prompt)**: file present in templates, never seen locally — offered for adding. Default Enter is **skip**; skipping records a manifest entry so the file isn't offered again (use `--include-deleted` to revisit).
-- **CONFLICT (prompt with diff)**: both your version and the template diverged from the recorded baseline. Default Enter is **skip**; your local edits are not overwritten unless you type `[u]pdate`.
-- **DELETED (silent)**: you removed a file locally that was once scaffolded → treated as an intentional decline. Pass `--include-deleted` to revisit.
-- **USER_EDITED_NO_CHANGE (silent)**: you edited locally, template hasn't moved → not a conflict, your version stays.
-- **Custom files (silent)**: anything in your `.ai/src/` that isn't in the templates is your own and is left alone.
-
-Persistent overrides in `.ai/agent_sync.yaml` silence specific templates forever:
-
-```yaml
-template_overrides:
-  declined:        # always-skip; never offered
-    - rules/some-rule.md
-  pinned:          # ignore template updates; keep your version even when it diverges
-    - rules/my-version.md
-```
-
-Other behaviors:
-
-- Scope by default = only categories that already have a subdirectory in your `.ai/src/`; pass `--only rules,skills,commands,agents` to opt into a category you don't have yet.
-- AGENTS.md is excluded by default (almost always heavily customized); `--include-agents-md` surfaces it.
-- `--dry-run` prints the plan without writing. `--yes` applies auto-updates and adds new files non-interactively; conflicts are always skipped under `--yes` (CI-friendly).
-- Tool configs (`settings/`, `mcp/`, `hooks/`, `tools/`) are intentionally excluded — they're handled by `customize` / `simplify` / `resolve`.
-- Commit `.ai/.template-manifest` to git so the team shares the same baseline; otherwise different developers will see different conflict sets.
-
-`agentsync refresh --status` prints the current declined breakdown without prompting — useful when many overrides have accumulated. The list is split into **Persistent** (entries in `template_overrides.declined`) and **Local** (entries in `.template-manifest` whose file is missing on disk).
-
-## Workspaces and shared content
-
-A parent project at `workspace/.ai/src/` with sub-projects below — each with its own `.git` and `.ai/src/` — is supported. Two patterns to manage content shared between layers; pick whichever fits the use case better. They compose, but typically you'll pick one per category.
-
-**Declarative inheritance — `shared:` in `agent_sync.yaml`.** The child names a parent path plus the categories it inherits:
-
-```yaml
-shared:
-  path: "../"
-  inherit: rules,skills,commands,agents
-```
-
-At sync time, AgentSync builds a transient shadow `.ai/src/` (child files first, then parent fillers; child wins on path collisions) and reads its sources from there. Sync then walks the shadow tree, so every enabled tool — including ones without parent-loading semantics (Codex, Cursor, Junie, Cline, Amazon Q) — receives the inherited content materialised into its own output. The shadow tree is built in memory and never touches disk. **Inherited files do not enter the child's `.template-manifest`** — refresh continues to consider only the child's own files; the parent owns its content.
-
-**Interactive cleanup — `agentsync dedupe`.** When the child has copy-paste duplicates of parent files in its own `.ai/src/`, dedupe surfaces them by hash:
-
-- Identical hash → `[d]elete / [k]eep / [v]iew` prompt. Deletion writes a `template_overrides.declined` entry when the file is a shipped template (so refresh won't re-offer it).
-- Different hash → diff shown, decision left to the human; dedupe never auto-resolves a divergence.
-
-Modes: default walks up to the nearest parent `.ai/src/` (bounded by the git repository boundary so it never escapes the current repo); `--against PATH` accepts an explicit `.ai/src/` or project root; `--workspace` runs across every nested `.ai/` below cwd in bottom-up alphabetical order.
-
-**Detection — `agentsync doctor`.** Doctor's "Cross-project" section flags identical-hash duplicates as advisories and divergent files as info. Rules and skills with `category: governance` in their frontmatter are upgraded to advisories when divergent, with explicit "likely a mistake, not an override" framing. All cross-project findings are exit-code-0 advisories — visible during interactive runs, invisible to CI. Combine with `agentsync sync --workspace` for batch syncs across the tree.
-
-**`category:` frontmatter.** Optional field on any rule/skill/command/agent. Today only `governance` carries behavior; `domain`, `workspace`, `project` are recorded but currently informational. Add it to a file when divergence between parent and child would be a mistake, not a deliberate override.
-
-## Profiles (config-home variants)
-
-A profile produces a second, self-contained config-home directory for a tool — e.g. a work `~/.claude-hub/` next to your personal `~/.claude/` (run it with `CLAUDE_CONFIG_DIR=~/.claude-hub`). Its content is the base `.ai/src/` overlaid with profile-only extras, so shared rules stay shared while work-specific rules/MCP live only in the profile. This is the right tool when you sync from `$HOME` and juggle multiple accounts/subscriptions per tool.
-
-**Create one — `agentsync profile add <name>`.** Scaffolds, per enabled tool (or `--tools a,b`):
-
-- a thin variant tool `.ai/src/tools/<tool>-<name>.yaml` — `base: <tool>` (inherits every unset field), `profile_home: ".<tool>-<name>"`, and config-home `targets.*.dest` (everything inside the home dir);
-- an overlay dir `.ai/profiles/<name>/src/` — drop profile-only `rules/`, `skills/`, `commands/`, `agents/`, or `AGENTS.md` here (profile wins on path collisions with base);
-- a `profiles:` entry in `agent_sync.yaml`:
-
-  ```yaml
-  profiles:
-    hub:
-      overlay: ".ai/profiles/hub"
-      active: true
-      tools: [claude-hub, codex-hub]
-  ```
-
-Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the overlay first (rules/skills/commands/agents into the overlay, `.mcp.json`/`settings.json`/`hooks.json` into `.ai/src/tools/<variant>/`), so the first sync doesn't clobber a hand-built directory. Profile-specific MCP/settings/hooks live in that per-variant payload dir; everything else flows through the overlay.
-
-**Sync.** `agentsync sync` syncs personal tools plus every `active: true` profile; `agentsync sync --profile <name>` syncs personal tools plus just that one. Each profile's tools render with a per-profile overlay layered over the base (and over an active `shared:` overlay, if any — the two compose). Profile outputs are gitignored and drift-protected like any other output.
-
-**Inspect / remove.** `agentsync profile list` shows profiles, their tools, and config homes. `agentsync profile remove <name>` deletes the config-home output and variant files, then drops the `profiles:` entry (overlay sources under `.ai/profiles/<name>/` are kept).
-
-## Other commands
-
-- `agentsync list` shows configured tools and status; `agentsync enable` / `disable <tool>` toggle them.
-- `agentsync check` verifies generated output matches source and exits non-zero on drift (use it in CI).
-- `agentsync init` and `sync` snapshot every path they may mutate under the Git-ignored `.ai/backups/` and automatically restore it on failure. Use `agentsync rollback --list`, preview with `rollback [<id>] --dry-run`, and restore the latest or selected snapshot with `rollback [<id>]`; pass `--yes` outside a TTY. Rollback creates a safety snapshot first, so it can itself be undone. It refuses, naming the first changed path, when a target changed after the snapshot's operation finished; roll back newer snapshots first or pass `--force` to restore anyway.
-- **Keep outputs fresh automatically** (so you never forget to sync): add `eval "$(agentsync shell-init zsh)"` to `~/.zshrc` to auto-sync when the current directory is an AgentSync project root, without syncing parent projects from nested directories (silent no-op when nothing changed; eval'ing keeps it current across upgrades); `agentsync setup-hooks [--pre-commit]` syncs on `git pull` / `checkout`; `agentsync sync --if-stale` syncs only when source changed since the last sync. See the README "Automation" section.
-- `agentsync doctor` validates the setup and surfaces drift, config warnings, and cross-project advisories.
-- `agentsync generate [context]` prints a prompt you paste into any AI to draft a project-specific `.ai/src/`.
-- `agentsync export` bundles `.ai/src/` into an archive; `agentsync import <src>` pulls a config from a repo, archive, or directory.
-- `agentsync migrate` prints and copies a grounded prompt for safely upgrading an existing project to the latest documented AgentSync format. Use `agentsync migrate --legacy` to preview legacy flat-layout moves and `agentsync migrate --apply` to perform them.
-- `agentsync upgrade-config` re-pins the engine version in `agent_sync.yaml`.
-- `version_pin.mode` controls pin mismatches in `agent_sync.yaml`: `committed` outputs remain strict, while `local` outputs warn by default. Nest `mode: strict` under a `version_pin:` key to make local mismatches fatal; `warn` preserves the default. A top-level `version_pin.mode:` line is not read. The scalar shorthand `version_pin: strict` (or `warn`) is also accepted. Unknown modes are rejected before writing.
-- `outputs:` in `agent_sync.yaml` picks where generated files live: `committed` (the `init` default) keeps outputs and `.ai/.sync-manifest` in git so teammates need only `git pull` and CI runs `agentsync check`; `local` gitignores both and every clone runs `agentsync sync`. The manifest always shares the outputs' git status. In `committed` mode `sync` and `check` refuse to run when `agentsync_version` differs from the engine — match it with `agentsync update <version>` or move it with `agentsync upgrade-config`.
+**Read [`references/workspaces-and-profiles.md`](references/workspaces-and-profiles.md) when running `agentsync refresh`, when a parent workspace shares content with sub-projects, or when a tool needs a second config home.** It covers the three-way template diff and its outcome classes, `template_overrides`, declarative `shared:` inheritance with `dedupe` and `doctor` cross-project detection, the `category: governance` marker, and the profile overlay layout.
 
 ## Who owns which file
 
 Two layers, and the difference decides whether an upgrade reaches you:
 
-- **Engine-owned** — this skill. It ships inside the `agentsync` binary and is resolved at sync time, so an engine upgrade updates it in every project. To add to it and keep the updates, create an `agentsync/` directory with no `SKILL.md` (at the skills root or in any category): its files join the engine's, and its `SKILL.append.md` is appended to this `SKILL.md` at sync. A directory with its own `SKILL.md` replaces this skill and stops the updates; `base_skills: false` drops it.
+- **Engine-owned** — this skill. It ships inside the `agentsync` binary and is resolved at sync time, so an engine upgrade updates it in every project. To add to it and keep the updates, create an `agentsync/` directory with no `SKILL.md` (at the skills root or in any category): its files join the engine's, a file at the same path replaces the engine's, and its `SKILL.append.md` is appended to this `SKILL.md` at sync. A directory with its own `SKILL.md` replaces this skill and stops the updates; `base_skills: false` drops it.
 - **Project-owned** — everything else under `.ai/src/`. Scaffolded once by `init`, updated only when you accept it via `agentsync refresh`, never overwritten by an upgrade.
 
 `format:` in `agent_sync.yaml` records which migrations the project has been through. When the engine ships a newer revision, the next command says so; `agentsync migrate` previews it and `migrate --apply` performs it.
 
-## Guarding the generated files
-
-Three layers keep an agent (and a person) editing the source instead of the output:
-
-1. The shipped `AGENTS.md` and `rules/core.md` say where instructions live, so it is in context every session.
-2. Claude Code gets a generated `PreToolUse` hook at `.claude/hooks/agentsync-guard.sh`, wired up by `hooks.PreToolUse` in the base settings. It checks the target path against `.ai/.sync-manifest` and exits 2 — blocking the write — with the source path to edit instead. Override it per project at `.ai/src/tools/claude/guard.sh`, or drop the `hooks` block from your settings override to remove it. The target declares `profile_scoped: false`, so config-home profiles share this one script rather than each getting a copy nothing invokes; `agentsync doctor` warns when a settings override never references it.
-3. `agentsync sync` refuses to overwrite a generated file that changed since the last sync, and `agentsync adopt <file>` promotes such an edit back into `.ai/src/`.
-
 ## Gotchas
 
-- Always edit files in `.ai/src/`, never in generated directories (`.claude/`, `.cursor/`, etc.). A file you add by hand to a generated dir is preserved with a warning (not silently deleted) — but it is never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it. If you edited a generated file while iterating, `agentsync adopt <path>` promotes that edit back into the matching source file — or `agentsync adopt --all` to promote every drifted file at once (refused targets and same-source conflicts are skipped and listed).
-- Backups cover declared tool destinations and AgentSync's manifest/.gitignore state. A trusted `post_sync` hook can mutate arbitrary paths; side effects outside declared destinations are not automatically reversible. After an operation, history is pruned to snapshots that are both among the latest 10 (`AGENTSYNC_BACKUP_LIMIT`) and younger than 30 days (`AGENTSYNC_BACKUP_MAX_AGE_DAYS`); either set to `0` disables that bound, and the newest snapshot is always retained. Nest `retention: preserve` under a `backup:` key in `agent_sync.yaml` to keep every existing snapshot and staging entry instead; `bounded` is the default, and any other value stops init, sync, and rollback before they write.
+- Edit files in `.ai/src/`. Generated directories (`.claude/`, `.cursor/`, etc.) are sync output, not edit targets. A file you add by hand to a generated directory is preserved with a warning but never managed; move it into `.ai/src/`, or run `agentsync sync --force` to prune it.
 - Run `agentsync sync` after every change to distribute updates.
+- Frontmatter is YAML: a `: ` (colon + space) inside an unquoted `description` invalidates the file and the consuming tool **silently skips the skill at load** — rephrase with `—` and re-validate (`skills-ref validate <path>`) after every frontmatter edit.
 - Tool-specific frontmatter fields (like `context: fork`) are passed through as-is — agentsync doesn't validate them.
 - Keep skill triggers mutually exclusive. When two skills could fire on the same task, merge them or sharpen their descriptions.
-- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Windsurf, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex, Kimi Code, and Kiro emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
-- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, OpenCode as safe Markdown with translated permissions, and Kiro as Markdown agents with its tool tags. Cline, Kimi Code, Zed, Windsurf, and Antigravity have no custom subagent surface, so they get none.
-- The shared `.ai/src/mcp.json` reaches every MCP target. OpenCode composes it into `opencode.json`; do not duplicate `mcp` in the OpenCode settings override. `agentsync mcp use --merge --apply` extends only a regular per-tool `mcp.json`; use `--replace <id>` to replace the selected ID explicitly. `targets.mcp.format: kimi_json` makes `agentsync mcp use` write Kimi-native HTTP entries without `type: "http"`; sync then copies that per-tool source. For hand-written remote servers in a shared source, use a Kimi per-tool override with its native `url` shape. Codex composes supported server fields into `.codex/config.toml` while preserving the settings source; keep `[mcp_servers.*]` out of settings when a separate MCP source exists. Codex-native fields (`cwd`, `enabled`, `startup_timeout_sec`, and the rest listed in `docs/mcp-library.md`) belong in a per-tool `.ai/src/tools/codex/mcp.json`; to keep servers in the settings file instead, set `targets.mcp.enabled: false` in `.ai/src/tools/codex.yaml`. Synced from `$HOME` or into a profile, `ownership: auto` (the default on `settings` and `mcp` targets) owns only the declared keys of each TOML or JSON file, one entry per MCP server, and keeps what the tool writes itself: Codex's projects, hooks.state, and plugins, Claude Code's model, theme, and plugin choices, a server added in an editor. Keep that state out of `.ai/src`, and use `agentsync adopt <file>` to pull a declared key the tool changed back into its source. Zed's commented settings stay owned whole.
+- Native commands land in Claude, Cursor, Copilot, Gemini (as TOML), Junie, Cline, Devin Desktop, Antigravity, and OpenCode. Tools without a command surface get a conversion: Codex, Kimi Code, and Kiro emit generated skills under `command-*/`; Amazon Q and Zed inline a `## Commands` index into their agents file.
+- Native subagents land in Claude, Copilot, Cursor, Gemini, and Junie. Codex receives them converted to TOML, Amazon Q as custom-agent JSON, OpenCode as safe Markdown with translated permissions, and Kiro as Markdown agents with its tool tags. Cline, Kimi Code, Zed, Devin Desktop, and Antigravity have no custom subagent surface, so they get none.
+- The shared `.ai/src/mcp.json` reaches every compatible MCP target, but Claude Code reads it only at project scope — `references/mcp-and-tool-targets.md` has the per-host route.
 - AgentSync owns `.opencode/plugins/agentsync.ts`, not sibling OpenCode plugins, custom tools, themes, TUI preferences, or credentials. Kimi custom agents and project hooks are unavailable; leave Kimi's global config untouched.
+- A third-party or plugin skill is executable trust, not just docs — its bundled scripts run with your permissions and its instructions steer the agent. Audit the SKILL.md and every bundled file before installing one; skills that fetch from an external URL at runtime are the highest risk. Treat installing a skill like adding a dependency: private data, untrusted content, and an outbound path in one place make it as dangerous as an unvetted MCP server.
+- Popularity is not quality. A widely-starred third-party skill can still raise token cost _and_ worsen results — most shared skills are never rigorously evaluated, and a star count only measures reach, not effect. Before adopting one, benchmark it with-skill-vs-baseline (`references/evaluating-skills.md`) and prefer skills whose authors publish a real evaluation over ones that merely _claim_ to make the agent better.
