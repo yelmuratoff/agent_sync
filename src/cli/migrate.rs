@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 use super::{files_below, put, sorted_entries};
 use crate::config::template_manifest::{self, TemplateManifest};
+use crate::engine::{skill_tree, workspace::Workspace};
 use crate::output::help::{Help, Section};
 use crate::output::style::Style;
 use crate::project::Project;
@@ -336,30 +337,56 @@ fn consolidation_candidate(root: &Path) -> Option<PathBuf> {
         .then_some(first)
 }
 
-/// `_migrate_scan_base_skills`: each engine-owned skill the project copies, and
-/// whether every file still matches its recorded template hash.
-fn scan_base_skills(root: &Path) -> Result<Vec<(String, bool)>, Error> {
-    let manifest = TemplateManifest::load(root)?;
-    let src = root.join(".ai/src");
-    let mut copies = Vec::new();
-    for name in catalog::base_src_skills() {
-        let copy = src.join("skills").join(&name);
-        if !copy.is_dir() {
-            continue;
-        }
+/// An engine-owned skill the project copies, found by name in any category.
+struct BaseSkillCopy {
+    name: String,
+    rel: String,
+    edited: bool,
+}
+
+impl BaseSkillCopy {
+    /// Template manifest keys stay flat (`skills/<name>/…`) wherever the copy lives.
+    fn manifest_keys(&self, skills: &Path) -> Vec<(String, PathBuf)> {
+        let copy = skills.join(&self.rel);
         let mut files = Vec::new();
         files_below(&copy, &mut files);
-        let edited = files.iter().any(|file| {
-            let rel = file
-                .strip_prefix(&src)
-                .map(|p| p.disk_text())
-                .unwrap_or_default();
+        files
+            .into_iter()
+            .map(|file| {
+                let inside = file
+                    .strip_prefix(&copy)
+                    .map(|p| p.disk_text())
+                    .unwrap_or_default();
+                (format!("skills/{}/{inside}", self.name), file)
+            })
+            .collect()
+    }
+}
+
+/// `_migrate_scan_base_skills`: each engine-owned skill the project copies, and
+/// whether every file still matches its recorded template hash.
+fn scan_base_skills(root: &Path) -> Result<Vec<BaseSkillCopy>, Error> {
+    let manifest = TemplateManifest::load(root)?;
+    let skills = root.join(".ai/src/skills");
+    let skills_text = skills.disk_text();
+    let tree = skill_tree::discover(&Workspace::on_disk(&skills_text), &skills_text);
+    let mut copies = Vec::new();
+    for name in catalog::base_src_skills() {
+        let Some(skill) = tree.find(&name) else {
+            continue;
+        };
+        let mut copy = BaseSkillCopy {
+            name,
+            rel: skill.rel.clone(),
+            edited: false,
+        };
+        copy.edited = copy.manifest_keys(&skills).iter().any(|(key, file)| {
             let current = template_manifest::hash(file).unwrap_or_default();
             manifest
-                .lookup(&rel)
+                .lookup(key)
                 .is_none_or(|recorded| recorded != current)
         });
-        copies.push((name, edited));
+        copies.push(copy);
     }
     Ok(copies)
 }
@@ -768,16 +795,17 @@ fn move_one(run: &mut Run, entry: &Legacy) -> Result<bool, Error> {
 }
 
 /// `_migrate_retire_base_skills`.
-fn retire_base_skills(run: &mut Run, apply: bool, skills: &[(String, bool)]) -> Result<(), Error> {
+fn retire_base_skills(run: &mut Run, apply: bool, copies: &[BaseSkillCopy]) -> Result<(), Error> {
     let style = run.style;
     let root = PathBuf::from(&run.root);
-    let src = root.join(".ai/src");
+    let skills = root.join(".ai/src/skills");
     let mut manifest = TemplateManifest::load(&root)?;
     let mut removed = 0;
-    for (name, edited) in skills {
-        if *edited {
+    for copy in copies {
+        let rel = &copy.rel;
+        if copy.edited {
             run.say(&format!(
-                "{}          .ai/src/skills/{name}/ {}\n",
+                "{}          .ai/src/skills/{rel}/ {}\n",
                 style.yellow("  keep"),
                 style.dim("(edited — stays your override; delete it to follow the engine)")
             ))?;
@@ -785,23 +813,20 @@ fn retire_base_skills(run: &mut Run, apply: bool, skills: &[(String, bool)]) -> 
         }
         if !apply {
             run.say(&format!(
-                "{}  .ai/src/skills/{name}/ {}\n",
+                "{}  .ai/src/skills/{rel}/ {}\n",
                 style.cyan("  would remove"),
                 style.dim("(unedited — the engine supplies it)")
             ))?;
             continue;
         }
-        let copy = src.join("skills").join(name);
-        let mut files = Vec::new();
-        files_below(&copy, &mut files);
-        for file in files {
-            if let Ok(rel) = file.strip_prefix(&src) {
-                manifest.remove(&rel.disk_text());
-            }
+        for (key, _) in copy.manifest_keys(&skills) {
+            manifest.remove(&key);
         }
-        std::fs::remove_dir_all(&copy).map_err(|e| Error::io(&copy, e))?;
+        let dir = skills.join(rel);
+        std::fs::remove_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+        remove_empty_categories(&dir, &skills)?;
         run.say(&format!(
-            "{}       .ai/src/skills/{name}/ {}\n",
+            "{}       .ai/src/skills/{rel}/ {}\n",
             style.green("  removed"),
             style.dim("(the engine supplies it now)")
         ))?;
@@ -809,6 +834,18 @@ fn retire_base_skills(run: &mut Run, apply: bool, skills: &[(String, bool)]) -> 
     }
     if apply && removed > 0 {
         manifest.write(&root)?;
+    }
+    Ok(())
+}
+
+/// Category directories above a removed skill that it left empty, up to `skills`.
+fn remove_empty_categories(removed: &Path, skills: &Path) -> Result<(), Error> {
+    for dir in removed.ancestors().skip(1).take_while(|dir| *dir != skills) {
+        let mut entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
+        if entries.next().is_some() {
+            break;
+        }
+        std::fs::remove_dir(dir).map_err(|e| Error::io(dir, e))?;
     }
     Ok(())
 }
@@ -1153,5 +1190,74 @@ mod tests {
                 .join(".ai/src/skills/agentsync/SKILL.md")
                 .is_file()
         );
+    }
+
+    #[test]
+    fn an_engine_owned_skill_copy_moved_into_a_category_is_still_retired_or_kept() {
+        let files: Vec<(String, String)> = catalog::engine_files()
+            .into_iter()
+            .filter_map(|(path, bytes)| {
+                let rel = path.strip_prefix("lib/templates/base-src/skills/agentsync/")?;
+                Some((rel.to_string(), String::from_utf8(bytes.to_vec()).unwrap()))
+            })
+            .collect();
+        let copies: Vec<(String, &str)> = files
+            .iter()
+            .map(|(rel, text)| {
+                (
+                    format!(".ai/src/skills/meta/sub/agentsync/{rel}"),
+                    text.as_str(),
+                )
+            })
+            .collect();
+        let manifest: String = files
+            .iter()
+            .map(|(rel, text)| {
+                format!(
+                    "skills/agentsync/{rel}\t{}\n",
+                    crate::transaction::manifest::sha256_hex(text.as_bytes())
+                )
+            })
+            .chain(["rules/core.md\tabc\n".to_string()])
+            .collect();
+        let mut fixture: Vec<(&str, &str)> = copies.iter().map(|(p, t)| (p.as_str(), *t)).collect();
+        fixture.push((
+            ".ai/src/skills/meta/other/SKILL.md",
+            "---\nname: other\n---\n",
+        ));
+        fixture.push((".ai/agent_sync.yaml", "format: 2\n"));
+        fixture.push((".ai/.template-manifest", &manifest));
+
+        let (_dir, root) = project(&fixture);
+        let dry = call(&root, &["--legacy"], false, false, None);
+        assert!(dry.out.contains(
+            "  would remove  .ai/src/skills/meta/sub/agentsync/ (unedited — the engine supplies it)\n"
+        ));
+        let applied = call(&root, &["--apply"], false, false, None);
+        assert!(applied.out.contains(
+            "  removed       .ai/src/skills/meta/sub/agentsync/ (the engine supplies it now)\n"
+        ));
+        assert_eq!(
+            tree(&root),
+            [
+                ".ai/.template-manifest",
+                ".ai/agent_sync.yaml",
+                ".ai/src/skills/meta/other/SKILL.md"
+            ]
+        );
+        assert!(!Path::new(&root).join(".ai/src/skills/meta/sub").exists());
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&root).join(".ai/.template-manifest")).unwrap(),
+            "rules/core.md\tabc\n"
+        );
+
+        let (_dir, root) = project(&fixture);
+        std::fs::write(
+            Path::new(&root).join(".ai/src/skills/meta/sub/agentsync/SKILL.md"),
+            "edited\n",
+        )
+        .unwrap();
+        let kept = call(&root, &["--apply"], false, false, None);
+        assert!(kept.out.contains("  keep          .ai/src/skills/meta/sub/agentsync/ (edited — stays your override; delete it to follow the engine)\n"));
     }
 }
