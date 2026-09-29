@@ -298,7 +298,7 @@ Pass `--adopt` to pull the existing contents of `~/.<tool>-<name>/` into the ove
 
 Two layers, and the difference decides whether an upgrade reaches you:
 
-- **Engine-owned** — this skill. It ships inside the `agentsync` binary and is resolved at sync time, so an engine upgrade updates it in every project. Keep your own `.ai/src/skills/agentsync/` to diverge (it wins), or set `base_skills: false` to drop it.
+- **Engine-owned** — this skill. It ships inside the `agentsync` binary and is resolved at sync time, so an engine upgrade updates it in every project. To add to it and keep the updates, create an `agentsync/` directory with no `SKILL.md` (at the skills root or in any category): its files join the engine's, and its `SKILL.append.md` is appended to this `SKILL.md` at sync. A directory with its own `SKILL.md` replaces this skill and stops the updates; `base_skills: false` drops it.
 - **Project-owned** — everything else under `.ai/src/`. Scaffolded once by `init`, updated only when you accept it via `agentsync refresh`, never overwritten by an upgrade.
 
 `format:` in `agent_sync.yaml` records which migrations the project has been through. When the engine ships a newer revision, the next command says so; `agentsync migrate` previews it and `migrate --apply` performs it.

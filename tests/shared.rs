@@ -33,6 +33,16 @@ fn add_shared_block(child: &Path, path: &str, inherit: &str) {
     );
 }
 
+fn inherit_skills_too(child: &Path) {
+    let config = child.join(".ai/agent_sync.yaml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("inherit: rules", "inherit: rules, skills"),
+    )
+    .unwrap();
+}
+
 /// A parent project with one custom rule, and a child below it that declares
 /// `shared:` inheritance for rules. Mirrors `_shared_make_pair`.
 fn make_pair(project: &Project) -> (PathBuf, PathBuf) {
@@ -174,7 +184,7 @@ fn child_wins_on_path_collision() {
 fn a_categorized_child_skill_shadows_the_parent_skill_of_its_name() {
     let project = Project::empty();
     let (parent, child) = make_pair(&project);
-    add_shared_block(&child, "../", "skills");
+    inherit_skills_too(&child);
     write(
         &parent.join(".ai/src/skills/bloc/SKILL.md"),
         "---\nname: bloc\ndescription: Parent\n---\n",
@@ -191,6 +201,37 @@ fn a_categorized_child_skill_shadows_the_parent_skill_of_its_name() {
         "---\nname: bloc\ndescription: Child\n---\n"
     );
     assert!(!child.join(".claude/skills/bloc/references").exists());
+    agentsync_in(&child).arg("check").assert().success();
+}
+
+#[test]
+fn a_categorized_child_extension_adds_to_the_parent_skill_of_its_name() {
+    let project = Project::empty();
+    let (parent, child) = make_pair(&project);
+    inherit_skills_too(&child);
+    write(
+        &parent.join(".ai/src/skills/bloc/SKILL.md"),
+        "---\nname: bloc\ndescription: Parent\n---\n\nParent body.\n",
+    );
+    write(&parent.join(".ai/src/skills/bloc/references/p.md"), "p\n");
+    write(
+        &child.join(".ai/src/skills/flutter/bloc/SKILL.append.md"),
+        "Child notes.\n",
+    );
+    write(
+        &child.join(".ai/src/skills/flutter/bloc/references/c.md"),
+        "c\n",
+    );
+
+    agentsync_in(&child).arg("sync").assert().success();
+    let out = child.join(".claude/skills/bloc");
+    assert_eq!(
+        std::fs::read_to_string(out.join("SKILL.md")).unwrap(),
+        "---\nname: bloc\ndescription: Parent\n---\n\nParent body.\n\nChild notes.\n"
+    );
+    assert!(out.join("references/p.md").is_file());
+    assert!(out.join("references/c.md").is_file());
+    assert!(!out.join("SKILL.append.md").exists());
     agentsync_in(&child).arg("check").assert().success();
 }
 

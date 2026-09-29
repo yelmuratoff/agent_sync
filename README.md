@@ -594,7 +594,9 @@ In both modes `agentsync sync` manages a block in `.gitignore` between `AI SYNC 
 
 The `agentsync` skill documents AgentSync itself, so it is versioned with the engine instead of being copied into every project where it would go stale. It ships inside the binary, built from `lib/templates/base-src/skills/`, and is resolved at sync time, after any `shared:` parent, so precedence reads project → shared parent → engine. Upgrade the engine and the next `sync` in any project emits the current version, with no prompt and no merge.
 
-To diverge, keep your own `.ai/src/skills/agentsync/` — a project copy always wins. To drop the layer entirely, set `base_skills: false` in `.ai/agent_sync.yaml`.
+To add to it and keep the updates, create a directory named `agentsync` with no `SKILL.md` of its own, at `.ai/src/skills/agentsync/` or inside any category. Its files join the engine's, and a file at the same path as one of the engine's replaces it. A `SKILL.append.md` there is appended to the engine's `SKILL.md` at sync, so the agent learns about your additions; it never reaches a tool as a file of its own. The same works for a skill a `shared:` parent provides.
+
+To diverge completely, keep your own `SKILL.md` in that directory — a project copy with its own `SKILL.md` always wins, and engine upgrades stop reaching it. To drop the layer entirely, set `base_skills: false` in `.ai/agent_sync.yaml`.
 
 Projects scaffolded before this carry their own copy, which shadows the engine's. `agentsync migrate` reports it and `agentsync migrate --apply` removes the copy when it is unedited, leaving an edited one in place as the deliberate override it is.
 
