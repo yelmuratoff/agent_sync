@@ -6,6 +6,10 @@
 
 - **Extend an inherited skill instead of replacing it.** A directory named after the bundled `agentsync` skill, or after a skill a `shared:` parent provides, that has no `SKILL.md` of its own now adds to that skill: its files join the inherited ones, a file at the same path replaces the inherited one, and a `SKILL.append.md` is appended to the inherited `SKILL.md` at sync. The directory can sit at the skills root or inside any category. The inherited text keeps updating with the engine or the parent; a directory with its own `SKILL.md` still replaces the skill outright. `doctor` no longer reports such a directory as an empty skill.
 
+### Changed
+
+- **The bundled `agentsync` skill loads less up front.** Its `SKILL.md` is about half as long and points to topic references the agent reads when the task needs them: `maintenance.md` (now also backups, rollback, version pins, and the other commands), `workspaces-and-profiles.md`, `mcp-and-tool-targets.md` (with per-host notes on where an MCP server is actually live), `settings-hooks-and-harness.md`, `writing-skills.md`, and `evaluating-skills.md`, which is new. The writing guidance adds the removal and addition tests for rule lines, failure-mode vocabulary for skills, and a loop for turning an agent mistake into a harness change.
+
 ### Fixed
 
 - **`update` prints code in the changelog as written.** The release notes it shows dropped every `**` along with the bold markers, so a glob such as `src/**` read as `src/`; text inside backticks now keeps every character. A nested bullet also wraps under its own text instead of starting its continuation lines to the left of it.
