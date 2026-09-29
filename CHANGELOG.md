@@ -2,16 +2,7 @@
 
 ## Unreleased
 
-### Added
-
-- **Skills can be grouped into category directories.** A directory under `.ai/src/skills/` without its own `SKILL.md` is a category, so `skills/flutter/bloc/SKILL.md` and `skills/backend/auth/SKILL.md` can sit side by side, up to four category levels deep. Claude Code, VS Code Copilot, and Gemini CLI skip nested skills, so `sync` lands every skill flat at `<dest>/<name>/` for every tool; the category exists only in the source. Skill names stay unique across categories: two skills with the same name stop the sync before anything is written, and the error names both.
-  - `targets.skills.include` and `.exclude` take a category path as well as a name: `exclude: cloudflare/*`.
-  - `agentsync add skill <name> --category flutter/ui` scaffolds into a category. `skills list` gains a category column, `skills show` a `Category:` line, and an inlined skill index groups its entries under `### <category>` headings.
-  - `adopt` returns an edited skill to its category, and `doctor` reports a name collision, a skill nested deeper than four categories, an empty category, and a category name that is not lowercase-kebab.
-- **Kiro.** `kiro.yaml` writes `AGENTS.md`, rules to `.kiro/steering/` with `inclusion: always` (or `inclusion: fileMatch` for a rule with `paths:`), skills to `.kiro/skills/`, commands as `command-*` skills, subagents to `.kiro/agents/` as Kiro Markdown agents, and MCP servers to `.kiro/settings/mcp.json`. Kiro's IDE and CLI succeed the Amazon Q Developer CLI; `amazonq.yaml` stays for projects still on Amazon Q Developer.
-- **Three tool YAML options** for tool authors: `{globs_list}` in `scoped_header` becomes a quoted YAML list of a rule's globs, `format: kiro_md` converts a subagent to a Kiro agent, and `legacy_dest` names where an earlier version wrote a target so the move cleans up after itself.
-
-### Changed
+### Breaking
 
 - **Windsurf output moves to `.devin/`.** Windsurf is now Devin Desktop and reads its project rules, skills, workflows, MCP config, and hooks from `.devin/`. The first sync after the upgrade writes there and removes the files it had recorded under `.windsurf/`; files you wrote there yourself stay. `list` shows the tool as Devin Desktop; its slug is still `windsurf`.
 - **Cline gets native skills and its current layout.** Cline reads `AGENTS.md`, `.cline/rules/`, `.cline/skills/`, and `.cline/workflows/`, so skills are copied as skills instead of inlined as an index in `.clinerules/00-context.md`. The first sync removes the files it had recorded under `.clinerules/`.
@@ -28,6 +19,15 @@
 - **`init` records no template hash for the files it adopts.** The template manifest was written before adoption, so an adopted `AGENTS.md` or rule carried the shipped template's hash and `refresh` treated the project's own text as an edit of the template. A project initialised earlier keeps the manifest it has.
 - **`add mcp` keeps the rest of `.ai/src/mcp.json`.** Adding a server dropped every top-level key other than `mcpServers`, replaced a file without `mcpServers` wholesale, took an `mcpServers` nested inside another key for the real one, and silently lost servers after an invalid key. Other keys now stay in order, `mcpServers` is added beside them, and a file that is not valid JSON is refused and left as it is.
 - **`import` follows the source project's `source.*` paths.** A project keeping, say, its commands in `custom/cmds` exported them, but no import read them back, and the imported `agent_sync.yaml` then pointed at a `custom/cmds` the new project did not have. Import now reads each section from its declared path, writes it into the project's own `.ai/src/`, and drops the `source.*` entries that would point elsewhere.
+
+### Added
+
+- **Skills can be grouped into category directories.** A directory under `.ai/src/skills/` without its own `SKILL.md` is a category, so `skills/flutter/bloc/SKILL.md` and `skills/backend/auth/SKILL.md` can sit side by side, up to four category levels deep. Claude Code, VS Code Copilot, and Gemini CLI skip nested skills, so `sync` lands every skill flat at `<dest>/<name>/` for every tool; the category exists only in the source. Skill names stay unique across categories: two skills with the same name stop the sync before anything is written, and the error names both.
+  - `targets.skills.include` and `.exclude` take a category path as well as a name: `exclude: cloudflare/*`.
+  - `agentsync add skill <name> --category flutter/ui` scaffolds into a category. `skills list` gains a category column, `skills show` a `Category:` line, and an inlined skill index groups its entries under `### <category>` headings.
+  - `adopt` returns an edited skill to its category, and `doctor` reports a name collision, a skill nested deeper than four categories, an empty category, and a category name that is not lowercase-kebab.
+- **Kiro.** `kiro.yaml` writes `AGENTS.md`, rules to `.kiro/steering/` with `inclusion: always` (or `inclusion: fileMatch` for a rule with `paths:`), skills to `.kiro/skills/`, commands as `command-*` skills, subagents to `.kiro/agents/` as Kiro Markdown agents, and MCP servers to `.kiro/settings/mcp.json`. Kiro's IDE and CLI succeed the Amazon Q Developer CLI; `amazonq.yaml` stays for projects still on Amazon Q Developer.
+- **Three tool YAML options** for tool authors: `{globs_list}` in `scoped_header` becomes a quoted YAML list of a rule's globs, `format: kiro_md` converts a subagent to a Kiro agent, and `legacy_dest` names where an earlier version wrote a target so the move cleans up after itself.
 
 ### Fixed
 
