@@ -477,6 +477,26 @@ fn sync_zed_rules_gets_commands_inline_section_merge_to_file_fallback() {
 }
 
 #[test]
+fn sync_a_folded_command_description_reads_whole_in_the_index_and_the_generated_skill() {
+    let project = synced_project();
+    project.write(
+        ".ai/src/commands/folded.md",
+        "---\ndescription: >\n  Review the diff\n  before a merge.\n---\n\nGo.\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+    assert!(
+        project
+            .read(".rules")
+            .contains("- `/folded` — Review the diff before a merge.\n")
+    );
+    assert!(
+        project
+            .read(".agents/skills/command-folded/SKILL.md")
+            .contains("description: >-\n  Review the diff before a merge.\n")
+    );
+}
+
+#[test]
 fn sync_gemini_settings_json_exists() {
     assert!(synced_project().exists(".gemini/settings.json"));
 }
