@@ -2,6 +2,7 @@
 //! `lib/helpers/format_conversion.sh`: Gemini command TOML, Codex agent TOML,
 //! Amazon Q agent JSON, and OpenCode agent Markdown.
 
+use crate::config::skill_metadata;
 use crate::text::{self, after_key, is_space, strip_quotes};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -140,6 +141,17 @@ pub fn read_field(source: &[u8], field: &str) -> Vec<u8> {
         }
     }
     Vec::new()
+}
+
+/// The `description` field, with a `>` or `|` block string folded to one line.
+pub fn read_description(source: &[u8]) -> Vec<u8> {
+    let description = read_field(source, "description");
+    if !description.starts_with(b">") && !description.starts_with(b"|") {
+        return description;
+    }
+    skill_metadata::description(source)
+        .map(String::into_bytes)
+        .unwrap_or_default()
 }
 
 /// A frontmatter value: the text between its quotes when quoted, else the
@@ -393,7 +405,7 @@ pub fn agent_to_kiro_md(stem: &str, source: &[u8]) -> Vec<u8> {
 
 /// The generated `SKILL.md` of `sync_commands_as_skills` for `<name>.md`.
 pub fn command_to_skill(name: &str, source: &[u8]) -> Vec<u8> {
-    let mut description = read_field(source, "description");
+    let mut description = read_description(source);
     if description.is_empty() {
         description = format!("Run the /{name} command workflow.").into_bytes();
     }
@@ -555,6 +567,20 @@ mod tests {
             String::from_utf8(command_to_skill("x", b"body"))
                 .unwrap()
                 .contains("  Run the /x command workflow.\n")
+        );
+    }
+
+    #[test]
+    fn a_folded_command_description_reaches_the_skill_whole() {
+        let src = b"---\ndescription: >\n  Review the diff\n  before a merge.\n---\nGo.\n";
+        assert_eq!(read_description(src), b"Review the diff before a merge.");
+        assert_eq!(
+            String::from_utf8(command_to_skill("review", src)).unwrap(),
+            "---\nname: \"command-review\"\ndescription: >-\n  Review the diff before a merge.\n---\n\nGo.\n"
+        );
+        assert_eq!(
+            read_description(b"---\ndescription: \"> quoted\"\n---\n"),
+            b"> quoted"
         );
     }
 

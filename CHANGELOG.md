@@ -10,6 +10,7 @@
 
 - **`update` prints code in the changelog as written.** The release notes it shows dropped every `**` along with the bold markers, so a glob such as `src/**` read as `src/`; text inside backticks now keeps every character. A nested bullet also wraps under its own text instead of starting its continuation lines to the left of it.
 - **`migrate` finds an engine-owned skill copy inside a category.** A copy of the bundled `agentsync` skill moved to `.ai/src/skills/<category>/agentsync/` still overrides the one the engine ships, but `migrate` looked only at `.ai/src/skills/agentsync/` and reported no copy. It now finds the copy by name, removes it when unedited along with any category it leaves empty, and keeps it when edited.
+- **A command's folded description reaches Codex, Kimi Code, Kiro, Amazon Q, and Zed whole.** A command whose `description:` is a `>` or `|` block became a `command-*` skill described only as `>`, and an entry in the inlined `## Commands` index reading `— >`; both now carry the folded text.
 
 ## 0.43.0
 

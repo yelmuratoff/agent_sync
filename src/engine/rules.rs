@@ -394,7 +394,7 @@ pub fn inline_commands_to_file(
             continue;
         }
         let stem = name.strip_suffix(".md").unwrap_or(&name);
-        let desc = convert::read_field(&read(s, &format!("{src_dir}/{name}"))?, "description");
+        let desc = convert::read_description(&read(s, &format!("{src_dir}/{name}"))?);
         entries.extend_from_slice(format!("- `/{stem}`").as_bytes());
         if !desc.is_empty() {
             entries.extend_from_slice(" — ".as_bytes());
