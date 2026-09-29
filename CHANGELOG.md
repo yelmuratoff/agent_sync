@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Update:** after a successful update, points to `agentsync refresh` for the project's rule, skill, and command templates.
+- **Doctor:** advises when a project copy replaces the bundled `agentsync` skill and so stops receiving its updates.
+
 ## 0.44.1
 
 ### Fixed

@@ -199,6 +199,13 @@ impl Doctor<'_> {
                 style.dim("(empty skill — populate or remove)")
             ))?;
         }
+        for skill in inherited.iter().filter_map(|name| tree.find(name)) {
+            self.advise(&format!(
+                "skills/{}/ — replaces the bundled skill, so engine updates stop here {}",
+                skill.rel,
+                style.dim("(to extend it instead, keep only your additions and drop SKILL.md)")
+            ))?;
+        }
         let nonstandard = tree.nonstandard_categories();
         for rel in &nonstandard {
             self.advise(&format!(
