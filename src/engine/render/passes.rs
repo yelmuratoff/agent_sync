@@ -67,7 +67,7 @@ pub fn run_passes(s: &mut Session, run: &mut Run) -> Step {
         }
         s.log.info(&format!("Profile: {profile}"));
         run.sources = run.base_sources.clone();
-        let base_src = run.profile_base_src.clone();
+        let base_src = run.profile_parent_src.clone();
         overlay::setup_profile(s, &text, &profile, &base_src, &mut run.sources)
             .map_err(|e| io(s, e))?;
         for slug in tools {

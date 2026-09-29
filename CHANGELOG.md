@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Profiles:** a profile with its own `src/` now gets the bundled `agentsync` skill and its extensions, like the personal tools.
+
 ## 0.44.0
 
 ### Added

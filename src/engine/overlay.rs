@@ -268,25 +268,26 @@ pub fn setup_shared(
 
 /// `base_src_setup_overlay`: engine-owned skills fill paths the project, and a
 /// `shared:` parent composed into `child_src`, lack, unless `base_skills: false`.
+/// Returns the overlay directory when one was built.
 pub fn setup_base_src(
     s: &mut Session,
     config: Option<&str>,
     child_src: &str,
     sources: &mut Sources,
-) -> Result<(), Error> {
+) -> Result<Option<String>, Error> {
     let base_src = format!("{ENGINE_ROOT}/lib/templates/base-src");
     if !s.ws.is_dir(&format!("{base_src}/skills")) {
-        return Ok(());
+        return Ok(None);
     }
     if config.is_some_and(|text| yaml_subset::value(text, "base_skills") == "false") {
-        return Ok(());
+        return Ok(None);
     }
     if !s.ws.is_dir(child_src) {
-        return Ok(());
+        return Ok(None);
     }
     let dir = build_source_tree(s, "base-src", &sources.clone(), &base_src, &["skills"])?;
     rewrite_sources(&s.ws, &dir, sources);
-    Ok(())
+    Ok(Some(dir))
 }
 
 /// `profile_setup_overlay`: false when the profile has no `src/` of its own.

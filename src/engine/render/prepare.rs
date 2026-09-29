@@ -116,6 +116,7 @@ fn load_run_config(s: &mut Session, env: &Env, selection: Selection) -> Result<R
         sources: Sources::default(),
         base_sources: Sources::default(),
         profile_base_src: String::new(),
+        profile_parent_src: String::new(),
         selection,
         profiles: Vec::new(),
         enabled: BTreeSet::new(),
@@ -379,9 +380,11 @@ pub fn setup_overlays(s: &mut Session, run: &mut Run, shared: bool) -> Step {
     {
         child_src = format!("{dir}/src");
     }
-    overlay::setup_base_src(s, config.as_deref(), &child_src, &mut run.sources)
+    let engine_skills = overlay::setup_base_src(s, config.as_deref(), &child_src, &mut run.sources)
         .map_err(|e| io(s, e))?;
     run.base_sources = run.sources.clone();
+    run.profile_parent_src =
+        engine_skills.map_or_else(|| child_src.clone(), |dir| format!("{dir}/src"));
     run.profile_base_src = child_src;
     Ok(())
 }

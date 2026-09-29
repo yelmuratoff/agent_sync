@@ -58,6 +58,8 @@ pub struct Run {
     pub sources: Sources,
     pub(super) base_sources: Sources,
     pub(super) profile_base_src: String,
+    /// What a profile overlay fills from: `profile_base_src` with the engine skills layered in.
+    pub(super) profile_parent_src: String,
     pub(super) selection: Selection,
     pub(super) profiles: Vec<String>,
     pub(super) enabled: BTreeSet<String>,
