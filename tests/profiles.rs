@@ -166,6 +166,32 @@ fn sync_base_rules_fill_into_profile_output_overlay_fill() {
 }
 
 #[test]
+fn sync_a_profile_with_its_own_source_keeps_the_engine_skill_and_its_extension() {
+    let project = seeded();
+    add_hub(&project);
+    project.write(
+        ".ai/profiles/hub/src/skills/work/SKILL.md",
+        "---\nname: work\ndescription: Work\n---\n",
+    );
+    project.write(
+        ".ai/src/skills/meta/agentsync/SKILL.append.md",
+        "Local notes.\n",
+    );
+    project.agentsync().arg("sync").assert().success();
+
+    for home in [".claude", ".claude-hub"] {
+        let skill = project.read(&format!("{home}/skills/agentsync/SKILL.md"));
+        assert!(skill.starts_with("---\nname: agentsync\n"), "{home}");
+        assert!(skill.ends_with("\n\nLocal notes.\n"), "{home}");
+        assert!(project.exists(&format!(
+            "{home}/skills/agentsync/references/maintenance.md"
+        )));
+    }
+    assert!(project.exists(".claude-hub/skills/work/SKILL.md"));
+    project.agentsync().arg("check").assert().success();
+}
+
+#[test]
 fn sync_profile_filters_skills_by_category_and_shadows_by_name() {
     let project = seeded();
     add_hub(&project);

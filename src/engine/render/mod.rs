@@ -71,7 +71,7 @@ pub fn skill_source(
         let overlay_dir = profiles::overlay_dir(config, name);
         let profile_root = s.paths.absolute(&overlay_dir);
         let prior_skills_source = run.sources.skills.clone();
-        overlay::setup_profile(s, config, name, &run.profile_base_src, &mut run.sources)
+        overlay::setup_profile(s, config, name, &run.profile_parent_src, &mut run.sources)
             .map_err(|e| io(s, e))?;
         let profile_skills_overlay = run.sources.skills != prior_skills_source;
         if profile_skills_overlay {
