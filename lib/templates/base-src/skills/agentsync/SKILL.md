@@ -107,7 +107,7 @@ argument-hint: "<optional-arg>"
 Key features:
 
 - `$ARGUMENTS` — replaced with text after the command name.
-- `` !`shell command` `` — runs a shell command and embeds its output into the prompt.
+- An exclamation mark directly before an inline-code command — runs the command and embeds its output into the prompt.
 - Keep commands focused — one workflow per command.
 - Avoid `: ` (colon-space) inside an unquoted `description:` (see Gotchas).
 - Good commands: `changelog`, `fix-issue`, `deploy`, `migrate`.
